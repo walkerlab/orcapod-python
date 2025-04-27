@@ -1,11 +1,11 @@
 
-from typing import Callable
+from typing import Callable, Dict, Optional, List, Sequence
 
-from .stream import Stream, SyncStream
+from .stream import Stream, SyncStream, SyncStreamFromGenerator
 from .operation import Operation
-from .tag import join_tags, batch_tags
-
-
+from .stream_utils import join_tags, batch_tag, batch_packet
+from .types import Tag, Packet
+from typing import Iterator, Tuple
 
 class Mapper(Operation):
     """
@@ -15,19 +15,23 @@ class Mapper(Operation):
    
 
 class Join(Mapper):
-    def __call__(self, left_stream: SyncStream, right_stream: SyncStream) -> SyncStream:
+    def __call__(self, *streams: SyncStream) -> SyncStream:
         """
         Joins two streams together based on their tags.
         The resulting stream will contain all the tags from both streams.
         """
-        # TODO: warn if packet contains the same key
+        if len(streams) != 2:
+            raise ValueError("Join operation requires exactly two streams")
+        
+        left_stream, right_stream = streams 
+        
         def generator():
             for left_tag, left_packet in left_stream:
                 for right_tag, right_packet in right_stream:
                     if (joined_tag := join_tags(left_tag, right_tag)) is not None:
                         yield joined_tag, {**left_packet, **right_packet}
         
-        return SyncStream(generator)
+        return SyncStreamFromGenerator(generator)
 
 class MapKeys(Mapper):
     """
@@ -36,11 +40,16 @@ class MapKeys(Mapper):
     If a key is not in the mapping, it will be dropped from the element unless
     drop_unmapped=False, in which case unmapped keys will be retained.
     """
-    def __init__(self, key_map: dict, drop_unmapped: bool = True):
+    def __init__(self, key_map: Dict[str, str], drop_unmapped: bool = True) -> None:
         self.key_map = key_map
         self.drop_unmapped = drop_unmapped
 
-    def __call__(self, stream: Stream) -> Stream:
+    def __call__(self, *streams: SyncStream) -> SyncStream:
+        if len(streams) != 1:
+            raise ValueError("MapKeys operation requires exactly one stream")
+        
+        stream = streams[0]
+        
         def generator():
             for tag, packet in stream:
                 if self.drop_unmapped:
@@ -48,7 +57,7 @@ class MapKeys(Mapper):
                 else:
                     packet = {self.key_map.get(k, k): v for k, v in packet.items()}
                 yield tag, packet
-        return SyncStream(generator)
+        return SyncStreamFromGenerator(generator)
 
 
 class MapTags(Operation):
@@ -58,11 +67,16 @@ class MapTags(Operation):
     If a tag is not in the mapping, it will be dropped from the element unless
     drop_unmapped=False, in which case unmapped tags will be retained.
     """
-    def __init__(self, tag_map, drop_unmapped=True):
+    def __init__(self, tag_map: Dict[str, str], drop_unmapped: bool = True) -> None:
         self.tag_map = tag_map
         self.drop_unmapped = drop_unmapped
 
-    def __call__(self, stream: Stream) -> Stream:
+    def __call__(self, *streams: SyncStream) -> SyncStream:
+        if len(streams) != 1:
+            raise ValueError("MapTags operation requires exactly one stream")
+        
+        stream = streams[0]
+        
         def generator():
             for tag, packet in stream:
                 if self.drop_unmapped:
@@ -70,7 +84,7 @@ class MapTags(Operation):
                 else:
                     tag = {self.tag_map.get(k, k): v for k, v in tag.items()}
                 yield tag, packet
-        return SyncStream(generator)
+        return SyncStreamFromGenerator(generator)
         
 class Filter(Mapper):
     """
@@ -78,15 +92,20 @@ class Filter(Mapper):
     Predicate function should take two arguments: the tag and the packet, both as dictionaries.
     The predicate function should return True for packets that should be kept and False for packets that should be dropped.
     """
-    def __init__(self, predicate: Callable[[dict, dict], bool]):
+    def __init__(self, predicate: Callable[[Tag, Packet], bool]):
         self.predicate = predicate
 
-    def __call__(self, stream: Stream) -> Stream:
+    def __call__(self, *streams: SyncStream) -> SyncStream:
+        if len(streams) != 1:
+            raise ValueError("Filter operation requires exactly one stream")
+        
+        stream = streams[0]
+        
         def generator():
             for tag, packet in stream:
                 if self.predicate(tag, packet):
                     yield tag, packet
-        return SyncStream(generator)
+        return SyncStreamFromGenerator(generator)
     
 class Batch(Mapper):
     """
@@ -94,25 +113,31 @@ class Batch(Mapper):
     The batch size is the number of packets to include in each batch.
     If the final batch is smaller than the batch size, it will be dropped unless drop_last=False.
     """
-    def __init__(self, batch_size: int, tag_processor: Callable[[list[dict]], dict] = None, drop_last: bool = True):
+    def __init__(self, batch_size: int, tag_processor: Optional[Callable[[Sequence[Tag]], Tag]] = None, drop_last: bool = True):
         self.batch_size = batch_size
         if tag_processor is None:
-            tag_processor = lambda tags: batch_tags(tags)
+            tag_processor = lambda tags: batch_tag(tags)
+            
         self.tag_processor = tag_processor
         self.drop_last = drop_last
 
-    def __call__(self, stream: Stream) -> Stream:
-        def generator():
-            batch_tags = []
-            batch_packets = []
+    def __call__(self, *streams: SyncStream) -> SyncStream:
+        if len(streams) != 1:
+            raise ValueError("Batch operation requires exactly one stream")
+        
+        stream = streams[0]
+        
+        def generator() -> Iterator[Tuple[Tag, Packet]]:
+            batch_tags: List[Tag] = []
+            batch_packets: List[Packet] = []
             for tag, packet in stream:
                 batch_tags.append(tag)
                 batch_packets.append(packet)
                 if len(batch_tags) == self.batch_size:
-                    yield self.tag_processor(batch_tags), batch_packets
+                    yield self.tag_processor(batch_tags), batch_packet(batch_packets)
                     batch_tags = []
                     batch_packets = []
             if batch_tags and not self.drop_last:
-                yield self.tag_processor(batch_tags), batch_packets
+                yield self.tag_processor(batch_tags), batch_packet(batch_packets)
 
-        return SyncStream(generator)
+        return SyncStreamFromGenerator(generator)

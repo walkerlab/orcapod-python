@@ -4,7 +4,7 @@ Utility functions for handling names
 """
 import re
 
-def pascal_to_snake(name):
+def pascal_to_snake(name: str) -> str:
     # Convert PascalCase to snake_case
     # if already in snake_case, return as is
     # TODO: replace this crude check with a more robust one
@@ -14,7 +14,7 @@ def pascal_to_snake(name):
     s1 = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
     return re.sub('([a-z0-9])([A-Z])', r'\1_\2', s1).lower()
 
-def snake_to_pascal(name):
+def snake_to_pascal(name: str) -> str:
     # Convert snake_case to PascalCase
     # if already in PascalCase, return as is
     if '_' not in name:

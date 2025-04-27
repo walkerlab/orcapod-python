@@ -2,8 +2,14 @@
 # a function to hash a dictionary of key value pairs into uuid
 import hashlib
 import uuid
+from uuid import UUID
+from typing import Dict, Union
 
-def hash_dict(d):
+# arbitrary depth of nested dictionaries
+T = Dict[str, Union[str, "T"]]
+
+# TODO: implement proper recursive hashing
+def hash_dict(d: T) -> UUID:
     # Convert the dictionary to a string representation
     dict_str = str(sorted(d.items()))
     

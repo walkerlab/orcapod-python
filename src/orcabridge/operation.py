@@ -1,6 +1,5 @@
-from .stream import Stream
+from .stream import SyncStream
 
 class Operation():
-    def __call__(self, *stream: Stream) -> Stream:
-        raise NotImplementedError("This method should be implemented in subclasses.")
+    def __call__(self, *streams: SyncStream) -> SyncStream: ...
     
