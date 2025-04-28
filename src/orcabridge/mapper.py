@@ -163,3 +163,39 @@ class Batch(Mapper):
                 yield self.tag_processor(batch_tags), batch_packet(batch_packets)
 
         return SyncStreamFromGenerator(generator)
+    
+class CacheStream(Mapper):
+    """
+    A Mapper that caches the packets in the stream, thus avoiding upstream recomputation.
+    The cache is filled the first time the stream is iterated over. 
+    For the next iterations, the cached packets are returned.
+    Call `clear_cache()` to clear the cache.
+    """
+    def __init__(self) -> None:
+        self.cache: List[Tuple[Tag, Packet]] = []
+        self.is_cached = False
+
+    def __call__(self, *streams: SyncStream) -> SyncStream:
+        if len(streams) != 1:
+            raise ValueError("CacheStream operation requires exactly one stream")
+        
+        stream = streams[0]
+        
+        def generator() -> Iterator[Tuple[Tag, Packet]]:
+            if not self.is_cached:
+                for tag, packet in stream:
+                    self.cache.append((tag, packet))
+                    yield tag, packet
+                self.is_cached = True
+            else:
+                for tag, packet in self.cache:
+                    yield tag, packet
+
+        return SyncStreamFromGenerator(generator)
+    
+    def clear_cache(self) -> None:
+        """
+        Clear the cache.
+        """
+        self.cache = []
+        self.is_cached = False
