@@ -8,9 +8,11 @@ from .stream import SyncStream, SyncStreamFromGenerator
 from .types import Tag, Packet, PodFunction
 
 
+class Pod(Operation):
+    pass
 
 
-class FunctionPod(Operation):
+class FunctionPod(Pod):
     def __init__(self, function: PodFunction, output_keys: Optional[List[str]] = None) -> None:
         self.function = function
         if output_keys is None:
