@@ -38,11 +38,13 @@ class FunctionPod(Pod):
                     yield tag, memoized_packet
                     continue
                 values = self.function(**packet)
-                if len(self.output_keys) == 1:
+                if len(self.output_keys) == 0:
+                     values = []
+                elif len(self.output_keys) == 1:
                     values = [values]
                 elif isinstance(values, Iterable):
                     values = list(values)
-                else:
+                elif len(self.output_keys) > 1:
                     raise ValueError("Values returned by function must be a pathlike or a sequence of pathlikes")
                 
                 if len(values) != len(self.output_keys):
