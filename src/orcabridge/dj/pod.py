@@ -35,7 +35,7 @@ class DJFunctionPod(FunctionPod):
         return Table()
     
     
-    def store(self, tag, element, output):
+    def memoize(self, tag, element, output):
         # create a key for the table
         key = {self.uuid_field: hash_dict(element)}
         # verify the key doesn't exist
@@ -48,7 +48,7 @@ class DJFunctionPod(FunctionPod):
             logger.info(f"Key {key} already exists in the table")
             return False
     
-    def memoize(self, element):
+    def retrieve_memoized(self, element):
         key = {self.uuid_field: hash_dict(element)}
         if self.table & key:
             # if the key already exists, return the output
