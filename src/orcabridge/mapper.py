@@ -106,6 +106,28 @@ class Filter(Mapper):
                 if self.predicate(tag, packet):
                     yield tag, packet
         return SyncStreamFromGenerator(generator)
+
+
+class Transform(Mapper):
+    """
+    A Mapper that transforms the packets in the stream based on a transformation function.
+    The transformation function should take two arguments: the tag and the packet, both as dictionaries.
+    The transformation function should return a tuple of (new_tag, new_packet).
+    """
+    def __init__(self, transform: Callable[[Tag, Packet], Tuple[Tag, Packet]]):
+        self.transform = transform
+
+    def __call__(self, *streams: SyncStream) -> SyncStream:
+        if len(streams) != 1:
+            raise ValueError("Transform operation requires exactly one stream")
+        
+        stream = streams[0]
+        
+        def generator():
+            for tag, packet in stream:
+                yield self.transform(tag, packet)
+        return SyncStreamFromGenerator(generator)
+
     
 class Batch(Mapper):
     """
