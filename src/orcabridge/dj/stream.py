@@ -1,15 +1,20 @@
-from ..stream import FixedStream
+from ..stream import SyncStream
 
 import datajoint as dj
+from datajoint.expression import QueryExpression
+from datajoint.table import Table
+from typing import Any
 
 
-class DJStream(FixedStream):
+class DJStream(SyncStream):
     """
     DataJoint query-backed data streams
     """
+    def __init__(self, query: QueryExpression) -> None:
+        self._query = query
 
     @property
-    def query(self):
+    def query(self) -> QueryExpression:
         return self._query
     
     @property
@@ -17,7 +22,7 @@ class DJStream(FixedStream):
         return self._tables
     
 
-class FixedStreamFromTable(DJStream):
+class SyncStreamFromTable(DJStream):
     def __init__(self, table):
         self.table = table
         self._tables = set([table.full_table_name])
