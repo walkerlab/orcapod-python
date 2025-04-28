@@ -1,16 +1,21 @@
 
 
 
-
-from .stream import SyncStream
+from .pod import Pod
+from .stream import SyncStream, SyncStreamFromGenerator
 from .types import Tag, Packet
 from typing import Iterator, Tuple, Optional, Callable
 from os import PathLike
 from pathlib import Path
 
-class GlobStream(SyncStream):
+
+class Source(Pod):
+    def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
+        yield from self()
+
+class GlobSource(Source):
     """
-    A SyncStream that sources files from a directory matching a glob pattern.
+    A stream source that sources files from a directory matching a glob pattern.
 
     For each matching file, yields a tuple containing:
     - A tag generated either by the provided tag_function or defaulting to the file's stem name
@@ -31,9 +36,9 @@ class GlobStream(SyncStream):
     Examples
     --------
     >>> # Match all .txt files in data_dir, using filename as tag
-    >>> stream = GlobStream('txt_file', 'data_dir', '*.txt')
+    >>> glob_source = GlobSource('txt_file', 'data_dir', '*.txt')
     >>> # Match all files but use custom tag function
-    >>> stream = GlobStream('file', 'data_dir', '*', 
+    >>> glob_source = GlobSource('file', 'data_dir', '*', 
     ...                     lambda f: {'date': Path(f).stem[:8]})
     """ 
     def __init__(self, name: str, file_path: PathLike, pattern: str ='*', tag_function: Optional[Callable[[PathLike], Tag]] = None) -> None:
@@ -45,6 +50,8 @@ class GlobStream(SyncStream):
             tag_function = lambda file: {'file_name': Path(file).stem}
         self.tag_function = tag_function
 
-    def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
-        for file in Path(self.file_path).glob(self.pattern):
-            yield self.tag_function(file), {self.name: file}
+    def __call__(self) -> SyncStream:
+        def generator() -> Iterator[Tuple[Tag, Packet]]:
+            for file in Path(self.file_path).glob(self.pattern):
+                yield self.tag_function(file), {self.name: file}
+        return SyncStreamFromGenerator(generator)
