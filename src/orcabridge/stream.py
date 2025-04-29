@@ -1,8 +1,10 @@
-from typing import Generator, Tuple, Dict, Any, Callable, Iterator
+from typing import Generator, Tuple, Dict, Any, Callable, Iterator, Optional
 from .types import Tag, Packet
 
+
+
 class Stream():
-    def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
+    def __iter__(self, source: Optional['Operation']) -> Iterator[Tuple[Tag, Packet]]:
         raise NotImplementedError("Subclasses must implement __iter__ method")
 
 class SyncStream(Stream):
@@ -11,13 +13,17 @@ class SyncStream(Stream):
     will have to wait for the stream to finish before proceeding.
     """
     
+class Operation():
+    def __call__(self, *streams: SyncStream) -> SyncStream: ...
+    
 
 class SyncStreamFromGenerator(SyncStream):
     """
     A synchronous stream that is backed by a generator function.
     """
 
-    def __init__(self, generator_factory: Callable[[], Iterator[Tuple[Tag, Packet]]]) -> None:
+    def __init__(self, generator_factory: Callable[[], Iterator[Tuple[Tag, Packet]]], source: Optional[Operation] = None) -> None:
+        self.source = source
         self.generator_factory = generator_factory
 
     def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
