@@ -1,5 +1,4 @@
-from .stream import SyncStream
-
 class Operation():
-    def __call__(self, *streams: SyncStream) -> SyncStream: ...
-    
+    def __call__(self, *streams: 'SyncStream') -> 'SyncStream': ...
+
+from .stream import SyncStream

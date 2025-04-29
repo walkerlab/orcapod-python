@@ -1,5 +1,6 @@
 from typing import Generator, Tuple, Dict, Any, Callable, Iterator, Optional
 from .types import Tag, Packet
+from .operation import Operation
 
 
 
@@ -12,9 +13,7 @@ class SyncStream(Stream):
     A stream that will complete in a fixed amount of time. It is suitable for synchronous operations that
     will have to wait for the stream to finish before proceeding.
     """
-    
-class Operation():
-    def __call__(self, *streams: SyncStream) -> SyncStream: ...
+
     
 
 class SyncStreamFromGenerator(SyncStream):
