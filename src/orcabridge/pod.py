@@ -9,6 +9,7 @@ from .mapper import Join
 from .stream import SyncStream, SyncStreamFromGenerator
 from .types import Tag, Packet, PodFunction
 import json
+import shutil
 
 
 class Pod(Operation):
@@ -76,7 +77,7 @@ class FunctionPodWithDirStorage(FunctionPod):
     If store_name is None, the function name is used as the directory name.
     The output is stored in a file named based on the hash of the input packet.
     """
-    def __init__(self, function: PodFunction, output_keys: Optional[List[str]] = None, store_dir='./pod_data', store_name=None) -> None:
+    def __init__(self, function: PodFunction, output_keys: Optional[List[str]] = None, store_dir='./pod_data', store_name=None, copy_files=True) -> None:
         super().__init__(function, output_keys)
         self.store_dir = Path(store_dir)
         if store_name is None:
@@ -85,26 +86,42 @@ class FunctionPodWithDirStorage(FunctionPod):
         self.data_dir = self.store_dir / self.store_name
         # Create the data directory if it doesn't exist
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.copy_files = copy_files
         
-    def memoize(self, packet: Packet, output_packet: Packet) -> bool:
+    def memoize(self, packet: Packet, output_packet: Packet, force=False) -> bool:
         packet_hash = hash_dict(packet)
-        output_path = self.data_dir / f"{packet_hash}.json"
-        if output_path.exists():
-            logger.info(f"File with name {output_path.name} already exists, and will not be overwritten")
+        output_dir = self.data_dir / f"{packet_hash}"
+        info_path = output_dir / "_info.json"
+        
+        if info_path.exists() and not force:
+            logger.info(f"Entry for packet {packet}already exists, and will not be overwritten")
             return False
         else:
-            with open(output_path, 'w') as f:
+            output_dir.mkdir(parents=True, exist_ok=True)
+            if self.copy_files:
+                new_output_packet = {}
+                # copy the files to the output directory
+                for key, value in output_packet.items():
+                    output_path = output_dir / Path(value).name
+                    shutil.copy(value, output_path)
+                    # register the key with the new path
+                    new_output_packet[key] = str(output_path)
+                output_packet = new_output_packet
+            # store the packet in a json file
+            with open(info_path, 'w') as f:
                 json.dump(output_packet, f)
             logger.info(f"Stored output for packet {packet} at {output_path}")
             return True
     
     def retrieve_memoized(self, packet: Packet) -> Optional[Packet]:
         packet_hash = hash_dict(packet)
-        output_path = self.data_dir / f"{packet_hash}.json"
-        if output_path.exists():
-            with open(output_path, 'r') as f:
+        output_dir = self.data_dir / f"{packet_hash}"
+        info_path = output_dir / "_info.json"
+        
+        if info_path.exists():
+            with open(info_path, 'r') as f:
                 output_packet = json.load(f)
-            logger.info(f"Retrieved output for packet {packet} from {output_path}")
+            logger.info(f"Retrieved output for packet {packet} from {info_path}")
             return output_packet
         else:
             logger.info(f"No memoized output found for packet {packet}")
