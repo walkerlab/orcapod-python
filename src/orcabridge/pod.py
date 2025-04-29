@@ -77,7 +77,7 @@ class FunctionPodWithDirStorage(FunctionPod):
     If store_name is None, the function name is used as the directory name.
     The output is stored in a file named based on the hash of the input packet.
     """
-    def __init__(self, function: PodFunction, output_keys: Optional[List[str]] = None, store_dir='./pod_data', store_name=None, copy_files=True) -> None:
+    def __init__(self, function: PodFunction, output_keys: Optional[List[str]] = None, store_dir='./pod_data', store_name=None, copy_files=True, preserve_filename=True) -> None:
         super().__init__(function, output_keys)
         self.store_dir = Path(store_dir)
         if store_name is None:
@@ -87,6 +87,7 @@ class FunctionPodWithDirStorage(FunctionPod):
         # Create the data directory if it doesn't exist
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.copy_files = copy_files
+        self.preserve_filename = preserve_filename
         
     def memoize(self, packet: Packet, output_packet: Packet, force=False) -> bool:
         packet_hash = hash_dict(packet)
@@ -102,10 +103,21 @@ class FunctionPodWithDirStorage(FunctionPod):
                 new_output_packet = {}
                 # copy the files to the output directory
                 for key, value in output_packet.items():
-                    output_path = output_dir / Path(value).name
+                    if self.preserve_filename:
+                        relative_output_path = Path(value).name
+                        if (output_dir / relative_output_path).exists():
+                            raise ValueError(f"File {relative_output_path} already exists in {output_path}")
+                    else:
+                        # preserve the suffix of the original if present
+                        relative_output_path = key + Path(value).suffix
+                        
+                    output_path = output_dir / relative_output_path
+                    if output_path.exists() and not force:
+                        # TODO: handle case where it's a directory
+                        raise ValueError(f"File {relative_output_path} already exists in {output_path}")
                     shutil.copy(value, output_path)
                     # register the key with the new path
-                    new_output_packet[key] = str(output_path)
+                    new_output_packet[key] = str(relative_output_path)
                 output_packet = new_output_packet
             # store the packet in a json file
             with open(info_path, 'w') as f:
@@ -121,6 +133,9 @@ class FunctionPodWithDirStorage(FunctionPod):
         if info_path.exists():
             with open(info_path, 'r') as f:
                 output_packet = json.load(f)
+            # update the paths to be absolute
+            for key, value in output_packet.items():
+                output_packet[key] = str(output_dir / value)
             logger.info(f"Retrieved output for packet {packet} from {info_path}")
             return output_packet
         else:
