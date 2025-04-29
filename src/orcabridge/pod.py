@@ -17,11 +17,13 @@ class Pod(Operation):
 
 
 class FunctionPod(Pod):
-    def __init__(self, function: PodFunction, output_keys: Optional[List[str]] = None) -> None:
+    def __init__(self, function: PodFunction, output_keys: Optional[List[str]] = None, force_computation=False, skip_memoization=False) -> None:
         self.function = function
         if output_keys is None:
             output_keys = []
         self.output_keys = output_keys
+        self.skip_memoization = skip_memoization
+        self.force_computation = force_computation
 
     def __call__(self, *streams: SyncStream) -> SyncStream:
         # if multiple streams are provided, join them
@@ -38,7 +40,7 @@ class FunctionPod(Pod):
             n_computed = 0
             for tag, packet in stream:
                 memoized_packet = self.retrieve_memoized(packet)
-                if memoized_packet is not None:
+                if not self.force_computation and memoized_packet is not None:
                     yield tag, memoized_packet
                     continue
                 values = self.function(**packet)
@@ -56,15 +58,16 @@ class FunctionPod(Pod):
                 
                 output_packet: Packet = {k: v for k, v in zip(self.output_keys, values)}
 
-                status = self.memoize(packet, output_packet)
-                logger.info(f"Store status for element {packet}: {status}")
+                if not self.skip_memoization:
+                    status = self.memoize(packet, output_packet)
+                    logger.info(f"Store status for element {packet}: {status}")
 
                 n_computed += 1
                 logger.info(f"Computed item {n_computed}")
                 yield tag, output_packet
-        return SyncStreamFromGenerator(generator)
-        
-    def memoize(self, packet: Packet, output_packet: Packet) -> bool:
+        return SyncStreamFromGenerator(generator, source=self)
+
+    def memoize(self, packet: Packet, output_packet: Packet, overwrite: bool=False) -> bool:
         return False
     
     def retrieve_memoized(self, packet: Packet) -> Optional[Packet]:
@@ -77,8 +80,8 @@ class FunctionPodWithDirStorage(FunctionPod):
     If store_name is None, the function name is used as the directory name.
     The output is stored in a file named based on the hash of the input packet.
     """
-    def __init__(self, function: PodFunction, output_keys: Optional[List[str]] = None, store_dir='./pod_data', store_name=None, copy_files=True, preserve_filename=True) -> None:
-        super().__init__(function, output_keys)
+    def __init__(self, function: PodFunction, output_keys: Optional[List[str]] = None, store_dir='./pod_data', store_name=None, copy_files=True, preserve_filename=True, **kwargs) -> None:
+        super().__init__(function, output_keys, **kwargs)
         self.store_dir = Path(store_dir)
         if store_name is None:
             store_name = self.function.__name__
@@ -89,13 +92,13 @@ class FunctionPodWithDirStorage(FunctionPod):
         self.copy_files = copy_files
         self.preserve_filename = preserve_filename
         
-    def memoize(self, packet: Packet, output_packet: Packet, force=False) -> bool:
+    def memoize(self, packet: Packet, output_packet: Packet, overwrite: bool=False) -> bool:
         packet_hash = hash_dict(packet)
         output_dir = self.data_dir / f"{packet_hash}"
         info_path = output_dir / "_info.json"
         
-        if info_path.exists() and not force:
-            logger.info(f"Entry for packet {packet}already exists, and will not be overwritten")
+        if info_path.exists() and not overwrite:
+            logger.info(f"Entry for packet {packet} already exists, and will not be overwritten")
             return False
         else:
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -112,7 +115,7 @@ class FunctionPodWithDirStorage(FunctionPod):
                         relative_output_path = key + Path(value).suffix
                         
                     output_path = output_dir / relative_output_path
-                    if output_path.exists() and not force:
+                    if output_path.exists() and not overwrite:
                         # TODO: handle case where it's a directory
                         raise ValueError(f"File {relative_output_path} already exists in {output_path}")
                     shutil.copy(value, output_path)
@@ -141,3 +144,7 @@ class FunctionPodWithDirStorage(FunctionPod):
         else:
             logger.info(f"No memoized output found for packet {packet}")
             return None
+
+    def clear_store(self) -> None:
+        # delete the folder self.data_dir and its content
+        shutil.rmtree(self.data_dir)
