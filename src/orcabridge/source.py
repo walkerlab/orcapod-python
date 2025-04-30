@@ -1,6 +1,3 @@
-
-
-
 from .pod import Pod
 from .stream import SyncStream, SyncStreamFromGenerator
 from .types import Tag, Packet
@@ -12,6 +9,7 @@ from pathlib import Path
 class Source(Pod):
     def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
         yield from self()
+
 
 class GlobSource(Source):
     """
@@ -38,20 +36,28 @@ class GlobSource(Source):
     >>> # Match all .txt files in data_dir, using filename as tag
     >>> glob_source = GlobSource('txt_file', 'data_dir', '*.txt')
     >>> # Match all files but use custom tag function
-    >>> glob_source = GlobSource('file', 'data_dir', '*', 
+    >>> glob_source = GlobSource('file', 'data_dir', '*',
     ...                     lambda f: {'date': Path(f).stem[:8]})
-    """ 
-    def __init__(self, name: str, file_path: PathLike, pattern: str ='*', tag_function: Optional[Callable[[PathLike], Tag]] = None) -> None:
+    """
+
+    def __init__(
+        self,
+        name: str,
+        file_path: PathLike,
+        pattern: str = "*",
+        tag_function: Optional[Callable[[PathLike], Tag]] = None,
+    ) -> None:
         self.name = name
         self.file_path = file_path
         self.pattern = pattern
         if tag_function is None:
             # extract the file name without extension
-            tag_function = lambda file: {'file_name': Path(file).stem}
+            tag_function = lambda file: {"file_name": Path(file).stem}
         self.tag_function = tag_function
 
     def __call__(self) -> SyncStream:
         def generator() -> Iterator[Tuple[Tag, Packet]]:
             for file in Path(self.file_path).glob(self.pattern):
                 yield self.tag_function(file), {self.name: file}
+
         return SyncStreamFromGenerator(generator)

@@ -1,5 +1,5 @@
 from .stream import SyncStream
 
-class Operation():
+
+class Operation:
     def __call__(self, *streams: SyncStream) -> SyncStream: ...
-    
