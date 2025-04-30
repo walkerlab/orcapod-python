@@ -34,11 +34,7 @@
                 "request": "launch",
                 "console": "integratedTerminal",
                 "justMyCode": false,
-                "program": "file.py",
-                "args": [
-                    "arg1",
-                    "arg2"
-                ]
+                "program": "${file}",
             }
         ]
     },
