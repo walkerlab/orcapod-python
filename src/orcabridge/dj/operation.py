@@ -1,11 +1,12 @@
 from .stream import DJStream, FixedStreamFromTable
 from ..mapper import Join
 
+
 class JoinDJ(Join, DJStream):
     """
     DataJoint specific Join operation that only works on DJ table streams
     """
-    
+
     def __init__(self, *streams):
         self.streams = streams
         joined_query = streams[0].query
@@ -23,9 +24,9 @@ class JoinDJ(Join, DJStream):
 
     def __iter__(self):
         for row in self._query.fetch(as_dict=True):
-            yield {k: row[k] for k in self.tags}, {k: row[k] for k in row if k not in self.tags}
+            yield {k: row[k] for k in self.tags}, {
+                k: row[k] for k in row if k not in self.tags
+            }
 
     def __len__(self):
         return self._query.count()
-
-    

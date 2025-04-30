@@ -18,10 +18,12 @@ Packet = Mapping[str, Pathset]
 # a batch is a tuple of a tag and a list of packets
 Batch = Tuple[Tag, Sequence[Packet]]
 
+
 class PodFunction(Protocol):
     """
     A function suitable to be used in a FunctionPod.
     It takes one or more named arguments, each corresponding to a path to a file or directory,
     and returns a path or a list of paths
     """
+
     def __call__(self, **kwargs: Pathset) -> Union[PathLike, List[Pathset]]: ...
