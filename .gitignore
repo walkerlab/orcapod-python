@@ -178,3 +178,7 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+
+# Ignore DJ conf file
+dj_*_conf.json

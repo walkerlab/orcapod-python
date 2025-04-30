@@ -1,94 +1,89 @@
 
-from .stream import FixedStreamFromTable, DJStream
+from .stream import QueryStream
 from ..name import pascal_to_snake, snake_to_pascal
 from ..hash import hash_dict
-from ..pod import FunctionPod
-from .operation import JoinDJ
+from ..pod import FunctionPod, FunctionPodWithDirStorage
+from .mapper import JoinQuery
 import datajoint as dj
 
 import logging
 logger = logging.getLogger(__name__)
 
-class DJFunctionPod(FunctionPod):
-    def __init__(self, function, output_keys, schema, name=None, store="./"):
-        self.name = name if name is not None else function.__name__
-        # store function name as snake_case
-        self.name = pascal_to_snake(self.name)
-        self.uuid_field = f"{self.name}_uuid"
-        self.function = function
-        self.output_keys = output_keys
-        self.schema = schema
-        self.store_dir = store
-        self.table = self.prepare_table()
+# class FunctionPodWithTableStore(FunctionPod):
+#     def __init__(self, function, output_keys, schema, table_name=None, )
 
-    def prepare_table(self):
-        class Table(dj.Manual):
-            definition = f"""
-            # {self.name} outputs
-            {self.uuid_field}: uuid  # UUID for the function pod entry
-            ---
-            input_files: varchar(2055) # map to input paths
-            {{outputs}}
-            """.format(outputs='\n'.join([f"{k}: varchar(255)" for k in self.output_keys]))
-        Table.__name__ = snake_to_pascal(self.name)
-        Table = self.schema(Table)
-        return Table()
-    
-    
-    def memoize(self, tag, element, output):
-        # create a key for the table
-        key = {self.uuid_field: hash_dict(element)}
-        # verify the key doesn't exist
-        if not self.table & key:
-            # insert the new entry into the table
-            input_files = ','.join([f"{k}:{v}" for k, v in element.items()])
-            self.table.insert1({**key, **output, 'input_files': input_files})
-            return True
-        else:
-            logger.info(f"Key {key} already exists in the table")
-            return False
-    
-    def retrieve_memoized(self, element):
-        key = {self.uuid_field: hash_dict(element)}
-        if self.table & key:
-            # if the key already exists, return the output
-            row = (self.table & key).fetch1()
-            output = {k: row[k] for k in self.output_keys}
-            return True, output
-        return False, None
+# class DJFunctionPod(FunctionPod):
+#     def __init__(self, function, output_keys, schema, name=None, store="./"):
+#         self.name = name if name is not None else function.__name__
+#         # store function name as snake_case
+#         self.name = pascal_to_snake(self.name)
+#         self.uuid_field = f"{self.name}_uuid"
+#         self.function = function
+#         self.output_keys = output_keys
+#         self.schema = schema
+#         self.store_dir = store
+#         self.table = self.prepare_table()
 
-    def execute(self, *streams):
-        return sum(1 for _ in self(*streams))
+#     def prepare_table(self):
+#         class Table(dj.Manual):
+#             definition = f"""
+#             # {self.name} outputs
+#             {self.uuid_field}: uuid  # UUID for the function pod entry
+#             ---
+#             input_files: varchar(2055) # map to input paths
+#             {{outputs}}
+#             """.format(outputs='\n'.join([f"{k}: varchar(255)" for k in self.output_keys]))
+#         Table.__name__ = snake_to_pascal(self.name)
+#         Table = self.schema(Table)
+#         return Table()
+    
+    
+#     def memoize(self, tag, element, output):
+#         # create a key for the table
+#         key = {self.uuid_field: hash_dict(element)}
+#         # verify the key doesn't exist
+#         if not self.table & key:
+#             # insert the new entry into the table
+#             input_files = ','.join([f"{k}:{v}" for k, v in element.items()])
+#             self.table.insert1({**key, **output, 'input_files': input_files})
+#             return True
+#         else:
+#             logger.info(f"Key {key} already exists in the table")
+#             return False
+    
+#     def retrieve_memoized(self, element):
+#         key = {self.uuid_field: hash_dict(element)}
+#         if self.table & key:
+#             # if the key already exists, return the output
+#             row = (self.table & key).fetch1()
+#             output = {k: row[k] for k in self.output_keys}
+#             return True, output
+#         return False, None
+
+#     def execute(self, *streams):
+#         return sum(1 for _ in self(*streams))
             
-    def __iter__(self):
-        # iterate over the table
-        return iter(FixedStreamFromTable(self.table))
+#     def __iter__(self):
+#         # iterate over the table
+#         return iter(FixedStreamFromTable(self.table))
     
 
 
-class DJLinkedFunctionPod(FunctionPod, DJStream):
+class DJFunctionPod(FunctionPod):
     """
     Specialized FunctionPod that can only operate on DataJoint table-based streams.
     As it works on table-based streams, it automatically creates tables with proper foreign keys
     mapping out the execution path
     """
-    def __init__(self, function, output_keys, schema, table_name, function_name, fp_schema=None, store="./", force_multi_source=False):
-        if fp_schema is None:
-            # use the same schema as linked table for the underlying function pod(s)
-            fp_schema = schema
-
-        self.fp = DJFunctionPod(function, output_keys, fp_schema, name=function_name, store=store)
-        self.force_multi_source = force_multi_source
+    def __init__(self, function, output_keys, schema, table_name, function_name=None, store="./pod_data", force_multi_source=False):
         self.schema = schema
+        self.fp = FunctionPodWithDirStorage(function, output_keys, store_name=function_name, store_dir=store)
+        self.force_multi_source = force_multi_source
         self.table_name = snake_to_pascal(table_name)
         self.upstreams = {}
         self.table = None
         self._table_stream = None
 
-    @property
-    def tags(self):
-        return self._table_stream.tags
-    
     @property
     def tables(self):
         return self._table_stream.tables
@@ -97,13 +92,21 @@ class DJLinkedFunctionPod(FunctionPod, DJStream):
     def query(self):
         return self._table_stream.query
 
-    def __call__(self, *streams):
+    def __call__(self, *streams: QueryStream) -> QueryStream:
         # verify that all stream are DJStreams
-        if not all(isinstance(s, DJStream) for s in streams):
-            raise ValueError("All streams must be DJStreams")
-        joined_streams = JoinDJ(*streams)
+        if len(streams) < 1:
+            raise ValueError("DJFunctionPod requires at least one stream")
+
+        if not all(isinstance(s, QueryStream) for s in streams):
+            raise ValueError("All streams must be QueryStreams")
+        if len(streams) > 1:
+            joined_streams = JoinQuery(*streams)
+        else:
+            joined_streams = streams[0]
+
         self.update_upstreams(joined_streams.tables)
-        yield from self.fp(joined_streams)
+
+        return self.fp(joined_streams)
 
     def update_upstreams(self, tables):
         sorted_tables = sorted(tables)
