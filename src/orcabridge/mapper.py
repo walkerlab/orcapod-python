@@ -31,7 +31,10 @@ class Join(Mapper):
                     if (joined_tag := join_tags(left_tag, right_tag)) is not None:
                         yield joined_tag, {**left_packet, **right_packet}
         
-        return SyncStreamFromGenerator(generator, source=self)
+        return SyncStreamFromGenerator(generator)
+
+    def __repr__(self) -> str:
+        return "Join()"
 
 class MapKeys(Mapper):
     """
@@ -58,7 +61,10 @@ class MapKeys(Mapper):
                 else:
                     packet = {self.key_map.get(k, k): v for k, v in packet.items()}
                 yield tag, packet
-        return SyncStreamFromGenerator(generator, source=self)
+        return SyncStreamFromGenerator(generator)
+
+    def __repr__(self) -> str:
+        return f"MapKeys({self.key_map})"
 
 
 class MapTags(Operation):
@@ -86,7 +92,10 @@ class MapTags(Operation):
                 else:
                     tag = {self.tag_map.get(k, k): v for k, v in tag.items()}
                 yield tag, packet
-        return SyncStreamFromGenerator(generator, source=self)
+        return SyncStreamFromGenerator(generator)
+
+    def __repr__(self) -> str:
+        return f"MapTags({self.tag_map})"
         
 class Filter(Mapper):
     """
@@ -108,7 +117,10 @@ class Filter(Mapper):
             for tag, packet in stream:
                 if self.predicate(tag, packet):
                     yield tag, packet
-        return SyncStreamFromGenerator(generator, source=self)
+        return SyncStreamFromGenerator(generator)
+
+    def __repr__(self) -> str:
+        return f"Filter({self.predicate})"
 
 
 class Transform(Mapper):
@@ -130,7 +142,10 @@ class Transform(Mapper):
         def generator():
             for tag, packet in stream:
                 yield self.transform(tag, packet)
-        return SyncStreamFromGenerator(generator, source=self)
+        return SyncStreamFromGenerator(generator)
+
+    def __repr__(self) -> str:
+        return f"Transform({self.transform})"
 
     
 class Batch(Mapper):
@@ -167,7 +182,10 @@ class Batch(Mapper):
             if batch_tags and not self.drop_last:
                 yield self.tag_processor(batch_tags), batch_packet(batch_packets)
 
-        return SyncStreamFromGenerator(generator, source=self)
+        return SyncStreamFromGenerator(generator)
+
+    def __repr__(self) -> str:
+        return f"Batch(size={self.batch_size}, drop_last={self.drop_last})"
     
 class CacheStream(Mapper):
     """
@@ -197,7 +215,7 @@ class CacheStream(Mapper):
                 for tag, packet in self.cache:
                     yield tag, packet
 
-        return SyncStreamFromGenerator(generator, source=self)
+        return SyncStreamFromGenerator(generator)
     
     def clear_cache(self) -> None:
         """
@@ -205,3 +223,6 @@ class CacheStream(Mapper):
         """
         self.cache = []
         self.is_cached = False
+
+    def __repr__(self) -> str:
+        return f"CacheStream(active:{self.is_cached})"
