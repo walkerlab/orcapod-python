@@ -42,6 +42,7 @@ class GlobSource(Source):
     ...                     lambda f: {'date': Path(f).stem[:8]})
     """ 
     def __init__(self, name: str, file_path: PathLike, pattern: str ='*', tag_function: Optional[Callable[[PathLike], Tag]] = None) -> None:
+        super().__init__()
         self.name = name
         self.file_path = file_path
         self.pattern = pattern
@@ -50,7 +51,7 @@ class GlobSource(Source):
             tag_function = lambda file: {'file_name': Path(file).stem}
         self.tag_function = tag_function
 
-    def __call__(self) -> SyncStream:
+    def forward(self) -> SyncStream:
         def generator() -> Iterator[Tuple[Tag, Packet]]:
             for file in Path(self.file_path).glob(self.pattern):
                 yield self.tag_function(file), {self.name: file}

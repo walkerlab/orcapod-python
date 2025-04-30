@@ -15,7 +15,7 @@ class Mapper(Operation):
    
 
 class Join(Mapper):
-    def __call__(self, *streams: SyncStream) -> SyncStream:
+    def forward(self, *streams: SyncStream) -> SyncStream:
         """
         Joins two streams together based on their tags.
         The resulting stream will contain all the tags from both streams.
@@ -41,10 +41,11 @@ class MapKeys(Mapper):
     drop_unmapped=False, in which case unmapped keys will be retained.
     """
     def __init__(self, key_map: Dict[str, str], drop_unmapped: bool = True) -> None:
+        super().__init__()
         self.key_map = key_map
         self.drop_unmapped = drop_unmapped
 
-    def __call__(self, *streams: SyncStream) -> SyncStream:
+    def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
             raise ValueError("MapKeys operation requires exactly one stream")
         
@@ -68,10 +69,11 @@ class MapTags(Operation):
     drop_unmapped=False, in which case unmapped tags will be retained.
     """
     def __init__(self, tag_map: Dict[str, str], drop_unmapped: bool = True) -> None:
+        super().__init__()
         self.tag_map = tag_map
         self.drop_unmapped = drop_unmapped
 
-    def __call__(self, *streams: SyncStream) -> SyncStream:
+    def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
             raise ValueError("MapTags operation requires exactly one stream")
         
@@ -93,9 +95,10 @@ class Filter(Mapper):
     The predicate function should return True for packets that should be kept and False for packets that should be dropped.
     """
     def __init__(self, predicate: Callable[[Tag, Packet], bool]):
+        super().__init__()
         self.predicate = predicate
 
-    def __call__(self, *streams: SyncStream) -> SyncStream:
+    def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
             raise ValueError("Filter operation requires exactly one stream")
         
@@ -115,9 +118,10 @@ class Transform(Mapper):
     The transformation function should return a tuple of (new_tag, new_packet).
     """
     def __init__(self, transform: Callable[[Tag, Packet], Tuple[Tag, Packet]]):
+        super().__init__()
         self.transform = transform
 
-    def __call__(self, *streams: SyncStream) -> SyncStream:
+    def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
             raise ValueError("Transform operation requires exactly one stream")
         
@@ -136,6 +140,7 @@ class Batch(Mapper):
     If the final batch is smaller than the batch size, it will be dropped unless drop_last=False.
     """
     def __init__(self, batch_size: int, tag_processor: Optional[Callable[[Sequence[Tag]], Tag]] = None, drop_last: bool = True):
+        super().__init__()
         self.batch_size = batch_size
         if tag_processor is None:
             tag_processor = lambda tags: batch_tag(tags)
@@ -143,7 +148,7 @@ class Batch(Mapper):
         self.tag_processor = tag_processor
         self.drop_last = drop_last
 
-    def __call__(self, *streams: SyncStream) -> SyncStream:
+    def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
             raise ValueError("Batch operation requires exactly one stream")
         
@@ -172,10 +177,11 @@ class CacheStream(Mapper):
     Call `clear_cache()` to clear the cache.
     """
     def __init__(self) -> None:
+        super().__init__()
         self.cache: List[Tuple[Tag, Packet]] = []
         self.is_cached = False
 
-    def __call__(self, *streams: SyncStream) -> SyncStream:
+    def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
             raise ValueError("CacheStream operation requires exactly one stream")
         

@@ -18,6 +18,7 @@ class Pod(Operation):
 
 class FunctionPod(Pod):
     def __init__(self, function: PodFunction, output_keys: Optional[List[str]] = None, force_computation=False, skip_memoization=False) -> None:
+        super().__init__()
         self.function = function
         if output_keys is None:
             output_keys = []
@@ -25,7 +26,7 @@ class FunctionPod(Pod):
         self.skip_memoization = skip_memoization
         self.force_computation = force_computation
 
-    def __call__(self, *streams: SyncStream) -> SyncStream:
+    def forward(self, *streams: SyncStream) -> SyncStream:
         # if multiple streams are provided, join them
         if len(streams) > 1:
             stream = streams[0]
