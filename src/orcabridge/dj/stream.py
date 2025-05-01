@@ -28,3 +28,20 @@ class TableStream(QueryStream):
     def __init__(self, table: Table) -> None:
         super().__init__(table, [table])
         self.table = table
+
+
+class TableCachedStream(TableStream):
+    """
+    A stream that caches the output from another stream into a DJ table
+    and then returns the content. Effectively act as a TableStream as
+    all returned packets can be found in the table.
+    """
+    def __init__(self, table: Table, stream: SyncStream) -> None:
+        super().__init__(table)
+        self.stream = stream
+
+    def __iter__(self):
+        for tag, packet in self.stream:
+            # cache the packet into the table
+            self.table.insert1(tag | packet, skip_duplicates=True)
+            yield tag, packet

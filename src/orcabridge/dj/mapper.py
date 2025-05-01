@@ -5,18 +5,24 @@ class JoinQuery(Mapper):
     """
     DataJoint specific Join operation that only works on DJ table streams
     """
-    def __call__(self, *streams: QueryStream) -> QueryStream:
+    def __call__(self, *streams: QueryStream, project=False) -> QueryStream:
         if len(streams) < 2:
             raise ValueError("Join operation requires at least two streams")
         
         if not all(isinstance(s, QueryStream) for s in streams):
             raise ValueError("All streams must be QueryStreams")
         
+        
+
         # join the tables
-        joined_query = streams[0].query
-        upstream_tables = set(streams[0].upstream_tables)
-        for stream in streams[1:]:
-            joined_query = joined_query * stream.query
+        joined_query = None
+        upstream_tables = set()
+        for stream in streams:
+            next_query = stream.query.proj() if project else stream.query
+            if joined_query is None:
+                joined_query = next_query
+            else:
+                joined_query = joined_query * stream.query
             upstream_tables.update(stream.upstream_tables)
 
         return QueryStream(joined_query, upstream_tables)
