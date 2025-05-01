@@ -2,7 +2,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from pathlib import Path
-from typing import List, Optional, Tuple, Iterator, Iterable
+from typing import List, Optional, Tuple, Iterator, Iterable, Collection
 from .hash import hash_dict
 from .operation import Operation
 from .mapper import Join
@@ -17,7 +17,7 @@ class Pod(Operation):
 
 
 class FunctionPod(Pod):
-    def __init__(self, function: PodFunction, output_keys: Optional[List[str]] = None, force_computation=False, skip_memoization=False) -> None:
+    def __init__(self, function: PodFunction, output_keys: Optional[Collection[str]] = None, force_computation=False, skip_memoization=False) -> None:
         super().__init__()
         self.function = function
         if output_keys is None:
@@ -60,16 +60,17 @@ class FunctionPod(Pod):
                 output_packet: Packet = {k: v for k, v in zip(self.output_keys, values)}
 
                 if not self.skip_memoization:
-                    status = self.memoize(packet, output_packet)
-                    logger.info(f"Store status for element {packet}: {status}")
+                    # output packet may be modified by the memoization process
+                    # e.g. if the output is a file, the path may be changed
+                    output_packet = self.memoize(packet, output_packet)
 
                 n_computed += 1
                 logger.info(f"Computed item {n_computed}")
                 yield tag, output_packet
-        return SyncStreamFromGenerator(generator, source=self)
+        return SyncStreamFromGenerator(generator)
 
-    def memoize(self, packet: Packet, output_packet: Packet, overwrite: bool=False) -> bool:
-        return False
+    def memoize(self, packet: Packet, output_packet: Packet, overwrite: bool=False) -> Packet:
+        return output_packet
     
     def retrieve_memoized(self, packet: Packet) -> Optional[Packet]:
         return None
@@ -93,7 +94,7 @@ class FunctionPodWithDirStorage(FunctionPod):
         self.copy_files = copy_files
         self.preserve_filename = preserve_filename
         
-    def memoize(self, packet: Packet, output_packet: Packet, overwrite: bool=False) -> bool:
+    def memoize(self, packet: Packet, output_packet: Packet, overwrite: bool=False) -> Packet:
         packet_hash = hash_dict(packet)
         output_dir = self.data_dir / f"{packet_hash}"
         info_path = output_dir / "_info.json"
@@ -127,7 +128,7 @@ class FunctionPodWithDirStorage(FunctionPod):
             with open(info_path, 'w') as f:
                 json.dump(output_packet, f)
             logger.info(f"Stored output for packet {packet} at {output_path}")
-            return True
+            return output_packet
     
     def retrieve_memoized(self, packet: Packet) -> Optional[Packet]:
         packet_hash = hash_dict(packet)
