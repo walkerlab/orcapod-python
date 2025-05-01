@@ -3,11 +3,56 @@ from .stream import QueryStream
 from ..name import pascal_to_snake, snake_to_pascal
 from ..hash import hash_dict
 from ..pod import FunctionPod, FunctionPodWithDirStorage
+from ..types import PodFunction
 from .mapper import JoinQuery
+from ..operation import Operation
 import datajoint as dj
+from datajoint import Schema
+from typing import Collection, Optional
 
 import logging
 logger = logging.getLogger(__name__)
+
+
+class TableWrapper(Operation):
+    def __init__(self, fp: FunctionPod, schema: Schema, table_name: str = None, streams: Collection[QueryStream] = None):
+        self.fp = fp
+        self.schema = schema
+        self.table_name = table_name if table_name is not None else pascal_to_snake(fp.function.__name__)
+        self.streams = streams if streams is not None else []
+        self.table = None
+
+    def compile(self) -> None:
+        if not all(isinstance(s, QueryStream) for s in self.streams):
+            raise ValueError("All streams must be QueryStreams")
+        
+        # assign all upstrem tables to a local list
+        upstream_tables = [table for stream in self.streams for table in stream.upstream_tables]
+        #upstreams = '\n'.join([f"-> self.streams[{i}].upstream_tables[{j}]" for i, stream in enumerate(self.streams) for j in range(len(stream.upstream_tables))])
+        upstreams = "\n".join(f"-> upstream_tables[{i}]" for i in range(len(upstream_tables)))
+        outputs = '\n'.join([f"{k}: varchar(255)" for k in self.fp.output_keys])
+
+        class Table(dj.Computed):
+            definition = f"""
+            # {self.table_name} outputs
+            {upstreams}
+            ---
+            {outputs}
+            """
+
+            def make(self, key):
+                
+
+        Table.__name__ = snake_to_pascal(self.table_name)
+        Table = self.schema(Table)
+        self.table = Table()
+
+
+    def forward(self, *args):
+        pass
+
+
+    
 
 # class FunctionPodWithTableStore(FunctionPod):
 #     def __init__(self, function, output_keys, schema, table_name=None, )
