@@ -19,3 +19,12 @@ class QueryStream(SyncStream):
             tag = {k: row[k] for k in self.query.primary_key}
             packet = {k: row[k] for k in row if k not in self.query.primary_key}
             yield tag, packet
+
+
+class TableStream(QueryStream):
+    """
+    DataJoint table-based data stream
+    """
+    def __init__(self, table: Table) -> None:
+        super().__init__(table, [table])
+        self.table = table
