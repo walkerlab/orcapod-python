@@ -11,6 +11,7 @@ class TableSource(Source):
     """
 
     def __init__(self, table: Union[Table, type[Table]]) -> None:
+        # if table is a class, instantiate it for consistency
         if isinstance(table, type):
             table = table()
         self.table = table
@@ -41,7 +42,7 @@ class TableSource(Source):
         return self.table.__repr__()
 
     def preview(self, limit=None, width=None):
-        return self.table.review(self, limit, width)
+        return self.table.preview(self, limit=limit, width=width)
 
     def _repr_html_(self):
         """:return: HTML to display table in Jupyter notebook."""
