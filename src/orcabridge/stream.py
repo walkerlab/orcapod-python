@@ -3,7 +3,8 @@ from .types import Tag, Packet
 from .operation import Operation, Invocation
 
 
-class Stream():
+
+class Stream:
     def __init__(self):
         self._source: Optional[Invocation] = None
 
@@ -20,6 +21,7 @@ class Stream():
     def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
         raise NotImplementedError("Subclasses must implement __iter__ method")
 
+
 class SyncStream(Stream):
     """
     A stream that will complete in a fixed amount of time. It is suitable for synchronous operations that
@@ -29,22 +31,21 @@ class SyncStream(Stream):
         if hasattr(self, 'source') and self.source is not None:
             return hash(self.source)
         return super().__hash__()
-    
+
 
 class SyncStreamFromGenerator(SyncStream):
     """
     A synchronous stream that is backed by a generator function.
     """
 
-    def __init__(self, generator_factory: Callable[[], Iterator[Tuple[Tag, Packet]]]) -> None:
+    def __init__(
+        self, generator_factory: Callable[[], Iterator[Tuple[Tag, Packet]]]
+    ) -> None:
         super().__init__()
         self.generator_factory = generator_factory
 
     def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
         yield from self.generator_factory()
-    
+
     def __len__(self) -> int:
         return sum(1 for _ in self)
-    
-    
-

@@ -1,4 +1,5 @@
 import logging
+
 logger = logging.getLogger(__name__)
 
 from pathlib import Path
@@ -46,17 +47,21 @@ class FunctionPod(Pod):
                     continue
                 values = self.function(**packet)
                 if len(self.output_keys) == 0:
-                     values = []
+                    values = []
                 elif len(self.output_keys) == 1:
                     values = [values]
                 elif isinstance(values, Iterable):
                     values = list(values)
                 elif len(self.output_keys) > 1:
-                    raise ValueError("Values returned by function must be a pathlike or a sequence of pathlikes")
-                
+                    raise ValueError(
+                        "Values returned by function must be a pathlike or a sequence of pathlikes"
+                    )
+
                 if len(values) != len(self.output_keys):
-                    raise ValueError("Number of output keys does not match number of values returned by function")
-                
+                    raise ValueError(
+                        "Number of output keys does not match number of values returned by function"
+                    )
+
                 output_packet: Packet = {k: v for k, v in zip(self.output_keys, values)}
 
                 if not self.skip_memoization:
@@ -67,6 +72,7 @@ class FunctionPod(Pod):
                 n_computed += 1
                 logger.info(f"Computed item {n_computed}")
                 yield tag, output_packet
+
         return SyncStreamFromGenerator(generator)
 
     def memoize(self, packet: Packet, output_packet: Packet, overwrite: bool=False) -> Packet:
@@ -75,6 +81,7 @@ class FunctionPod(Pod):
     def retrieve_memoized(self, packet: Packet) -> Optional[Packet]:
         return None
 
+
 class FunctionPodWithDirStorage(FunctionPod):
     """
     A FunctionPod that stores the output in the specified directory.
@@ -82,7 +89,16 @@ class FunctionPodWithDirStorage(FunctionPod):
     If store_name is None, the function name is used as the directory name.
     The output is stored in a file named based on the hash of the input packet.
     """
-    def __init__(self, function: PodFunction, output_keys: Optional[List[str]] = None, store_dir='./pod_data', store_name=None, copy_files=True, preserve_filename=True, **kwargs) -> None:
+
+    def __init__(
+        self,
+        function: PodFunction,
+        output_keys: Optional[List[str]] = None,
+        store_dir="./pod_data",
+        store_name=None,
+        copy_files=True,
+        preserve_filename=True, **kwargs,
+    ) -> None:
         super().__init__(function, output_keys, **kwargs)
         self.store_dir = Path(store_dir)
         if store_name is None:
@@ -98,9 +114,11 @@ class FunctionPodWithDirStorage(FunctionPod):
         packet_hash = hash_dict(packet)
         output_dir = self.data_dir / f"{packet_hash}"
         info_path = output_dir / "_info.json"
-        
+
         if info_path.exists() and not overwrite:
-            logger.info(f"Entry for packet {packet} already exists, and will not be overwritten")
+            logger.info(
+                f"Entry for packet {packet} already exists, and will not be overwritten"
+            )
             return False
         else:
             output_dir.mkdir(parents=True, exist_ok=True)
@@ -111,21 +129,25 @@ class FunctionPodWithDirStorage(FunctionPod):
                     if self.preserve_filename:
                         relative_output_path = Path(value).name
                         if (output_dir / relative_output_path).exists():
-                            raise ValueError(f"File {relative_output_path} already exists in {output_path}")
+                            raise ValueError(
+                                f"File {relative_output_path} already exists in {output_path}"
+                            )
                     else:
                         # preserve the suffix of the original if present
                         relative_output_path = key + Path(value).suffix
-                        
+
                     output_path = output_dir / relative_output_path
                     if output_path.exists() and not overwrite:
                         # TODO: handle case where it's a directory
-                        raise ValueError(f"File {relative_output_path} already exists in {output_path}")
+                        raise ValueError(
+                            f"File {relative_output_path} already exists in {output_path}"
+                        )
                     shutil.copy(value, output_path)
                     # register the key with the new path
                     new_output_packet[key] = str(relative_output_path)
                 output_packet = new_output_packet
             # store the packet in a json file
-            with open(info_path, 'w') as f:
+            with open(info_path, "w") as f:
                 json.dump(output_packet, f)
             logger.info(f"Stored output for packet {packet} at {output_path}")
             return output_packet
@@ -134,9 +156,9 @@ class FunctionPodWithDirStorage(FunctionPod):
         packet_hash = hash_dict(packet)
         output_dir = self.data_dir / f"{packet_hash}"
         info_path = output_dir / "_info.json"
-        
+
         if info_path.exists():
-            with open(info_path, 'r') as f:
+            with open(info_path, "r") as f:
                 output_packet = json.load(f)
             # update the paths to be absolute
             for key, value in output_packet.items():

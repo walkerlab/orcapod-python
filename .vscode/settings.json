@@ -1,0 +1,41 @@
+{
+    "editor.formatOnPaste": false,
+    "editor.formatOnSave": true,
+    "notebook.formatOnSave.enabled": true,
+    "notebook.output.scrolling": true,
+    "editor.rulers": [
+        88
+    ],
+    "[python]": {
+        "editor.defaultFormatter": "ms-python.black-formatter"
+    },
+    "[markdown]": {
+        "editor.defaultFormatter": null
+    },
+    "workbench.editorAssociations": {
+        "*.md": "vscode.markdown.preview.editor"
+    },
+    "files.autoSave": "off",
+    "jupyter.kernels.excludePythonEnvironments": [
+        "/bin/python3",
+        "/usr/bin/python3",
+        "/usr/local/bin/python"
+    ],
+    "python.defaultInterpreterPath": "/home/vscode/.local/share/base/bin/python",
+    "python.terminal.activateEnvironment": false,
+    "gitlens.showWelcomeOnInstall": false,
+    "gitlens.showWhatsNewAfterUpgrades": false,
+    "launch": {
+        "version": "0.2.0",
+        "configurations": [
+            {
+                "name": "Python",
+                "type": "debugpy",
+                "request": "launch",
+                "console": "integratedTerminal",
+                "justMyCode": false,
+                "program": "${file}",
+            }
+        ]
+    },
+}

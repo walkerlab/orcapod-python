@@ -11,6 +11,7 @@ from datajoint import Schema
 from typing import Collection, Optional
 
 import logging
+
 logger = logging.getLogger(__name__)
 
 
@@ -132,7 +133,7 @@ class DJFunctionPod(FunctionPod):
     @property
     def tables(self):
         return self._table_stream.tables
-    
+
     @property
     def query(self):
         return self._table_stream.query
@@ -155,7 +156,7 @@ class DJFunctionPod(FunctionPod):
 
     def update_upstreams(self, tables):
         sorted_tables = sorted(tables)
-        key = ','.join(sorted_tables)
+        key = ",".join(sorted_tables)
         self.upstreams[key] = sorted_tables
 
     def compile(self):
@@ -171,9 +172,15 @@ class DJFunctionPod(FunctionPod):
             field_prefix = pascal_to_snake(self.table_name)
             for idx, (key, tables) in enumerate(self.upstreams.items()):
                 table_classes.append([dj.FreeTable(dj.conn(), t) for t in tables])
-                upstreams = '\n'.join([f"-> table_classes[{idx}][{i}]" for i in range(len(table_classes[idx]))])
+                upstreams = "\n".join(
+                    [
+                        f"-> table_classes[{idx}][{i}]"
+                        for i in range(len(table_classes[idx]))
+                    ]
+                )
                 print("upstreams are", upstreams)
                 outer_self = self
+
                 # create a table for each upstream
                 class Table(dj.Part, dj.Computed):
                     definition = f"""
@@ -190,10 +197,9 @@ class DJFunctionPod(FunctionPod):
                         for table in upstreams[1:]:
                             source = source * table.proj()
                         return source
-                        
-                
+
                     def make(self, key, _skip_computation=True):
-                        print('Working on ', key)
+                        print("Working on ", key)
                         upstreams = self.parents(primary=False, as_objects=True)
                         source = upstreams[0]
                         for table in upstreams[1:]:
@@ -202,26 +208,38 @@ class DJFunctionPod(FunctionPod):
                         # get only non primary keys
                         secondary_keys = source.heading.secondary_attributes
                         element = (source & key).fetch(*secondary_keys, as_dict=True)
-                        assert len(element) == 1, f"Expected one element, got {len(element)}"
+                        assert (
+                            len(element) == 1
+                        ), f"Expected one element, got {len(element)}"
                         element = element[0]
-
 
                         print(f"Fetched element: {element}")
 
-                        entry = outer_self.fp.table & {outer_self.fp.uuid_field: hash_dict(element)}
+                        entry = outer_self.fp.table & {
+                            outer_self.fp.uuid_field: hash_dict(element)
+                        }
                         if entry:
                             # hashing is done using MySQL table name
-                            master_key = {f'{field_prefix}_source_uuid': hash_dict(dict(key, part_table=self.table_name))}
-                            master_key[f'{field_prefix}_part_table'] = self.__class__.__name__
+                            master_key = {
+                                f"{field_prefix}_source_uuid": hash_dict(
+                                    dict(key, part_table=self.table_name)
+                                )
+                            }
+                            master_key[f"{field_prefix}_part_table"] = (
+                                self.__class__.__name__
+                            )
                             key.update(master_key)
 
-                            outputs = entry.fetch(*outer_self.fp.output_keys, as_dict=True)
-                            assert len(outputs) == 1, f"Expected one output, got {len(outputs)}"
+                            outputs = entry.fetch(
+                                *outer_self.fp.output_keys, as_dict=True
+                            )
+                            assert (
+                                len(outputs) == 1
+                            ), f"Expected one output, got {len(outputs)}"
                             master_key.update(outputs[0])
-                            
-                            
-                            print('Master key: ', master_key)
-                            print('Key: ', key)
+
+                            print("Master key: ", master_key)
+                            print("Key: ", key)
                             self.master.insert1(master_key)
                             self.insert1(key)
                             print(f"Inserted key: {key}")
@@ -231,8 +249,8 @@ class DJFunctionPod(FunctionPod):
                 Table.__name__ = f"Source{idx}"
                 part_tables.append(Table)
 
-                
-            outputs = '\n'.join([f"{k}: varchar(255)" for k in self.fp.output_keys])
+            outputs = "\n".join([f"{k}: varchar(255)" for k in self.fp.output_keys])
+
             class MasterTable(dj.Manual):
                 definition = f"""
                 {field_prefix}_source_uuid: uuid
@@ -240,22 +258,21 @@ class DJFunctionPod(FunctionPod):
                 ---
                 {outputs}
                 """
+
             MasterTable.__name__ = self.table_name
             for table in part_tables:
                 setattr(MasterTable, table.__name__, table)
-            
+
             data_table = self.schema(MasterTable)
             print("data table is", data_table)
             self.table = data_table
 
-            
         self._table_stream = FixedStreamFromTable(self.table)
 
         return self.table
-    
+
     def __iter__(self):
         # iterate over the table
         if self.table is None:
             self.compile()
         yield from self._table_stream
-                
