@@ -84,6 +84,8 @@ class Invocation:
         return f"Invocation({self.operation}, ID:{self.invocation_id})"
 
     def __hash__(self) -> int:
+        # TODO: use a better hash function that is based on the operation,
+        # invocation_id and the streams (ideally invocation objects attached to the streams)
         return super().__hash__()
 
     def __eq__(self, other: Any) -> bool:
