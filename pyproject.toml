@@ -25,4 +25,4 @@ where = ["src"]
 version_file = "src/orcabridge/_version.py"
 
 [tool.setuptools.dynamic]
-dependencies = { file = ["src/orcabridge/requirements.txt"] }
+dependencies = { file = ["src/requirements.txt"] }
