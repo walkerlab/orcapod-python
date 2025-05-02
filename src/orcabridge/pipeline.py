@@ -41,6 +41,10 @@ class Pod:
                 ]
             )
 
+    def __call__(self, previous_node):
+        self.add_parent(previous_node)
+        return self
+
     def add_parent(self, parent_node):
         parent_node.add_subscriber(
             self.add_numeration(parent_node.node_exist_in_chain(self))
