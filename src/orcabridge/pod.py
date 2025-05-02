@@ -151,6 +151,16 @@ class FunctionPodWithDirStorage(FunctionPod):
             with open(info_path, "w") as f:
                 json.dump(output_packet, f)
             logger.info(f"Stored output for packet {packet} at {output_path}")
+
+            # retrieve back the memoized packet and return
+            # TODO: consider if we want to return the original packet or the memoized one
+            output_packet = self.retrieve_memoized(packet)
+            if output_packet is None:
+                raise ValueError(
+                    f"Memoized packet {packet} not found after storing it"
+                )
+            
+
             return output_packet
     
     def retrieve_memoized(self, packet: Packet) -> Optional[Packet]:
