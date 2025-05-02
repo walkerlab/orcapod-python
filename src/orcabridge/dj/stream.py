@@ -1,14 +1,16 @@
 from ..stream import SyncStream
 
-import datajoint as dj
+
 from datajoint.expression import QueryExpression
 from datajoint.table import Table
-from typing import Collection
+from typing import Collection, Any
 
 
 class QueryStream(SyncStream):
     """
-    DataJoint query-based data stream
+    DataJoint query-based data stream. Critically, `QueryStream` is backed
+    by a DataJoint query, and iterating over it will yield packets equivalent to
+    iterating over the query results.
     """
 
     def __init__(
@@ -22,6 +24,37 @@ class QueryStream(SyncStream):
             tag = {k: row[k] for k in self.query.primary_key}
             packet = {k: row[k] for k in row if k not in self.query.primary_key}
             yield tag, packet
+
+    def proj(self, *args, **kwargs) -> "QueryStream":
+        """
+        Project the table and return a new source.
+        """
+        return QueryStream(self.query.proj(*args, **kwargs), self.upstream_tables)
+
+    def __and__(self, other: Any) -> "QueryStream":
+        """
+        Join the table with another table and return a new source.
+        """
+        # lazy load to avoid circular import
+        from ..source import TableSource
+
+        if isinstance(other, TableSource):
+            other = other.table
+        elif isinstance(other, QueryStream):
+            other = other.query
+        else:
+            raise ValueError(f"Object of type {type(other)} is not supported.")
+        return QueryStream(self.query & other, self.upstream_tables)
+
+    def __repr__(self):
+        return self.query.__repr__()
+
+    def preview(self, limit=None, width=None):
+        return self.query.preview(limit=limit, width=width)
+
+    def _repr_html_(self):
+        """:return: HTML to display table in Jupyter notebook."""
+        return self.query._repr_html_()
 
 
 class TableStream(QueryStream):

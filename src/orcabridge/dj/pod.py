@@ -1,15 +1,11 @@
 from .stream import QueryStream, TableStream, TableCachedStream
 from ..utils.name import pascal_to_snake, snake_to_pascal
-from ..utils.hash import hash_dict
-from ..pod import Pod, FunctionPod, FunctionPodWithDirStorage
-from ..types import PodFunction
+from .operation import QueryOperation
+from ..pod import Pod, FunctionPod
 from .mapper import JoinQuery
-from ..base import Operation
 import datajoint as dj
 from datajoint import Schema
-from typing import Collection, Optional, Tuple, Union, Iterator
-from ..types import Tag, Packet
-from ..stream import SyncStream, SyncStreamFromGenerator
+from typing import Collection, Tuple
 from datajoint.table import Table
 
 import logging
@@ -17,7 +13,14 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class TableCachedPod(Pod):
+class QueryPod(QueryOperation, Pod):
+    """
+    A special type of operation that returns and works with
+    QueryStreams
+    """
+
+
+class TableCachedPod(QueryPod):
     def __init__(
         self,
         fp: FunctionPod,

@@ -1,10 +1,39 @@
 from .stream import QueryStream
-from ..mapper import Mapper
+from .operation import QueryOperation
+from ..mapper import Mapper, Join, MapKeys, MapTags
+import warnings
+
+
+class QueryMapper(QueryOperation, Mapper):
+    """
+    A special type of mapper that returns and works with QueryStreams
+    """
+
+
+def convert_to_dj_mapper(operation: Mapper) -> QueryMapper:
+    """
+    Convert a generic mapper to an equivalent, DataJoint specific mapper
+    """
+
+    if isinstance(operation, Join):
+        return JoinQuery()
+    elif isinstance(operation, MapKeys):
+        proj_map = {v: k for k, v in operation.key_map.items()}
+        # if drop_unmapped is True, we need to project the keys
+        args = [] if operation.drop_unmapped else [...]
+        return ProjectQuery(*args, **proj_map)
+    elif isinstance(operation, MapTags):
+        proj_map = {v: k for k, v in operation.tag_map.items()}
+        if operation.drop_unmapped:
+            warnings.warn("Dropping unmapped tags is not supported in DataJoint")
+        return ProjectQuery(*args, **proj_map)
+    else:
+        raise ValueError(f"Unknown operation: {operation}")
 
 
 class JoinQuery(Mapper):
     """
-    DataJoint specific Join operation that only works on DJ table streams
+    DataJoint specific Join operation that only works on QueryStream
     """
 
     def __call__(self, *streams: QueryStream, project=False) -> QueryStream:

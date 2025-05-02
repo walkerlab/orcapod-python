@@ -5,16 +5,14 @@ import networkx as nx
 
 
 from ..source import Source
-from ..stream import SyncStream
 from ..mapper import Join, MapKeys, MapTags
 from ..base import Operation
-from ..pod import Pod, FunctionPod
+from ..pod import FunctionPod
 from .stream import QueryStream
 from .source import TableCachedSource
 from .pod import TableCachedPod
-from .mapper import JoinQuery, RestrictQuery, ProjectQuery
+from .mapper import JoinQuery, ProjectQuery
 import datajoint as dj
-from ..types import Tag, Packet
 
 
 def wrap_with_table(
