@@ -1,6 +1,6 @@
 from typing import Callable, Dict, Optional, List, Sequence
 
-from .stream import Stream, SyncStream, SyncStreamFromGenerator
+from .stream import SyncStream, SyncStreamFromGenerator
 from .base import Operation
 from .utils.stream_utils import join_tags, batch_tag, batch_packet
 from .types import Tag, Packet

@@ -71,7 +71,7 @@ class FunctionPod(Pod):
         self.force_computation = force_computation
 
     def __hash__(self) -> int:
-        return hash((self.function, self.output_keys))
+        return hash((self.function, tuple(self.output_keys)))
 
     def process(self, packet: Packet) -> Packet:
         memoized_packet = self.retrieve_memoized(packet)
