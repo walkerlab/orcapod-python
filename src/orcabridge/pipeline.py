@@ -90,10 +90,12 @@ class Pod:
         """
 
         if self.parent.__len__() == 0:
-            print(self.name)
             return [self]
         else:
             return [parent.find_root_nodes()[0] for parent in self.parent]
+
+    def to_pipeline(self, name):
+        return Pipeline(name, self.find_root_nodes())
 
 
 class PodJob:
@@ -113,8 +115,12 @@ class PodResult:
 
 
 class Pipeline:
-    def __init__(self, root_nodes):
+    def __init__(self, name, root_nodes):
+        self.name = name
         self.root_nodes = root_nodes
+
+    def draw_graph(self):
+        return self.root_nodes[0].draw_graph()
 
 
 class DockerOrchestrator:
