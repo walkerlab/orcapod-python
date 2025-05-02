@@ -1,10 +1,10 @@
-
 import threading
 from typing import Dict, Collection, List
 import networkx as nx
 from .base import Operation, Invocation
 
-class Tracker():
+
+class Tracker:
 
     # Thread-local storage to track active trackers
     _local = threading.local()
@@ -23,7 +23,6 @@ class Tracker():
         recorded_invocations = self.invocation_lut
         self.invocation_lut = {}
         return recorded_invocations
-        
 
     def generate_namemap(self) -> Dict[Invocation, str]:
         namemap = {}
@@ -37,23 +36,22 @@ class Tracker():
             for idx, invocation in enumerate(invocations):
                 namemap[invocation] = f"{operation}_{idx}"
         return namemap
-    
+
     def activate(self) -> None:
         """
         Activate the tracker. This is a no-op if the tracker is already active.
         """
         if not self.active:
-            if not hasattr(self._local, 'active_trackers'):
+            if not hasattr(self._local, "active_trackers"):
                 self._local.active_trackers = []
             self._local.active_trackers.append(self)
             self.active = True
 
     def deactivate(self) -> None:
         # Remove this tracker from active trackers
-        if hasattr(self._local, 'active_trackers') and self.active:
+        if hasattr(self._local, "active_trackers") and self.active:
             self._local.active_trackers.remove(self)
             self.active = False
-        
 
     def generate_graph(self):
         G = nx.DiGraph()
@@ -66,9 +64,8 @@ class Tracker():
                     if upstream.source not in G:
                         G.add_node(upstream.source)
                     G.add_edge(upstream.source, invocation, stream=upstream)
-        
-        return G
 
+        return G
 
     def __enter__(self):
         self.activate()
@@ -76,10 +73,9 @@ class Tracker():
 
     def __exit__(self, exc_type, exc_val, ext_tb):
         self.deactivate()
-        
 
     @classmethod
-    def get_active_trackers(cls) -> List['Tracker']:
-        if hasattr(cls._local, 'active_trackers'):
+    def get_active_trackers(cls) -> List["Tracker"]:
+        if hasattr(cls._local, "active_trackers"):
             return cls._local.active_trackers
         return []

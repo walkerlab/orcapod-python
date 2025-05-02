@@ -10,7 +10,10 @@ class QueryStream(SyncStream):
     """
     DataJoint query-based data stream
     """
-    def __init__(self, query: QueryExpression, upstream_tables: Collection[Table]) -> None:
+
+    def __init__(
+        self, query: QueryExpression, upstream_tables: Collection[Table]
+    ) -> None:
         self.query = query
         self.upstream_tables = upstream_tables
 
@@ -25,6 +28,7 @@ class TableStream(QueryStream):
     """
     DataJoint table-based data stream
     """
+
     def __init__(self, table: Table) -> None:
         super().__init__(table, [table])
         self.table = table
@@ -36,6 +40,7 @@ class TableCachedStream(TableStream):
     and then returns the content. Effectively act as a TableStream as
     all returned packets can be found in the table.
     """
+
     def __init__(self, table: Table, stream: SyncStream) -> None:
         super().__init__(table)
         self.stream = stream

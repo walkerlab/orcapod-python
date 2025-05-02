@@ -1,8 +1,8 @@
 from typing import Callable, Dict, Optional, List, Sequence
 
 from .stream import Stream, SyncStream, SyncStreamFromGenerator
-from .operation import Operation
-from .stream_utils import join_tags, batch_tag, batch_packet
+from .base import Operation
+from .utils.stream_utils import join_tags, batch_tag, batch_packet
 from .types import Tag, Packet
 from typing import Iterator, Tuple
 
@@ -31,11 +31,11 @@ class Join(Mapper):
                     if (joined_tag := join_tags(left_tag, right_tag)) is not None:
                         yield joined_tag, {**left_packet, **right_packet}
 
-        
         return SyncStreamFromGenerator(generator)
 
     def __repr__(self) -> str:
         return "Join()"
+
 
 class MapKeys(Mapper):
     """
@@ -103,7 +103,8 @@ class MapTags(Operation):
 
     def __repr__(self) -> str:
         return f"MapTags({self.tag_map})"
-        
+
+
 class Filter(Mapper):
     """
     A Mapper that filters the packets in the stream based on a predicate function.
@@ -158,7 +159,7 @@ class Transform(Mapper):
     def __repr__(self) -> str:
         return f"Transform({self.transform})"
 
-    
+
 class Batch(Mapper):
     """
     A Mapper that batches the packets in the stream based on a batch size.
@@ -203,7 +204,8 @@ class Batch(Mapper):
 
     def __repr__(self) -> str:
         return f"Batch(size={self.batch_size}, drop_last={self.drop_last})"
-    
+
+
 class CacheStream(Mapper):
     """
     A Mapper that caches the packets in the stream, thus avoiding upstream recomputation.

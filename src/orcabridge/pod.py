@@ -20,6 +20,7 @@ class Pod(Operation):
     of Pod can dependent on the tags of the packets. This is a design choice to ensure that
     the pods act as pure functions which is a necessary condition to guarantee reproducibility.
     """
+
     def forward(self, *streams: SyncStream) -> SyncStream:
         """
         The forward method is the main entry point for the pod. It takes a stream of packets
@@ -34,7 +35,7 @@ class Pod(Operation):
             stream = streams[0]
         else:
             raise ValueError("No streams provided to FunctionPod")
-        
+
         def generator() -> Iterator[Tuple[Tag, Packet]]:
             n_computed = 0
             for tag, packet in stream:
@@ -52,8 +53,15 @@ class Pod(Operation):
 
 # TODO: reimplement the memoization as dependency injection
 
+
 class FunctionPod(Pod):
-    def __init__(self, function: PodFunction, output_keys: Optional[Collection[str]] = None, force_computation=False, skip_memoization=False) -> None:
+    def __init__(
+        self,
+        function: PodFunction,
+        output_keys: Optional[Collection[str]] = None,
+        force_computation=False,
+        skip_memoization=False,
+    ) -> None:
         super().__init__()
         self.function = function
         if output_keys is None:
@@ -69,7 +77,7 @@ class FunctionPod(Pod):
         memoized_packet = self.retrieve_memoized(packet)
         if not self.force_computation and memoized_packet is not None:
             return memoized_packet
-        
+
         values = self.function(**packet)
         if len(self.output_keys) == 0:
             values = []
@@ -144,9 +152,11 @@ class FunctionPod(Pod):
 
         return SyncStreamFromGenerator(generator)
 
-    def memoize(self, packet: Packet, output_packet: Packet, overwrite: bool=False) -> Packet:
+    def memoize(
+        self, packet: Packet, output_packet: Packet, overwrite: bool = False
+    ) -> Packet:
         return output_packet
-    
+
     def retrieve_memoized(self, packet: Packet) -> Optional[Packet]:
         return None
 
@@ -166,7 +176,8 @@ class FunctionPodWithDirStorage(FunctionPod):
         store_dir="./pod_data",
         store_name=None,
         copy_files=True,
-        preserve_filename=True, **kwargs,
+        preserve_filename=True,
+        **kwargs,
     ) -> None:
         super().__init__(function, output_keys, **kwargs)
         self.store_dir = Path(store_dir)
@@ -178,8 +189,10 @@ class FunctionPodWithDirStorage(FunctionPod):
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.copy_files = copy_files
         self.preserve_filename = preserve_filename
-        
-    def memoize(self, packet: Packet, output_packet: Packet, overwrite: bool=False) -> Packet:
+
+    def memoize(
+        self, packet: Packet, output_packet: Packet, overwrite: bool = False
+    ) -> Packet:
         packet_hash = hash_dict(packet)
         output_dir = self.data_dir / f"{packet_hash}"
         info_path = output_dir / "_info.json"
@@ -224,13 +237,10 @@ class FunctionPodWithDirStorage(FunctionPod):
             # TODO: consider if we want to return the original packet or the memoized one
             output_packet = self.retrieve_memoized(packet)
             if output_packet is None:
-                raise ValueError(
-                    f"Memoized packet {packet} not found after storing it"
-                )
-            
+                raise ValueError(f"Memoized packet {packet} not found after storing it")
 
             return output_packet
-    
+
     def retrieve_memoized(self, packet: Packet) -> Optional[Packet]:
         packet_hash = hash_dict(packet)
         output_dir = self.data_dir / f"{packet_hash}"

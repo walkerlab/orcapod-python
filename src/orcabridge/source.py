@@ -13,6 +13,7 @@ class Source(Operation, SyncStream):
     For convenience, the source itself is also a stream and thus can be used
     as an input to other operations directly.
     """
+
     def __init__(self) -> None:
         super().__init__()
         self._source = self
