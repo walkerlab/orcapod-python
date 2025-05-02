@@ -31,6 +31,7 @@ class Join(Mapper):
                     if (joined_tag := join_tags(left_tag, right_tag)) is not None:
                         yield joined_tag, {**left_packet, **right_packet}
 
+        
         return SyncStreamFromGenerator(generator)
 
     def __repr__(self) -> str:

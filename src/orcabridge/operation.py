@@ -123,7 +123,7 @@ class Tracker():
                     # if upstream.source is not in the graph, add it
                     if upstream.source not in G:
                         G.add_node(upstream.source)
-                    G.add_edge(upstream.source, invocation)
+                    G.add_edge(upstream.source, invocation, stream=upstream)
         
         return G
 
