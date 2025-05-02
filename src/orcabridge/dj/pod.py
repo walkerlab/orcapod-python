@@ -8,13 +8,17 @@ from .mapper import JoinQuery
 from ..operation import Operation
 import datajoint as dj
 from datajoint import Schema
-from typing import Collection, Optional, Tuple, Union
+from typing import Collection, Optional, Tuple, Union, Iterator
+from ..types import Tag, Packet
 from ..stream import SyncStream, SyncStreamFromGenerator
 from datajoint.table import Table
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+
 
 
 class TableCachedPod(Pod):
@@ -72,7 +76,7 @@ class TableCachedPod(Pod):
                 return source, parent_tables
 
             def make(self, key):
-                source, parent_tables = self.get_source_stream()  # Updated to use the new method
+                source, parent_tables = self.get_source_query()  # Updated to use the new method
                 
                 # form QueryStream using key
                 query_stream = QueryStream(source & key, parent_tables)

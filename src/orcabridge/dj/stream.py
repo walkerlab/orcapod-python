@@ -43,5 +43,6 @@ class TableCachedStream(TableStream):
     def __iter__(self):
         for tag, packet in self.stream:
             # cache the packet into the table
-            self.table.insert1(tag | packet, skip_duplicates=True)
+            if not self.table & tag:
+                self.table.insert1(tag | packet)  # insert the packet into the table
             yield tag, packet
