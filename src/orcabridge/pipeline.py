@@ -41,9 +41,8 @@ class Pod:
                 ]
             )
 
-    def __call__(self, previous_node):
-        self.add_parent(previous_node)
-        return self
+    def __call__(self, parent_node):
+        return parent_node.add_child(self)
 
     def add_parent(self, parent_node):
         parent_node.add_subscriber(
