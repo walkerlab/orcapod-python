@@ -13,7 +13,7 @@ class Pod:
             []
         )  # List of nodes that is waiting on the completion of this node
 
-    def subscribe(self, node):
+    def add_subscriber(self, node):
         """
         Subscribe a node to this node's completion.
 
@@ -22,8 +22,30 @@ class Pod:
         self.children.append(node)
         node.parent.append(self)
 
+    def node_exist_in_chain(self, target_node):
+        return sum(
+            [
+                root_node.node_exist_in_children_chain(target_node, 0)
+                for root_node in self.find_root_nodes()
+            ]
+        )
+
+    def node_exist_in_children_chain(self, target_node, num_matches=0):
+        if self.name.split("<")[0] == target_node.name:
+            return 1
+        else:
+            return sum(
+                [
+                    child_node.node_exist_in_children_chain(target_node, num_matches)
+                    for child_node in self.children
+                ]
+            )
+
     def add_parent(self, parent_node):
-        parent_node.subscribe(self)
+        parent_node.add_subscriber(
+            self.add_numeration(parent_node.node_exist_in_chain(self))
+        )
+        return self
 
     def add_child(self, node):
         """
@@ -32,7 +54,15 @@ class Pod:
 
         :param node: The node that is waiting for this node to complete.
         """
-        self.subscribe(node)
+        node = node.add_numeration(self.node_exist_in_chain(node))
+        self.add_subscriber(node)
+        return node
+
+    def add_numeration(self, num_matches):
+        if num_matches != 0:
+            return Pod(self.name + "<{}>".format(num_matches))
+        else:
+            return self
 
     def draw_graph(self):
         dag = rx.PyDiGraph(check_cycle=True)
@@ -58,11 +88,12 @@ class Pod:
 
         :return: A list of root nodes.
         """
+
         if self.parent.__len__() == 0:
+            print(self.name)
             return [self]
         else:
-            for parent in self.parent:
-                return parent.find_root_nodes()
+            return [parent.find_root_nodes()[0] for parent in self.parent]
 
 
 class PodJob:
