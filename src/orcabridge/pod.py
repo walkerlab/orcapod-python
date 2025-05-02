@@ -4,8 +4,8 @@ logger = logging.getLogger(__name__)
 
 from pathlib import Path
 from typing import List, Optional, Tuple, Iterator, Iterable, Collection
-from .hash import hash_dict
-from .operation import Operation
+from .utils.hash import hash_dict
+from .base import Operation
 from .mapper import Join
 from .stream import SyncStream, SyncStreamFromGenerator
 from .types import Tag, Packet, PodFunction
@@ -14,9 +14,43 @@ import shutil
 
 
 class Pod(Operation):
-    pass
+    """
+    A base class for all pods. A pod can be seen as a special type of operation that
+    only operates on the packet content without reading tags. Consequently, no operation
+    of Pod can dependent on the tags of the packets. This is a design choice to ensure that
+    the pods act as pure functions which is a necessary condition to guarantee reproducibility.
+    """
+    def forward(self, *streams: SyncStream) -> SyncStream:
+        """
+        The forward method is the main entry point for the pod. It takes a stream of packets
+        and returns a stream of packets.
+        """
+        # if multiple streams are provided, join them
+        if len(streams) > 1:
+            stream = streams[0]
+            for next_stream in streams[1:]:
+                stream = Join()(stream, next_stream)
+        elif len(streams) == 1:
+            stream = streams[0]
+        else:
+            raise ValueError("No streams provided to FunctionPod")
+        
+        def generator() -> Iterator[Tuple[Tag, Packet]]:
+            n_computed = 0
+            for tag, packet in stream:
+                output_packet = self.process(packet)
+                n_computed += 1
+                logger.info(f"Computed item {n_computed}")
+                yield tag, output_packet
+
+        return SyncStreamFromGenerator(generator)
+
+    def __hash__(self) -> int: ...
+
+    def process(self, packet: Packet) -> Packet: ...
 
 
+# TODO: reimplement the memoization as dependency injection
 
 class FunctionPod(Pod):
     def __init__(self, function: PodFunction, output_keys: Optional[Collection[str]] = None, force_computation=False, skip_memoization=False) -> None:
@@ -27,6 +61,40 @@ class FunctionPod(Pod):
         self.output_keys = output_keys
         self.skip_memoization = skip_memoization
         self.force_computation = force_computation
+
+    def __hash__(self) -> int:
+        return hash((self.function, self.output_keys))
+
+    def process(self, packet: Packet) -> Packet:
+        memoized_packet = self.retrieve_memoized(packet)
+        if not self.force_computation and memoized_packet is not None:
+            return memoized_packet
+        
+        values = self.function(**packet)
+        if len(self.output_keys) == 0:
+            values = []
+        elif len(self.output_keys) == 1:
+            values = [values]
+        elif isinstance(values, Iterable):
+            values = list(values)
+        elif len(self.output_keys) > 1:
+            raise ValueError(
+                "Values returned by function must be a pathlike or a sequence of pathlikes"
+            )
+
+        if len(values) != len(self.output_keys):
+            raise ValueError(
+                "Number of output keys does not match number of values returned by function"
+            )
+
+        output_packet: Packet = {k: v for k, v in zip(self.output_keys, values)}
+
+        if not self.skip_memoization:
+            # output packet may be modified by the memoization process
+            # e.g. if the output is a file, the path may be changed
+            output_packet = self.memoize(packet, output_packet)
+
+        return output_packet
 
     def forward(self, *streams: SyncStream) -> SyncStream:
         # if multiple streams are provided, join them
