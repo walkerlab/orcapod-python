@@ -2,7 +2,6 @@ from .types import Tag, Packet
 from typing import Optional, Tuple, List, Dict, Any, Collection, Callable, Iterator
 from .utils.hash import hash_dict
 import networkx as nx
-from .tracker import Tracker
 
 
 class Operation:
@@ -45,6 +44,9 @@ class Operation:
         invocation = self.get_invocation(*streams)
         # label the output_stream with the invocation information
         output_stream.source = invocation
+
+        # delay import to avoid circular import
+        from .tracker import Tracker
 
         # reg
         active_trackers = Tracker.get_active_trackers()
