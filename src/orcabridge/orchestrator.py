@@ -45,7 +45,7 @@ class Pod:
         parent_node.add_subscriber(
             self.add_numeration(parent_node.node_exist_in_chain(self))
         )
-        return self
+        return parent_node
 
     def add_child(self, node):
         """
