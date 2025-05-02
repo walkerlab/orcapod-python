@@ -35,5 +35,8 @@
 				"ms-python.python" // Python IDE
 			]
 		}
+	},
+	"features": {
+		"ghcr.io/meaningful-ooo/devcontainer-features/fish:2": {} // Fish shell
 	}
 }

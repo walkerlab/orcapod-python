@@ -15,7 +15,7 @@ RUN \
 RUN \
     # common dev setup
     apt update && \
-    apt-get install sudo curl jq git bash-completion -y && \
+    apt-get install sudo curl jq git bash-completion graphviz -y && \
     usermod -aG sudo vscode && \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
     echo '. /etc/bash_completion' >> /home/vscode/.bashrc && \
@@ -31,7 +31,7 @@ RUN \
     # python setup
     curl -LsSf https://astral.sh/uv/install.sh | sh && \
     uv venv -p 3.9 ~/.local/share/base && \
-    uv pip install --no-cache-dir --upgrade pip flake8 black faker ipykernel -p ~/.local/share/base && \
+    uv pip install --no-cache-dir --upgrade pip flake8 black faker rustworkx pydot pillow ipykernel -p ~/.local/share/base && \
     uv pip install --no-cache-dir -r /tmp/requirements.txt -p ~/.local/share/base && \
     rm /tmp/requirements.txt && \
     echo '. ~/.local/share/base/bin/activate' >> ~/.bashrc
