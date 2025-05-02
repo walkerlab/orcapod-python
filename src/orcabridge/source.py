@@ -1,4 +1,4 @@
-from .pod import Pod
+from .base import Operation
 from .stream import SyncStream, SyncStreamFromGenerator
 from .types import Tag, Packet
 from typing import Iterator, Tuple, Optional, Callable
@@ -6,7 +6,17 @@ from os import PathLike
 from pathlib import Path
 
 
-class Source(Pod):
+class Source(Operation, SyncStream):
+    """
+    A base class for all sources in the system. A source can be seen as a special
+    type of Operation that takes no input and produces a stream of packets.
+    For convenience, the source itself is also a stream and thus can be used
+    as an input to other operations directly.
+    """
+    def __init__(self) -> None:
+        super().__init__()
+        self._source = self
+
     def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
         yield from self()
 
