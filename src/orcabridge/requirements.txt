@@ -1,1 +1,5 @@
 numpy
+rustworkx 
+pydot 
+pillow 
+ipykernel
