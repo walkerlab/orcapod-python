@@ -1,5 +1,15 @@
 from .types import Tag, Packet
-from typing import Optional, Tuple, List, Dict, Any, Collection, Callable, Iterator
+from typing import (
+    Optional,
+    Tuple,
+    List,
+    Dict,
+    Any,
+    Collection,
+    Callable,
+    Iterator,
+    Mapping,
+)
 from .utils.hash import hash_dict
 import networkx as nx
 
@@ -173,3 +183,17 @@ class SyncStream(Stream):
         This method is not guaranteed to be efficient and should be used with caution.
         """
         return sum(1 for _ in self)
+
+    def __rshift__(self, transformer: Any) -> "SyncStream":
+        """
+        Returns a new stream that is the result of applying the mapping to the stream.
+        The mapping is applied to each packet in the stream and the resulting packets
+        are returned in a new stream.
+        """
+        from .mapper import MapPackets
+
+        # TODO: extend to generic mapping
+        if isinstance(transformer, dict):
+            return MapPackets(transformer)(self)
+        elif isinstance(transformer, Callable):
+            return transformer(self)
