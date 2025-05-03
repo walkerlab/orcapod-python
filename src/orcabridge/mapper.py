@@ -72,7 +72,8 @@ class MapKeys(Mapper):
         return SyncStreamFromGenerator(generator)
 
     def __repr__(self) -> str:
-        return f"MapKeys({self.key_map})"
+        map_repr = ", ".join([f"{k} ⇒ {v}" for k, v in self.key_map.items()])
+        return f"MapKeys({map_repr})"
 
     def __hash__(self) -> int:
         return hash(
@@ -110,7 +111,8 @@ class MapTags(Operation):
         return SyncStreamFromGenerator(generator)
 
     def __repr__(self) -> str:
-        return f"MapTags({self.tag_map})"
+        map_repr = ", ".join([f"{k} ⇒ {v}" for k, v in self.tag_map.items()])
+        return f"MapTags({map_repr})"
 
     def __hash__(self) -> int:
         return hash(

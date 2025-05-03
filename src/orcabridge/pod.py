@@ -5,6 +5,7 @@ logger = logging.getLogger(__name__)
 from pathlib import Path
 from typing import List, Optional, Tuple, Iterator, Iterable, Collection
 from .utils.hash import hash_dict
+from .utils.name import get_function_signature
 from .base import Operation
 from .mapper import Join
 from .stream import SyncStream, SyncStreamFromGenerator
@@ -71,7 +72,8 @@ class FunctionPod(Pod):
         self.force_computation = force_computation
 
     def __repr__(self) -> str:
-        return f"pod:{self.function.__name__}() → {self.output_keys}"
+        func_sig = get_function_signature(self.function)
+        return f"FunctionPod:{func_sig} ⇒ {self.output_keys}"
 
     def __hash__(self) -> int:
         return hash((self.function, tuple(self.output_keys)))
