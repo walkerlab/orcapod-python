@@ -73,3 +73,8 @@ class GlobSource(Source):
                 yield self.tag_function(file), {self.name: file}
 
         return SyncStreamFromGenerator(generator)
+
+    def __hash__(self) -> int:
+        return hash(
+            (self.__class__, self.name, self.file_path, self.pattern, self.tag_function)
+        )

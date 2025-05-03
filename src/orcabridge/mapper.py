@@ -36,6 +36,9 @@ class Join(Mapper):
     def __repr__(self) -> str:
         return "Join()"
 
+    def __hash__(self) -> int:
+        return hash(self.__class__)
+
 
 class MapKeys(Mapper):
     """
@@ -71,6 +74,11 @@ class MapKeys(Mapper):
     def __repr__(self) -> str:
         return f"MapKeys({self.key_map})"
 
+    def __hash__(self) -> int:
+        return hash(
+            (self.__class__, tuple(sorted(self.key_map.items())), self.drop_unmapped)
+        )
+
 
 class MapTags(Operation):
     """
@@ -104,6 +112,11 @@ class MapTags(Operation):
     def __repr__(self) -> str:
         return f"MapTags({self.tag_map})"
 
+    def __hash__(self) -> int:
+        return hash(
+            (self.__class__, tuple(sorted(self.tag_map.items())), self.drop_unmapped)
+        )
+
 
 class Filter(Mapper):
     """
@@ -132,6 +145,9 @@ class Filter(Mapper):
     def __repr__(self) -> str:
         return f"Filter({self.predicate})"
 
+    def __hash__(self) -> int:
+        return hash((self.__class__, self.predicate))
+
 
 class Transform(Mapper):
     """
@@ -158,6 +174,9 @@ class Transform(Mapper):
 
     def __repr__(self) -> str:
         return f"Transform({self.transform})"
+
+    def __hash__(self) -> int:
+        return hash((self.__class__, self.transform))
 
 
 class Batch(Mapper):
@@ -205,6 +224,11 @@ class Batch(Mapper):
     def __repr__(self) -> str:
         return f"Batch(size={self.batch_size}, drop_last={self.drop_last})"
 
+    def __hash__(self) -> int:
+        return hash(
+            (self.__class__, self.batch_size, self.tag_processor, self.drop_last)
+        )
+
 
 class CacheStream(Mapper):
     """
@@ -246,3 +270,8 @@ class CacheStream(Mapper):
 
     def __repr__(self) -> str:
         return f"CacheStream(active:{self.is_cached})"
+
+    def __hash__(self) -> int:
+        # explicitly shown to signify that no two cachestreams are the same
+        # unless they are the same instance
+        return super().__hash__()
