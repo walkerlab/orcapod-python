@@ -51,6 +51,8 @@ class GlobSource(Source):
     ...                     lambda f: {'date': Path(f).stem[:8]})
     """
 
+    default_tag_function = lambda f: {"file_name": Path(f).stem}
+
     def __init__(
         self,
         name: str,
@@ -64,7 +66,7 @@ class GlobSource(Source):
         self.pattern = pattern
         if tag_function is None:
             # extract the file name without extension
-            tag_function = lambda file: {"file_name": Path(file).stem}
+            tag_function = self.__class__.default_tag_function
         self.tag_function = tag_function
 
     def forward(self) -> SyncStream:

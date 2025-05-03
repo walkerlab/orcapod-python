@@ -5,7 +5,7 @@ logger = logging.getLogger(__name__)
 from pathlib import Path
 from typing import List, Optional, Tuple, Iterator, Iterable, Collection
 from .utils.hash import hash_dict
-from .utils.name import get_function_signature
+from .utils.name import get_function_signature, function_content_hash
 from .base import Operation
 from .mapper import Join
 from .stream import SyncStream, SyncStreamFromGenerator
@@ -76,7 +76,8 @@ class FunctionPod(Pod):
         return f"FunctionPod:{func_sig} ⇒ {self.output_keys}"
 
     def __hash__(self) -> int:
-        return hash((self.function, tuple(self.output_keys)))
+        function_hash = function_content_hash(self.function)
+        return hash((function_hash, tuple(self.output_keys)))
 
     def process(self, packet: Packet) -> Packet:
         memoized_packet = self.retrieve_memoized(packet)
