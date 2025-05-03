@@ -70,6 +70,9 @@ class FunctionPod(Pod):
         self.skip_memoization = skip_memoization
         self.force_computation = force_computation
 
+    def __repr__(self) -> str:
+        return f"pod:{self.function.__name__}() → {self.output_keys}"
+
     def __hash__(self) -> int:
         return hash((self.function, tuple(self.output_keys)))
 

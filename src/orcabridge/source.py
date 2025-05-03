@@ -74,6 +74,11 @@ class GlobSource(Source):
 
         return SyncStreamFromGenerator(generator)
 
+    def __repr__(self) -> str:
+        return (
+            f"GlobSource({self.name} from {str(Path(self.file_path) / self.pattern)})"
+        )
+
     def __hash__(self) -> int:
         return hash(
             (self.__class__, self.name, self.file_path, self.pattern, self.tag_function)
