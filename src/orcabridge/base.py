@@ -30,7 +30,7 @@ class Operation:
         hash of the joined streams instead of the individual stream hashes.
         """
         # default implementation where ID is stream order sensitive
-        invocation_id = ":".join([str(hash(s)) for s in streams])
+        invocation_id = hash((self, tuple(streams)))
         return Invocation(self, invocation_id, streams)
 
     def __call__(self, *streams: "SyncStream") -> "SyncStream":
@@ -73,7 +73,7 @@ class Invocation:
     def __init__(
         self,
         operation: Operation,
-        invocation_id: str,
+        invocation_id: int,
         streams: Collection["SyncStream"],
     ) -> None:
         self.operation = operation
@@ -84,9 +84,7 @@ class Invocation:
         return f"Invocation({self.operation}, ID:{self.invocation_id})"
 
     def __hash__(self) -> int:
-        # TODO: use a better hash function that is based on the operation,
-        # invocation_id and the streams (ideally invocation objects attached to the streams)
-        return super().__hash__()
+        return self.invocation_id
 
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, Invocation):
@@ -138,6 +136,9 @@ class SyncStream(Stream):
     """
 
     def __hash__(self) -> int:
+        if self.source is not None:
+            # use the invocation ID as the hash
+            return self.source.invocation_id
         return super().__hash__()
 
     def keys(self) -> Tuple[List[str], List[str]]:
