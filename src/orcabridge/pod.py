@@ -12,6 +12,41 @@ from .stream import SyncStream, SyncStreamFromGenerator
 from .types import Tag, Packet, PodFunction
 import json
 import shutil
+import functools
+
+
+def function_pod(
+    output_keys: Optional[Collection[str]] = None,
+    force_computation: bool = False,
+    skip_memoization: bool = False,
+):
+    """
+    Decorator that wraps a function in a FunctionPod instance.
+
+    Args:
+        output_keys: Keys for the function output
+        force_computation: Whether to force computation
+        skip_memoization: Whether to skip memoization
+
+    Returns:
+        FunctionPod instance wrapping the decorated function
+    """
+
+    def decorator(func):
+        # Create a FunctionPod instance with the function and parameters
+        pod = FunctionPodWithDirStorage(
+            function=func,
+            output_keys=output_keys,
+            force_computation=force_computation,
+            skip_memoization=skip_memoization,
+        )
+
+        # Update the metadata to make the pod look more like the original function
+        functools.update_wrapper(pod, func)
+
+        return pod
+
+    return decorator
 
 
 class Pod(Operation):
@@ -60,8 +95,8 @@ class FunctionPod(Pod):
         self,
         function: PodFunction,
         output_keys: Optional[Collection[str]] = None,
-        force_computation=False,
-        skip_memoization=False,
+        force_computation: bool = False,
+        skip_memoization: bool = False,
     ) -> None:
         super().__init__()
         self.function = function
