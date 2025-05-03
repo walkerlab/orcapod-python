@@ -1,8 +1,8 @@
 from typing import Callable, Dict, Optional, List, Sequence
 
-from .stream import Stream, SyncStream, SyncStreamFromGenerator
-from .operation import Operation
-from .stream_utils import join_tags, batch_tag, batch_packet
+from .stream import SyncStream, SyncStreamFromGenerator
+from .base import Operation
+from .utils.stream_utils import join_tags, batch_tag, batch_packet
 from .types import Tag, Packet
 from typing import Iterator, Tuple
 
@@ -15,7 +15,7 @@ class Mapper(Operation):
 
 
 class Join(Mapper):
-    def __call__(self, *streams: SyncStream) -> SyncStream:
+    def forward(self, *streams: SyncStream) -> SyncStream:
         """
         Joins two streams together based on their tags.
         The resulting stream will contain all the tags from both streams.
@@ -33,6 +33,9 @@ class Join(Mapper):
 
         return SyncStreamFromGenerator(generator)
 
+    def __repr__(self) -> str:
+        return "Join()"
+
 
 class MapKeys(Mapper):
     """
@@ -43,10 +46,11 @@ class MapKeys(Mapper):
     """
 
     def __init__(self, key_map: Dict[str, str], drop_unmapped: bool = True) -> None:
+        super().__init__()
         self.key_map = key_map
         self.drop_unmapped = drop_unmapped
 
-    def __call__(self, *streams: SyncStream) -> SyncStream:
+    def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
             raise ValueError("MapKeys operation requires exactly one stream")
 
@@ -64,6 +68,9 @@ class MapKeys(Mapper):
 
         return SyncStreamFromGenerator(generator)
 
+    def __repr__(self) -> str:
+        return f"MapKeys({self.key_map})"
+
 
 class MapTags(Operation):
     """
@@ -74,10 +81,11 @@ class MapTags(Operation):
     """
 
     def __init__(self, tag_map: Dict[str, str], drop_unmapped: bool = True) -> None:
+        super().__init__()
         self.tag_map = tag_map
         self.drop_unmapped = drop_unmapped
 
-    def __call__(self, *streams: SyncStream) -> SyncStream:
+    def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
             raise ValueError("MapTags operation requires exactly one stream")
 
@@ -93,6 +101,9 @@ class MapTags(Operation):
 
         return SyncStreamFromGenerator(generator)
 
+    def __repr__(self) -> str:
+        return f"MapTags({self.tag_map})"
+
 
 class Filter(Mapper):
     """
@@ -102,9 +113,10 @@ class Filter(Mapper):
     """
 
     def __init__(self, predicate: Callable[[Tag, Packet], bool]):
+        super().__init__()
         self.predicate = predicate
 
-    def __call__(self, *streams: SyncStream) -> SyncStream:
+    def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
             raise ValueError("Filter operation requires exactly one stream")
 
@@ -117,6 +129,9 @@ class Filter(Mapper):
 
         return SyncStreamFromGenerator(generator)
 
+    def __repr__(self) -> str:
+        return f"Filter({self.predicate})"
+
 
 class Transform(Mapper):
     """
@@ -126,9 +141,10 @@ class Transform(Mapper):
     """
 
     def __init__(self, transform: Callable[[Tag, Packet], Tuple[Tag, Packet]]):
+        super().__init__()
         self.transform = transform
 
-    def __call__(self, *streams: SyncStream) -> SyncStream:
+    def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
             raise ValueError("Transform operation requires exactly one stream")
 
@@ -139,6 +155,9 @@ class Transform(Mapper):
                 yield self.transform(tag, packet)
 
         return SyncStreamFromGenerator(generator)
+
+    def __repr__(self) -> str:
+        return f"Transform({self.transform})"
 
 
 class Batch(Mapper):
@@ -154,6 +173,7 @@ class Batch(Mapper):
         tag_processor: Optional[Callable[[Sequence[Tag]], Tag]] = None,
         drop_last: bool = True,
     ):
+        super().__init__()
         self.batch_size = batch_size
         if tag_processor is None:
             tag_processor = lambda tags: batch_tag(tags)
@@ -161,7 +181,7 @@ class Batch(Mapper):
         self.tag_processor = tag_processor
         self.drop_last = drop_last
 
-    def __call__(self, *streams: SyncStream) -> SyncStream:
+    def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
             raise ValueError("Batch operation requires exactly one stream")
 
@@ -182,6 +202,9 @@ class Batch(Mapper):
 
         return SyncStreamFromGenerator(generator)
 
+    def __repr__(self) -> str:
+        return f"Batch(size={self.batch_size}, drop_last={self.drop_last})"
+
 
 class CacheStream(Mapper):
     """
@@ -192,10 +215,11 @@ class CacheStream(Mapper):
     """
 
     def __init__(self) -> None:
+        super().__init__()
         self.cache: List[Tuple[Tag, Packet]] = []
         self.is_cached = False
 
-    def __call__(self, *streams: SyncStream) -> SyncStream:
+    def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
             raise ValueError("CacheStream operation requires exactly one stream")
 
@@ -219,3 +243,6 @@ class CacheStream(Mapper):
         """
         self.cache = []
         self.is_cached = False
+
+    def __repr__(self) -> str:
+        return f"CacheStream(active:{self.is_cached})"

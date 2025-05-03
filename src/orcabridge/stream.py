@@ -1,17 +1,6 @@
-from typing import Generator, Tuple, Dict, Any, Callable, Iterator
+from typing import Generator, Tuple, Dict, Any, Callable, Iterator, Optional, List
 from .types import Tag, Packet
-
-
-class Stream:
-    def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
-        raise NotImplementedError("Subclasses must implement __iter__ method")
-
-
-class SyncStream(Stream):
-    """
-    A stream that will complete in a fixed amount of time. It is suitable for synchronous operations that
-    will have to wait for the stream to finish before proceeding.
-    """
+from .base import SyncStream
 
 
 class SyncStreamFromGenerator(SyncStream):
@@ -20,12 +9,21 @@ class SyncStreamFromGenerator(SyncStream):
     """
 
     def __init__(
-        self, generator_factory: Callable[[], Iterator[Tuple[Tag, Packet]]]
+        self,
+        generator_factory: Callable[[], Iterator[Tuple[Tag, Packet]]],
+        tag_keys: Optional[List[str]] = None,
+        packet_keys: Optional[List[str]] = None,
     ) -> None:
+        super().__init__()
+        self.tag_keys = tag_keys
+        self.packet_keys = packet_keys
         self.generator_factory = generator_factory
+
+    def keys(self) -> Tuple[List[str], List[str]]:
+        if self.tag_keys is None or self.packet_keys is None:
+            return super().keys()
+        # If the keys are already set, return them
+        return self.tag_keys.copy(), self.packet_keys.copy()
 
     def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
         yield from self.generator_factory()
-
-    def __len__(self) -> int:
-        return sum(1 for _ in self)

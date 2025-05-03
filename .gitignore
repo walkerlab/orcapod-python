@@ -179,5 +179,8 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
+
+# Ignore DJ conf file
+dj_*_conf.json
 # directory excluded from source control e.g. trash, scratch work, etc.
 .untracked

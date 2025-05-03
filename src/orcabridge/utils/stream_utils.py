@@ -4,7 +4,7 @@ Utility functions for handling tags
 
 from _collections_abc import dict_keys
 from typing import List, Dict, Optional, Any, TypeVar, Set, Union, Sequence, Mapping
-from .types import Tag, Packet
+from ..types import Tag, Packet
 
 K = TypeVar("K")
 V = TypeVar("V")
