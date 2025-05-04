@@ -2,6 +2,7 @@ import threading
 from typing import Dict, Collection, List
 import networkx as nx
 from .base import Operation, Invocation
+import matplotlib.pyplot as plt
 
 
 class Tracker:
@@ -66,6 +67,24 @@ class Tracker:
                     G.add_edge(upstream.source, invocation, stream=upstream)
 
         return G
+
+    def draw_graph(self):
+        G = self.generate_graph()
+        labels = self.generate_namemap()
+
+        pos = nx.drawing.nx_agraph.graphviz_layout(G, prog="dot")
+        nx.draw(
+            G,
+            pos,
+            labels=labels,
+            node_size=2000,
+            node_color="lightblue",
+            with_labels=True,
+            font_size=10,
+            font_weight="bold",
+            arrowsize=20,
+        )
+        plt.tight_layout()
 
     def __enter__(self):
         self.activate()

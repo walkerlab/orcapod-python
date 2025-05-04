@@ -40,7 +40,7 @@ class Join(Mapper):
         return hash(self.__class__)
 
 
-class MapKeys(Mapper):
+class MapPackets(Mapper):
     """
     A Mapper that maps the keys of the packet in the stream to new keys.
     The mapping is done using a dictionary that maps old keys to new keys.
@@ -73,7 +73,7 @@ class MapKeys(Mapper):
 
     def __repr__(self) -> str:
         map_repr = ", ".join([f"{k} ⇒ {v}" for k, v in self.key_map.items()])
-        return f"MapKeys({map_repr})"
+        return f"packets({map_repr})"
 
     def __hash__(self) -> int:
         return hash(
@@ -112,7 +112,7 @@ class MapTags(Operation):
 
     def __repr__(self) -> str:
         map_repr = ", ".join([f"{k} ⇒ {v}" for k, v in self.tag_map.items()])
-        return f"MapTags({map_repr})"
+        return f"tags({map_repr})"
 
     def __hash__(self) -> int:
         return hash(
@@ -277,3 +277,29 @@ class CacheStream(Mapper):
         # explicitly shown to signify that no two cachestreams are the same
         # unless they are the same instance
         return super().__hash__()
+
+
+def tag(
+    mapping: Dict[str, str], drop_unmapped: bool = True
+) -> Callable[[SyncStream], SyncStream]:
+    def transformer(stream: SyncStream) -> SyncStream:
+        """
+        Transform the stream by renaming the keys in the tag.
+        The mapping is a dictionary that maps the old keys to the new keys.
+        """
+        return MapTags(mapping, drop_unmapped=drop_unmapped)(stream)
+
+    return transformer
+
+
+def packet(
+    mapping: Dict[str, str], drop_unmapped: bool = True
+) -> Callable[[SyncStream], SyncStream]:
+    def transformer(stream: SyncStream) -> SyncStream:
+        """
+        Transform the stream by renaming the keys in the packet.
+        The mapping is a dictionary that maps the old keys to the new keys.
+        """
+        return MapPackets(mapping, drop_unmapped=drop_unmapped)(stream)
+
+    return transformer
