@@ -1,9 +1,21 @@
 from ..stream import SyncStream
+import copy
 
 
 from datajoint.expression import QueryExpression
 from datajoint.table import Table
 from typing import Collection, Any
+
+
+def query_without_restriction(query: QueryExpression) -> QueryExpression:
+    """
+    Make a new QueryExpression, copying all attributes except for the restriction
+    """
+    new_query = copy.copy(query)
+    new_query._restriction = None
+    new_query._restriction_attributes = None
+
+    return new_query
 
 
 class QueryStream(SyncStream):
@@ -16,8 +28,12 @@ class QueryStream(SyncStream):
     def __init__(
         self, query: QueryExpression, upstream_tables: Collection[Table]
     ) -> None:
+        super().__init__()
         self.query = query
-        self.upstream_tables = upstream_tables
+        # remove the restriction from the query
+        self.upstream_tables = [
+            query_without_restriction(table) for table in upstream_tables
+        ]
 
     def __iter__(self):
         for row in self.query.fetch(as_dict=True):
@@ -29,7 +45,10 @@ class QueryStream(SyncStream):
         """
         Project the table and return a new source.
         """
-        return QueryStream(self.query.proj(*args, **kwargs), self.upstream_tables)
+        return QueryStream(
+            self.query.proj(*args, **kwargs),
+            [table.proj(*args, **kwargs) for table in self.upstream_tables],
+        )
 
     def __and__(self, other: Any) -> "QueryStream":
         """

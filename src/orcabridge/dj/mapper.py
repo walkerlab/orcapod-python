@@ -1,6 +1,6 @@
 from .stream import QueryStream
 from .operation import QueryOperation
-from ..mapper import Mapper, Join, MapKeys, MapTags
+from ..mapper import Mapper, Join, MapPackets, MapTags
 import warnings
 
 
@@ -10,14 +10,14 @@ class QueryMapper(QueryOperation, Mapper):
     """
 
 
-def convert_to_dj_mapper(operation: Mapper) -> QueryMapper:
+def convert_to_query_mapper(operation: Mapper) -> QueryMapper:
     """
-    Convert a generic mapper to an equivalent, DataJoint specific mapper
+    Convert a generic mapper to an equivalent, Query mapper
     """
 
     if isinstance(operation, Join):
         return JoinQuery()
-    elif isinstance(operation, MapKeys):
+    elif isinstance(operation, MapPackets):
         proj_map = {v: k for k, v in operation.key_map.items()}
         # if drop_unmapped is True, we need to project the keys
         args = [] if operation.drop_unmapped else [...]
@@ -77,7 +77,12 @@ class ProjectQuery(Mapper):
             *self.projection_args, **self.projection_kwargs
         )
 
-        return QueryStream(projected_query, stream.upstream_tables)
+        projected_upstreams = [
+            table.proj(*self.projection_args, **self.projection_kwargs)
+            for table in stream.upstream_tables
+        ]
+
+        return QueryStream(projected_query, projected_upstreams)
 
 
 class RestrictQuery(Mapper):

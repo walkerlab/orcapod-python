@@ -9,7 +9,7 @@ import datajoint as dj
 from ..utils.name import pascal_to_snake, snake_to_pascal
 
 
-class QuerySource(QueryOperation, Source):
+class QuerySource(Source, QueryOperation):
     """
     A speical type of source that returns and works with QueryStreams
     """
@@ -21,9 +21,10 @@ class TableSource(QuerySource):
     """
 
     def __init__(self, table: Union[Table, type[Table]]) -> None:
-        # if table is a class, instantiate it for consistency
-        if isinstance(table, type):
-            table = table()
+        super().__init__()
+        # if table is an instance, grab the class for consistency
+        if not isinstance(table, type):
+            table = table.__class__
         self.table = table
 
     def __call__(self, *streams: SyncStream) -> QueryStream:
@@ -70,13 +71,14 @@ class TableCachedStreamSource(QuerySource):
     """
 
     def __init__(self, stream: SyncStream, schema: Schema, table_name: str = None):
+        super().__init__()
         self.stream = stream
         self.schema = schema
         # if table name is not provided, use the name of the stream source
         self.table_name = (
             table_name
             if table_name is not None
-            else pascal_to_snake(stream.source.__class__.__name__)
+            else pascal_to_snake(stream.invocation.__class__.__name__)
         )
         self.table = None
 
@@ -96,7 +98,7 @@ class TableCachedStreamSource(QuerySource):
 
         CachedTable.__name__ = snake_to_pascal(self.table_name)
         CachedTable = self.schema(CachedTable)
-        self.table = CachedTable()
+        self.table = CachedTable
 
     def forward(self, *streams: QueryStream) -> QueryStream:
         if len(streams) > 0:
@@ -117,6 +119,7 @@ class TableCachedSource(QuerySource):
     """
 
     def __init__(self, source: Source, schema: Schema, table_name: str = None):
+        super().__init__()
         self.source = source
         self.schema = schema
         # if table name is not provided, use the name of the source
@@ -147,7 +150,7 @@ class TableCachedSource(QuerySource):
 
         CachedTable.__name__ = snake_to_pascal(self.table_name)
         CachedTable = self.schema(CachedTable)
-        self.table = CachedTable()
+        self.table = CachedTable
 
     def forward(self, *streams: QueryStream) -> QueryStream:
         if len(streams) > 0:
