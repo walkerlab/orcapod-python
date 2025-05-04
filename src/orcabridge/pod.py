@@ -87,8 +87,6 @@ class Pod(Operation):
 
         return SyncStreamFromGenerator(generator)
 
-    def __hash__(self) -> int: ...
-
     def process(self, packet: Packet) -> Packet: ...
 
 
