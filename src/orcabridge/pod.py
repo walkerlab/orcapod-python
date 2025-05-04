@@ -10,7 +10,7 @@ from .base import Operation
 from .mapper import Join
 from .stream import SyncStream, SyncStreamFromGenerator
 from .types import Tag, Packet, PodFunction
-from .store import DataStore
+from .store import DataStore, NoOpDataStore
 import json
 import shutil
 import functools
