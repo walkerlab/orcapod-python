@@ -2,7 +2,12 @@ from typing import Callable, Dict, Optional, List, Sequence
 
 from .stream import SyncStream, SyncStreamFromGenerator
 from .base import Operation
-from .utils.stream_utils import join_tags, batch_tag, batch_packet
+from .utils.stream_utils import (
+    join_tags,
+    check_packet_compatibility,
+    batch_tag,
+    batch_packet,
+)
 from .types import Tag, Packet
 from typing import Iterator, Tuple
 
@@ -29,6 +34,10 @@ class Join(Mapper):
             for left_tag, left_packet in left_stream:
                 for right_tag, right_packet in right_stream:
                     if (joined_tag := join_tags(left_tag, right_tag)) is not None:
+                        if not check_packet_compatibility(left_packet, right_packet):
+                            raise ValueError(
+                                f"Packets are not compatible: {left_packet} and {right_packet}"
+                            )
                         yield joined_tag, {**left_packet, **right_packet}
 
         return SyncStreamFromGenerator(generator)
