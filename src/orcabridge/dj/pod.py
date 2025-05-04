@@ -13,7 +13,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class QueryPod(QueryOperation, Pod):
+class QueryPod(Pod, QueryOperation):
     """
     A special type of operation that returns and works with
     QueryStreams
@@ -41,14 +41,24 @@ class TableCachedPod(QueryPod):
         if create_table:
             self.compile()
 
+    def prepare_source_query(self) -> Tuple[QueryStream, Collection[Table]]:
+        if len(self.streams) > 1:
+            query_stream = JoinQuery()(*self.streams)
+        else:
+            query_stream = self.streams[0]
+
+        source_query = query_stream.query
+
+        upstream_tables = query_stream.upstream_tables
+
+        return source_query, upstream_tables
+
     def compile(self) -> None:
         if not all(isinstance(s, QueryStream) for s in self.streams):
             raise ValueError("All streams must be QueryStreams")
 
-        # assign all upstrem tables to a local list
-        upstream_tables = [
-            table for stream in self.streams for table in stream.upstream_tables
-        ]
+        source_query, upstream_tables = self.prepare_source_query()
+
         # upstreams = '\n'.join([f"-> self.streams[{i}].upstream_tables[{j}]" for i, stream in enumerate(self.streams) for j in range(len(stream.upstream_tables))])
         upstreams = "\n".join(
             f"-> upstream_tables[{i}]" for i in range(len(upstream_tables))
@@ -67,38 +77,11 @@ class TableCachedPod(QueryPod):
 
             @property
             def key_source(self):
-                # get the upstream tables
-                # TODO: form this out of outer_class's streams instead
-                upstreams = self.parents(primary=True, as_objects=True)
-                source = upstreams[0].proj()
-                for table in upstreams[1:]:
-                    source = source * table.proj()
-                return source
-
-            def get_source_query(self) -> Tuple[QueryStream, Collection[Table]]:
-                upstreams = self.parents(
-                    primary=True, as_objects=True, foreign_key_info=True
-                )
-
-                # for each upstream table, get the primary key
-                source = None
-                parent_tables = []
-                for table, info in upstreams:
-                    parent_tables.append(table)
-                    proj_table = table.proj(..., **info["attr_map"])
-                    if source is None:
-                        source = proj_table
-                    else:
-                        source = source * proj_table
-                return source, parent_tables
+                return source_query
 
             def make(self, key):
-                source, parent_tables = (
-                    self.get_source_query()
-                )  # Updated to use the new method
-
                 # form QueryStream using key
-                query_stream = QueryStream(source & key, parent_tables)
+                query_stream = QueryStream(source_query & key, upstream_tables)
 
                 for key, packet in outer_class.fp(query_stream):
                     key.update(packet)
@@ -107,7 +90,7 @@ class TableCachedPod(QueryPod):
 
         PodTable.__name__ = snake_to_pascal(self.table_name)
         PodTable = self.schema(PodTable)
-        self.table = PodTable()
+        self.table = PodTable
 
     def forward(self, *streams: QueryStream) -> QueryStream:
         """
@@ -134,13 +117,13 @@ class TableCachedPod(QueryPod):
                 streams[0].query.proj(), streams[0].upstream_tables
             )
 
-        source, parent_tables = self.table.get_source_query()
+        source_query, upstream_tables = self.prepare_source_query()
 
         # restrict the source using the passed in query
-        source = source & joined_streams.query
+        source_query = source_query & joined_streams.query
 
         # form QueryStream using key
-        query_stream = QueryStream(source, parent_tables)
+        query_stream = QueryStream(source_query, upstream_tables)
 
         # set table to allow direct insert
         self.table._allow_insert = True
