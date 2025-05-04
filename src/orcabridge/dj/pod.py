@@ -5,7 +5,7 @@ from ..pod import Pod, FunctionPod
 from .mapper import JoinQuery
 import datajoint as dj
 from datajoint import Schema
-from typing import Collection, Tuple
+from typing import Collection, Tuple, Optional
 from datajoint.table import Table
 
 import logging
@@ -26,20 +26,30 @@ class TableCachedPod(QueryPod):
         fp: FunctionPod,
         schema: Schema,
         table_name: str = None,
+        table_postfix: str = "",
         streams: Collection[QueryStream] = None,
         create_table: bool = True,
-    ):
+        label: Optional[str] = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(label=label, **kwargs)
         self.fp = fp
         self.schema = schema
         self.table_name = (
             table_name
             if table_name is not None
             else pascal_to_snake(fp.function.__name__)
-        )
+        ) + (f"_{table_postfix}" if table_postfix else "")
         self.streams = streams if streams is not None else []
         self.table = None
         if create_table:
             self.compile()
+
+    @property
+    def label(self) -> str:
+        if self._label is None:
+            return snake_to_pascal(self.fp.function.__name__)
+        return self._label
 
     def prepare_source_query(self) -> Tuple[QueryStream, Collection[Table]]:
         if len(self.streams) > 1:

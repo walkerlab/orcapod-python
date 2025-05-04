@@ -8,6 +8,7 @@ from .utils.stream_utils import (
     batch_tag,
     batch_packet,
 )
+from .utils.hash import function_content_hash, stable_hash
 from .types import Tag, Packet
 from typing import Iterator, Tuple
 
@@ -46,7 +47,7 @@ class Join(Mapper):
         return "Join()"
 
     def __hash__(self) -> int:
-        return hash(self.__class__)
+        return stable_hash(self.__class__.__name__)
 
 
 class MapPackets(Mapper):
@@ -85,9 +86,15 @@ class MapPackets(Mapper):
         return f"packets({map_repr})"
 
     def __hash__(self) -> int:
-        return hash(
-            (self.__class__, tuple(sorted(self.key_map.items())), self.drop_unmapped)
+        hash_data = stable_hash(
+            (
+                self.__class__.__name__,
+                tuple(sorted(self.key_map.items())),
+                self.drop_unmapped,
+            )
         )
+        print(f"Hash data for MapPackets: {hash_data}")  # Debugging line
+        return hash_data
 
 
 class MapTags(Operation):
@@ -124,8 +131,12 @@ class MapTags(Operation):
         return f"tags({map_repr})"
 
     def __hash__(self) -> int:
-        return hash(
-            (self.__class__, tuple(sorted(self.tag_map.items())), self.drop_unmapped)
+        return stable_hash(
+            (
+                self.__class__.__name__,
+                tuple(sorted(self.tag_map.items())),
+                self.drop_unmapped,
+            )
         )
 
 
@@ -157,7 +168,9 @@ class Filter(Mapper):
         return f"Filter({self.predicate})"
 
     def __hash__(self) -> int:
-        return hash((self.__class__, self.predicate))
+        return stable_hash(
+            (self.__class__.__name__, function_content_hash(self.predicate))
+        )
 
 
 class Transform(Mapper):
@@ -187,7 +200,9 @@ class Transform(Mapper):
         return f"Transform({self.transform})"
 
     def __hash__(self) -> int:
-        return hash((self.__class__, self.transform))
+        return stable_hash(
+            (self.__class__.__name__, function_content_hash(self.transform))
+        )
 
 
 class Batch(Mapper):
@@ -236,8 +251,13 @@ class Batch(Mapper):
         return f"Batch(size={self.batch_size}, drop_last={self.drop_last})"
 
     def __hash__(self) -> int:
-        return hash(
-            (self.__class__, self.batch_size, self.tag_processor, self.drop_last)
+        return stable_hash(
+            (
+                self.__class__.__name__,
+                self.batch_size,
+                function_content_hash(self.tag_processor),
+                self.drop_last,
+            )
         )
 
 

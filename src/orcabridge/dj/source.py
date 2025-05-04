@@ -3,7 +3,7 @@ from .stream import QueryStream, TableCachedStream
 from .operation import QueryOperation
 from ..stream import SyncStream
 from datajoint import Table
-from typing import Any, Collection, Union
+from typing import Any, Collection, Union, Optional
 from datajoint import Schema
 import datajoint as dj
 from ..utils.name import pascal_to_snake, snake_to_pascal
@@ -20,12 +20,20 @@ class TableSource(QuerySource):
     A source that reads from a table.
     """
 
-    def __init__(self, table: Union[Table, type[Table]]) -> None:
-        super().__init__()
+    def __init__(
+        self, table: Union[Table, type[Table]], label: Optional[str] = None
+    ) -> None:
+        super().__init__(label=label)
         # if table is an instance, grab the class for consistency
         if not isinstance(table, type):
             table = table.__class__
         self.table = table
+
+    @property
+    def label(self) -> str:
+        if self._label is None:
+            return self.table.__name__
+        return self._label
 
     def __call__(self, *streams: SyncStream) -> QueryStream:
         """
@@ -70,17 +78,38 @@ class TableCachedStreamSource(QuerySource):
     The class instance acts as a source and returns a `QueryStream` when invoked.
     """
 
-    def __init__(self, stream: SyncStream, schema: Schema, table_name: str = None):
-        super().__init__()
+    def __init__(
+        self,
+        stream: SyncStream,
+        schema: Schema,
+        table_name: str = None,
+        label: Optional[str] = None,
+    ):
+        super().__init__(label=label)
         self.stream = stream
         self.schema = schema
         # if table name is not provided, use the name of the stream source
-        self.table_name = (
-            table_name
-            if table_name is not None
-            else pascal_to_snake(stream.invocation.__class__.__name__)
-        )
+        if table_name is None:
+            if stream.invocation is not None:
+                table_name = stream.invocation.__class__.__name__
+            else:
+                table_name = stream.__class__.__name__
+        # make sure the table name is in snake case
+        self.table_name = pascal_to_snake(table_name)
+
         self.table = None
+
+    @property
+    def label(self) -> str:
+        if self._label is None:
+            if (
+                hasattr(self.stream.invocation, "label")
+                and self.stream.invocation.label is not None
+            ):
+                return self.stream.invocation.label
+            else:
+                return snake_to_pascal(self.table_name)
+        return self._label
 
     def compile(self, tag_keys: Collection[str], packet_keys: Collection[str]) -> None:
         # create a table to store the cached packets
@@ -118,8 +147,15 @@ class TableCachedSource(QuerySource):
     processes that relies on DJ-based streams (e.g. `TableCachedPod`).
     """
 
-    def __init__(self, source: Source, schema: Schema, table_name: str = None):
-        super().__init__()
+    def __init__(
+        self,
+        source: Source,
+        schema: Schema,
+        table_name: str = None,
+        table_postfix: str = "",
+        label: Optional[str] = None,
+    ):
+        super().__init__(label=label)
         self.source = source
         self.schema = schema
         # if table name is not provided, use the name of the source
@@ -127,8 +163,14 @@ class TableCachedSource(QuerySource):
             table_name
             if table_name is not None
             else pascal_to_snake(source.__class__.__name__)
-        )
+        ) + (f"_{table_postfix}" if table_postfix else "")
         self.table = None
+
+    @property
+    def label(self) -> str:
+        if self._label is None:
+            return self.source.label
+        return self._label
 
     def compile(self, tag_keys: Collection[str], packet_keys: Collection[str]) -> None:
         # create a table to store the cached packets

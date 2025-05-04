@@ -4,6 +4,7 @@ from .types import Tag, Packet
 from typing import Iterator, Tuple, Optional, Callable
 from os import PathLike
 from pathlib import Path
+from .utils.hash import function_content_hash, stable_hash
 
 
 class GlobSource(Source):
@@ -42,9 +43,11 @@ class GlobSource(Source):
         name: str,
         file_path: PathLike,
         pattern: str = "*",
+        label: Optional[str] = None,
         tag_function: Optional[Callable[[PathLike], Tag]] = None,
+        **kwargs,
     ) -> None:
-        super().__init__()
+        super().__init__(label=label, **kwargs)
         self.name = name
         self.file_path = file_path
         self.pattern = pattern
@@ -64,6 +67,14 @@ class GlobSource(Source):
         return f"GlobSource({str(Path(self.file_path) / self.pattern)}) ⇒ {self.name}"
 
     def __hash__(self) -> int:
-        return hash(
-            (self.__class__, self.name, self.file_path, self.pattern, self.tag_function)
+        content = (
+            self.__class__.__name__,
+            self.name,
+            str(self.file_path),
+            self.pattern,
+            function_content_hash(self.tag_function),
         )
+        print("Glob source content to be hashed:", content)
+        hashed_info = stable_hash(content)
+        print("Glob source hashed info:", hashed_info)
+        return hashed_info

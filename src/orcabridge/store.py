@@ -13,13 +13,14 @@ class DataStore:
     def memoize(
         self,
         store_name: str,
+        fp_hash: int,
         packet: Packet,
         output_packet: Packet,
         overwrite: bool = False,
     ) -> Packet: ...
 
     def retrieve_memoized(
-        self, store_name: str, packet: Packet
+        self, store_name: str, fp_hash: int, packet: Packet
     ) -> Optional[Packet]: ...
 
 
@@ -32,13 +33,16 @@ class NoOpDataStore(DataStore):
     def memoize(
         self,
         store_name: str,
+        fp_hash: int,
         packet: Packet,
         output_packet: Packet,
         overwrite: bool = False,
     ) -> Packet:
         return output_packet
 
-    def retrieve_memoized(self, store_name: str, packet: Packet) -> Optional[Packet]:
+    def retrieve_memoized(
+        self, store_name: str, fp_hash: int, packet: Packet
+    ) -> Optional[Packet]:
         return None
 
 
@@ -58,13 +62,14 @@ class DirDataStore(DataStore):
     def memoize(
         self,
         store_name: str,
+        fp_hash: int,
         packet: Packet,
         output_packet: Packet,
         overwrite: bool = False,
     ) -> Packet:
 
         packet_hash = hash_dict(packet)
-        output_dir = self.store_dir / store_name / f"{packet_hash}"
+        output_dir = self.store_dir / store_name / str(fp_hash) / str(packet_hash)
         info_path = output_dir / "_info.json"
 
         if info_path.exists() and not overwrite:
@@ -104,15 +109,17 @@ class DirDataStore(DataStore):
 
             # retrieve back the memoized packet and return
             # TODO: consider if we want to return the original packet or the memoized one
-            output_packet = self.retrieve_memoized(store_name, packet)
+            output_packet = self.retrieve_memoized(store_name, fp_hash, packet)
             if output_packet is None:
                 raise ValueError(f"Memoized packet {packet} not found after storing it")
 
             return output_packet
 
-    def retrieve_memoized(self, store_name: str, packet: Packet) -> Optional[Packet]:
+    def retrieve_memoized(
+        self, store_name: str, fp_hash: int, packet: Packet
+    ) -> Optional[Packet]:
         packet_hash = hash_dict(packet)
-        output_dir = self.store_dir / store_name / f"{packet_hash}"
+        output_dir = self.store_dir / store_name / str(fp_hash) / str(packet_hash)
         info_path = output_dir / "_info.json"
 
         if info_path.exists():

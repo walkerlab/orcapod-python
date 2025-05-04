@@ -13,8 +13,9 @@ class SyncStreamFromGenerator(SyncStream):
         generator_factory: Callable[[], Iterator[Tuple[Tag, Packet]]],
         tag_keys: Optional[List[str]] = None,
         packet_keys: Optional[List[str]] = None,
+        **kwargs,
     ) -> None:
-        super().__init__()
+        super().__init__(**kwargs)
         self.tag_keys = tag_keys
         self.packet_keys = packet_keys
         self.generator_factory = generator_factory

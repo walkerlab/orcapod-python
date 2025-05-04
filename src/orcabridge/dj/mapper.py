@@ -1,6 +1,7 @@
 from .stream import QueryStream
 from .operation import QueryOperation
 from ..mapper import Mapper, Join, MapPackets, MapTags
+from typing import Optional
 import warnings
 
 
@@ -62,7 +63,8 @@ class ProjectQuery(Mapper):
     Project (rename/remove) tag and packet keys
     """
 
-    def __init__(self, *args, **projection_kwargs):
+    def __init__(self, *args, _label: Optional[str] = None, **projection_kwargs):
+        super().__init__(label=_label)
         self.projection_args = args
         self.projection_kwargs = projection_kwargs
 
@@ -90,7 +92,8 @@ class RestrictQuery(Mapper):
     Restrict (filter) tag and packet keys
     """
 
-    def __init__(self, *restrictions):
+    def __init__(self, *restrictions, label: Optional[str] = None):
+        super().__init__(label=label)
         self.restrictions = restrictions
 
     def __call__(self, *streams: QueryStream) -> QueryStream:

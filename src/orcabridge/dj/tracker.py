@@ -15,12 +15,14 @@ from .pod import TableCachedPod
 from .mapper import convert_to_query_mapper
 import datajoint as dj
 import sys
+from collections import defaultdict
 
 
 def convert_to_query_operation(
     operation: Operation,
     schema: Schema,
     table_name: str = None,
+    table_postfix: str = "",
     upstreams: Optional[Collection[QueryStream]] = None,
 ) -> Tuple[QueryOperation, bool]:
     """
@@ -33,12 +35,24 @@ def convert_to_query_operation(
         return operation, False
 
     if isinstance(operation, Source) and len(upstreams) == 0:
-        return TableCachedSource(operation, schema=schema, table_name=table_name), True
+        return (
+            TableCachedSource(
+                operation,
+                schema=schema,
+                table_name=table_name,
+                table_postfix=table_postfix,
+            ),
+            True,
+        )
 
     if isinstance(operation, FunctionPod):
         return (
             TableCachedPod(
-                operation, schema=schema, table_name=table_name, streams=upstreams
+                operation,
+                schema=schema,
+                table_name=table_name,
+                table_postfix=table_postfix,
+                streams=upstreams,
             ),
             True,
         )
@@ -60,30 +74,51 @@ class QueryTracker(Tracker):
         super().__init__()
         self._converted_graph = None
 
-    def generate_tables(self, schema: Schema) -> List:
+    def generate_tables(self, schema: Schema, module_name="dj_tables") -> List:
 
         G = self.generate_graph()
 
+        # create a new module and add the tables to it
+        module = ModuleType(module_name)
+        module.__name__ = module_name
+
+        desired_labels_lut = defaultdict(list)
         node_lut = {}
         edge_lut = {}
-        for node in nx.topological_sort(G):
+        for invocation in nx.topological_sort(G):
             # replace edges(streams) with updated streams if present
-            streams = [edge_lut.get(stream, stream) for stream in node.streams]
+            # TODO: consider better fix than to just take abs
+            invocation_id = abs(invocation.invocation_id)
+            print(("Processing", invocation, invocation_id))
+            streams = [edge_lut.get(stream, stream) for stream in invocation.streams]
             new_node, converted = convert_to_query_operation(
-                node.operation, schema, table_name=None, upstreams=streams
+                invocation.operation,
+                schema,
+                table_name=None,
+                table_postfix=invocation_id,
+                upstreams=streams,
             )
 
-            node_lut[node] = new_node
+            node_lut[invocation] = new_node
+            desired_labels_lut[new_node.label].append(new_node)
 
             if converted:
                 output_stream = new_node(*streams)
-                for edge in G.out_edges(node):
+                for edge in G.out_edges(invocation):
                     edge_lut[G.edges[edge]["stream"]] = output_stream
 
+        # construct labels for the oprations
+        node_label_lut = {}
+        for label, nodes in desired_labels_lut.items():
+            if len(nodes) > 1:
+                for idx, node in enumerate(nodes):
+                    node_label_lut[node] = f"{label}Id{idx}"
+            else:
+                node_label_lut[nodes[0]] = label
         # generate the new converted computation graph
         G_dj = nx.DiGraph()
-        for node in G:
-            G_dj.add_node(node_lut[node])
+        for invocation in G:
+            G_dj.add_node(node_lut[invocation])
 
         for edge in G.edges:
             stream = G.edges[edge]["stream"]
@@ -93,18 +128,15 @@ class QueryTracker(Tracker):
                 stream=edge_lut.get(stream, stream),
             )
 
-        # create a new module and add the tables to it
-        module = ModuleType("dj_tables")
-        module.__name__ = "dj_tables"
-
-        for node in G_dj:
-            if hasattr(node, "table"):
-                print(node.table)
-                table = node.table
+        for op in G_dj:
+            if hasattr(op, "table"):
+                print(op.table)
+                table = op.table
                 table.__module__ = module
-                table_name = table.__name__
+                table_name = node_label_lut[op]
                 setattr(module, table_name, table)
 
-        sys.modules["dj_tables"] = module
+        setattr(module, "schema", schema)
+        sys.modules[module_name] = module
 
         return G_dj, module
