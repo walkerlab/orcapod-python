@@ -164,7 +164,7 @@ class SyncStream(Stream):
         tag, packet = next(iter(self))
         return list(tag.keys()), list(packet.keys())
 
-    def preview(self, n: int = 1) -> None:
+    def head(self, n: int = 5) -> None:
         """
         Print the first n elements of the stream.
         This method is useful for previewing the stream
