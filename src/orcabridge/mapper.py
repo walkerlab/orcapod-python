@@ -73,7 +73,7 @@ class MapPackets(Mapper):
 
     def __repr__(self) -> str:
         map_repr = ", ".join([f"{k} ⇒ {v}" for k, v in self.key_map.items()])
-        return f"MapKeys({map_repr})"
+        return f"packets({map_repr})"
 
     def __hash__(self) -> int:
         return hash(
@@ -112,7 +112,7 @@ class MapTags(Operation):
 
     def __repr__(self) -> str:
         map_repr = ", ".join([f"{k} ⇒ {v}" for k, v in self.tag_map.items()])
-        return f"MapTags({map_repr})"
+        return f"tags({map_repr})"
 
     def __hash__(self) -> int:
         return hash(
