@@ -1,7 +1,7 @@
 from .base import Source
 from .stream import SyncStream, SyncStreamFromGenerator
 from .types import Tag, Packet
-from typing import Iterator, Tuple, Optional, Callable
+from typing import Iterator, Tuple, Optional, Callable, Any
 from os import PathLike
 from pathlib import Path
 from .utils.hash import function_content_hash, stable_hash
@@ -66,15 +66,11 @@ class GlobSource(Source):
     def __repr__(self) -> str:
         return f"GlobSource({str(Path(self.file_path) / self.pattern)}) ⇒ {self.name}"
 
-    def __hash__(self) -> int:
-        content = (
+    def identity_structure(self, *streams) -> Any:
+        return (
             self.__class__.__name__,
             self.name,
             str(self.file_path),
             self.pattern,
             function_content_hash(self.tag_function),
-        )
-        print("Glob source content to be hashed:", content)
-        hashed_info = stable_hash(content)
-        print("Glob source hashed info:", hashed_info)
-        return hashed_info
+        ) + tuple(streams)

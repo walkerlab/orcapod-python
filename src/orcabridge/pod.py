@@ -3,7 +3,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 from pathlib import Path
-from typing import List, Optional, Tuple, Iterator, Iterable, Collection, Literal
+from typing import List, Optional, Tuple, Iterator, Iterable, Collection, Literal, Any
 from .utils.hash import function_content_hash, hash_dict, stable_hash
 from .utils.name import get_function_signature
 from .base import Operation
@@ -45,7 +45,7 @@ def function_pod(
             store_name=store_name,
             data_store=data_store,
             function_hash_mode=function_hash_mode,
-            custom_hash=None,
+            custom_hash=custom_hash,
             force_computation=force_computation,
             skip_memoization=skip_memoization,
         )
@@ -133,26 +133,6 @@ class FunctionPod(Pod):
         func_sig = get_function_signature(self.function)
         return f"FunctionPod:{func_sig} ⇒ {self.output_keys}"
 
-    def __hash__(self) -> int:
-        if self.function_hash_mode == "content":
-            function_hash = function_content_hash(self.function)
-        elif self.function_hash_mode == "signature":
-            function_hash = get_function_signature(self.function)
-        elif self.function_hash_mode == "name":
-            function_hash = self.store_name
-        elif self.function_hash_mode == "custom":
-            if self.custom_hash is None:
-                raise ValueError("Custom hash function not provided")
-            function_hash = self.custom_hash
-        else:
-            raise ValueError(
-                f"Unknown function hash mode: {self.function_hash_mode}. "
-                "Must be one of 'content', 'signature', 'name', or 'custom'."
-            )
-        hash_data = stable_hash((function_hash, tuple(self.output_keys)))
-        print("Hash data for ", self.function.__name__, " : ", hash_data)
-        return hash_data
-
     def forward(self, *streams: SyncStream) -> SyncStream:
         # if multiple streams are provided, join them
         if len(streams) > 1:
@@ -168,7 +148,7 @@ class FunctionPod(Pod):
             n_computed = 0
             for tag, packet in stream:
                 memoized_packet = self.data_store.retrieve_memoized(
-                    self.store_name, hash(self), packet
+                    self.store_name, self.content_hash(), packet
                 )
                 if not self.force_computation and memoized_packet is not None:
                     yield tag, memoized_packet
@@ -196,7 +176,7 @@ class FunctionPod(Pod):
                     # output packet may be modified by the memoization process
                     # e.g. if the output is a file, the path may be changed
                     output_packet = self.data_store.memoize(
-                        self.store_name, hash(self), packet, output_packet
+                        self.store_name, self.content_hash(), packet, output_packet
                     )
 
                 n_computed += 1
@@ -204,3 +184,26 @@ class FunctionPod(Pod):
                 yield tag, output_packet
 
         return SyncStreamFromGenerator(generator)
+
+    def identity_structure(self, *streams) -> Any:
+        if self.function_hash_mode == "content":
+            function_hash = function_content_hash(self.function)
+        elif self.function_hash_mode == "signature":
+            function_hash = get_function_signature(self.function)
+        elif self.function_hash_mode == "name":
+            function_hash = self.store_name
+        elif self.function_hash_mode == "custom":
+            if self.custom_hash is None:
+                raise ValueError("Custom hash function not provided")
+            function_hash = self.custom_hash
+        else:
+            raise ValueError(
+                f"Unknown function hash mode: {self.function_hash_mode}. "
+                "Must be one of 'content', 'signature', 'name', or 'custom'."
+            )
+
+        return (
+            self.__class__.__name__,
+            function_hash,
+            tuple(self.output_keys),
+        ) + tuple(streams)

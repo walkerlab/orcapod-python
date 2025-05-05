@@ -9,12 +9,150 @@ from typing import (
     Callable,
     Iterator,
     Mapping,
+    Union,
 )
 from .utils.hash import hash_dict, stable_hash
+import hashlib
 import networkx as nx
+import json
+from collections.abc import Mapping, Collection
+from typing import Any, Dict, List, Set, Tuple, Union
 
 
-class Operation:
+class HashableMixin:
+    """A mixin that provides content-based hashing functionality."""
+
+    def identity_structure(self) -> Any:
+        """
+        Return a structure that represents the identity of this object.
+        By default, returns None to indicate that no custom structure is provided.
+        Subclasses should override this method to provide meaningful representations.
+
+        Returns:
+            None to indicate no custom structure (use default hash)
+        """
+        return None
+
+    def content_hash(self, char_count: Optional[int] = 16) -> str:
+        """
+        Generate a stable string hash based on the object's content.
+
+        Returns:
+            str: A hexadecimal digest representing the object's content
+        """
+        # Get the identity structure
+        structure = self.identity_structure()
+
+        # If no custom structure is provided, use the superclass's hash
+        if structure is None:
+            # Convert the default hash to a stable string
+            return hashlib.sha256(str(super().__hash__()).encode()).hexdigest()
+
+        # Generate a hash from the identity structure
+        return self._hash_structure(structure, char_count=char_count)
+
+    def content_hash_int(self, hexdigits=16) -> int:
+        """
+        Generate a stable integer hash based on the object's content.
+
+        Returns:
+            int: An integer representing the object's content
+        """
+        # pass in char_count=None to get the full hash
+        return int(self.content_hash(char_count=None)[:hexdigits], 16)
+
+    def __hash__(self) -> int:
+        """
+        Hash implementation that uses the identity structure if provided,
+        otherwise falls back to the superclass's hash method.
+
+        Returns:
+            int: A hash value based on either content or identity
+        """
+        # Get the identity structure
+        structure = self.identity_structure()
+
+        # If no custom structure is provided, use the superclass's hash
+        if structure is None:
+            return super().__hash__()
+
+        # Generate a hash and convert to integer
+        hash_hex = self._hash_structure(structure, char_count=None)
+        return int(hash_hex[:16], 16)
+
+    def _hash_structure(self, structure: Any, char_count: Optional[int] = 16) -> str:
+        """
+        Helper method to compute a hash string from a structure.
+
+        Args:
+            structure: The structure to hash
+
+        Returns:
+            str: A hexadecimal hash digest of the structure
+        """
+        processed = self._process_structure(structure)
+        json_str = json.dumps(processed, sort_keys=True).encode()
+        return hashlib.sha256(json_str).hexdigest()[:char_count]
+
+    def _process_structure(self, obj: Any) -> Any:
+        """
+        Recursively process a structure to prepare it for hashing.
+
+        Args:
+            obj: The object or structure to process
+
+        Returns:
+            A processed version of the structure with HashableMixin objects replaced by their hashes
+        """
+        # Handle None
+        if obj is None:
+            return "None"
+
+        # If the object is a HashableMixin, use its content_hash
+        if isinstance(obj, HashableMixin):
+            # Don't call content_hash on self to avoid cycles
+            if obj is self:
+                # Use the superclass's hash for self
+                return str(super(HashableMixin, self).__hash__())
+            return obj.content_hash()
+
+        # Handle basic types
+        if isinstance(obj, (str, int, float, bool)):
+            return str(obj)
+
+        # Handle named tuples (which are subclasses of tuple)
+        if hasattr(obj, "_fields") and isinstance(obj, tuple):
+            # For namedtuples, convert to dict and then process
+            return self._process_structure(
+                {field: value for field, value in zip(obj._fields, obj)}
+            )
+
+        # Handle mappings (dict-like objects)
+        if isinstance(obj, Mapping):
+            return {
+                str(k): self._process_structure(v)
+                for k, v in sorted(obj.items(), key=lambda x: str(x[0]))
+            }
+
+        # Handle sets and frozensets specifically
+        if isinstance(obj, (set, frozenset)):
+            # Process each item first, then sort the processed results
+            processed_items = [self._process_structure(item) for item in obj]
+            return sorted(processed_items, key=str)
+
+        # Handle collections (list-like objects)
+        if isinstance(obj, Collection):
+            return [self._process_structure(item) for item in obj]
+
+        # For bytes and bytearray, convert to hex representation
+        if isinstance(obj, (bytes, bytearray)):
+            return obj.hex()
+
+        # For other objects, just use their string representation
+        return str(obj)
+
+
+class Operation(HashableMixin):
     """
     Operation defines a generic operation that can be performed on a stream of data.
     It is a base class for all operations that can be performed on a collection of streams
@@ -40,24 +178,12 @@ class Operation:
 
         return self._label
 
-    def get_invocation(self, *streams: "SyncStream") -> "Invocation":
-        """
-        Given a list of streams to perform the operation on, define
-        the invocation ID that would uniquely identify this particular
-        invocation of the operation. This ID is used to track each distinct
-        invocation of the operation and its associated streams.
-        The default implementation is to use the hash of the streams
-        as the invocation ID. This is sensitive to the order of the streams.
-
-        For operations that are not sensitive to the order of the streams,
-        this method should be overridden to provide a more appropriate
-        invocation ID. For example, a join operation may want to use the
-        hash of the joined streams instead of the individual stream hashes.
-        """
-        # default implementation where ID is stream order sensitive
-        print("Creating invocation ID for operation", self, streams)
-        invocation_id = stable_hash((hash(self), tuple(streams)))
-        return Invocation(self, invocation_id, streams)
+    def identity_structure(self, *streams: "SyncStream") -> Any:
+        # Default implementation of identity_structure for the operation only
+        # concerns the operation class and the streams if present. Subclasses of
+        # Operations should override this method to provide a more meaningful
+        # representation of the operation.
+        return (self.__class__.__name__, streams)
 
     def __call__(self, *streams: "SyncStream") -> "SyncStream":
         # trigger call on source if passed as stream
@@ -67,7 +193,7 @@ class Operation:
         ]
         output_stream = self.forward(*streams)
         # create an invocation instance
-        invocation = self.get_invocation(*streams)
+        invocation = Invocation(self, streams)
         # label the output_stream with the invocation information
         output_stream.invocation = invocation
 
@@ -87,7 +213,7 @@ class Operation:
     def forward(self, *streams: "SyncStream") -> "SyncStream": ...
 
 
-class Invocation:
+class Invocation(HashableMixin):
     """
     This class represents an invocation of an operation on a collection of streams.
     It contains the operation, the invocation ID, and the streams that were used
@@ -99,37 +225,46 @@ class Invocation:
     def __init__(
         self,
         operation: Operation,
-        invocation_id: int,
         streams: Collection["SyncStream"],
     ) -> None:
         self.operation = operation
-        self.invocation_id = invocation_id
         self.streams = streams
 
-    def __repr__(self) -> str:
-        return f"Invocation({self.operation}, ID:{self.invocation_id})"
+    # @property
+    # def invocation_id(self) -> int:
+    #     """
+    #     The invocation ID is a unique identifier for the invocation.
+    #     It is used to track the invocation in the tracker.
+    #     """
+    #     return hash(self)
 
     def __hash__(self) -> int:
-        return self.invocation_id
+        return super().__hash__()
+
+    def __repr__(self) -> str:
+        return f"Invocation({self.operation}, ID:{hash(self)})"
+
+    def identity_structure(self) -> int:
+        # default implementation is streams order sensitive. If an operation does
+        # not depend on the order of the streams, it should override this method
+        return self.operation.identity_structure(*self.streams)
 
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, Invocation):
             return False
-        return (
-            self.operation == other.operation
-            and self.invocation_id == other.invocation_id
-        )
+        return hash(self) == hash(other)
 
     def __lt__(self, other: Any) -> bool:
         if not isinstance(other, Invocation):
             return NotImplemented
 
         if self.operation == other.operation:
-            return self.invocation_id < other.invocation_id
-        return self.operation < other.operation
+            return hash(self) < hash(other)
+        # otherwise, order by the operation
+        return hash(self.operation) < hash(other.operation)
 
 
-class Stream:
+class Stream(HashableMixin):
     """
     A stream is a collection of tagged-packets that are generated by an operation.
     The stream is iterable and can be used to access the packets in the stream.
@@ -141,6 +276,11 @@ class Stream:
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._invocation: Optional[Invocation] = None
+
+    def identity_structure(self) -> Any:
+        if self.invocation is not None:
+            return self.invocation.identity_structure()
+        return super().identity_structure()
 
     @property
     def invocation(self) -> Optional[Invocation]:
@@ -162,11 +302,16 @@ class SyncStream(Stream):
     will have to wait for the stream to finish before proceeding.
     """
 
-    def __hash__(self) -> int:
-        if self.invocation is not None and hasattr(self.invocation, "invocation_id"):
+    def content_hash(self) -> str:
+        if (
+            self.invocation is not None
+        ):  # and hasattr(self.invocation, "invocation_id"):
             # use the invocation ID as the hash
-            return self.invocation.invocation_id
-        return super().__hash__()
+            return self.invocation.content_hash()
+        return super().content_hash()
+
+    def __hash__(self) -> int:
+        return hash(self.content_hash())
 
     def keys(self) -> Tuple[List[str], List[str]]:
         """
@@ -236,7 +381,7 @@ class Source(Operation, SyncStream):
 
     def __init__(self, label: Optional[str] = None, **kwargs) -> None:
         super().__init__(label=label, **kwargs)
-        self._invocation = self
+        self._invocation = None
 
     def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
         yield from self()
