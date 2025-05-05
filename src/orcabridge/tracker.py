@@ -15,7 +15,9 @@ class Tracker:
         self.invocation_lut: Dict[Operation, Collection[Invocation]] = {}
 
     def record(self, invocation: Invocation) -> None:
-        self.invocation_lut.setdefault(invocation.operation, set()).add(invocation)
+        invocation_list = self.invocation_lut.setdefault(invocation.operation, [])
+        if invocation not in invocation_list:
+            invocation_list.append(invocation)
 
     def reset(self) -> Dict[Operation, Collection[Invocation]]:
         """
@@ -29,13 +31,16 @@ class Tracker:
         namemap = {}
         for operation, invocations in self.invocation_lut.items():
             # if only one entry present, use the operation name alone
-            invocations = sorted(invocations)
+            if operation.label is not None:
+                node_label = operation.label
+            else:
+                node_label = str(operation)
             if len(invocations) == 1:
-                namemap[invocations[0]] = f"{operation}"
+                namemap[invocations[0]] = node_label
                 continue
             # if multiple entries, use the operation name and index
             for idx, invocation in enumerate(invocations):
-                namemap[invocation] = f"{operation}_{idx}"
+                namemap[invocation] = f"{node_label}_{idx}"
         return namemap
 
     def activate(self) -> None:

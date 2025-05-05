@@ -4,7 +4,7 @@ from .types import Tag, Packet
 from typing import Iterator, Tuple, Optional, Callable, Any
 from os import PathLike
 from pathlib import Path
-from .utils.hash import function_content_hash, stable_hash
+from .hashing import function_content_hash, stable_hash
 
 
 class GlobSource(Source):

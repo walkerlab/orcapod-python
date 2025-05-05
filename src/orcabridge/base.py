@@ -1,155 +1,16 @@
+from orcabridge.hashing import HashableMixin
 from .types import Tag, Packet
 from typing import (
     Optional,
     Tuple,
     List,
-    Dict,
     Any,
     Collection,
     Callable,
     Iterator,
-    Mapping,
-    Union,
 )
-from .utils.hash import hash_dict, stable_hash
-import hashlib
-import networkx as nx
-import json
-from collections.abc import Mapping, Collection
-from typing import Any, Dict, List, Set, Tuple, Union
-
-
-class HashableMixin:
-    """A mixin that provides content-based hashing functionality."""
-
-    def identity_structure(self) -> Any:
-        """
-        Return a structure that represents the identity of this object.
-        By default, returns None to indicate that no custom structure is provided.
-        Subclasses should override this method to provide meaningful representations.
-
-        Returns:
-            None to indicate no custom structure (use default hash)
-        """
-        return None
-
-    def content_hash(self, char_count: Optional[int] = 16) -> str:
-        """
-        Generate a stable string hash based on the object's content.
-
-        Returns:
-            str: A hexadecimal digest representing the object's content
-        """
-        # Get the identity structure
-        structure = self.identity_structure()
-
-        # If no custom structure is provided, use the superclass's hash
-        if structure is None:
-            # Convert the default hash to a stable string
-            return hashlib.sha256(str(super().__hash__()).encode()).hexdigest()
-
-        # Generate a hash from the identity structure
-        return self._hash_structure(structure, char_count=char_count)
-
-    def content_hash_int(self, hexdigits=16) -> int:
-        """
-        Generate a stable integer hash based on the object's content.
-
-        Returns:
-            int: An integer representing the object's content
-        """
-        # pass in char_count=None to get the full hash
-        return int(self.content_hash(char_count=None)[:hexdigits], 16)
-
-    def __hash__(self) -> int:
-        """
-        Hash implementation that uses the identity structure if provided,
-        otherwise falls back to the superclass's hash method.
-
-        Returns:
-            int: A hash value based on either content or identity
-        """
-        # Get the identity structure
-        structure = self.identity_structure()
-
-        # If no custom structure is provided, use the superclass's hash
-        if structure is None:
-            return super().__hash__()
-
-        # Generate a hash and convert to integer
-        hash_hex = self._hash_structure(structure, char_count=None)
-        return int(hash_hex[:16], 16)
-
-    def _hash_structure(self, structure: Any, char_count: Optional[int] = 16) -> str:
-        """
-        Helper method to compute a hash string from a structure.
-
-        Args:
-            structure: The structure to hash
-
-        Returns:
-            str: A hexadecimal hash digest of the structure
-        """
-        processed = self._process_structure(structure)
-        json_str = json.dumps(processed, sort_keys=True).encode()
-        return hashlib.sha256(json_str).hexdigest()[:char_count]
-
-    def _process_structure(self, obj: Any) -> Any:
-        """
-        Recursively process a structure to prepare it for hashing.
-
-        Args:
-            obj: The object or structure to process
-
-        Returns:
-            A processed version of the structure with HashableMixin objects replaced by their hashes
-        """
-        # Handle None
-        if obj is None:
-            return "None"
-
-        # If the object is a HashableMixin, use its content_hash
-        if isinstance(obj, HashableMixin):
-            # Don't call content_hash on self to avoid cycles
-            if obj is self:
-                # Use the superclass's hash for self
-                return str(super(HashableMixin, self).__hash__())
-            return obj.content_hash()
-
-        # Handle basic types
-        if isinstance(obj, (str, int, float, bool)):
-            return str(obj)
-
-        # Handle named tuples (which are subclasses of tuple)
-        if hasattr(obj, "_fields") and isinstance(obj, tuple):
-            # For namedtuples, convert to dict and then process
-            return self._process_structure(
-                {field: value for field, value in zip(obj._fields, obj)}
-            )
-
-        # Handle mappings (dict-like objects)
-        if isinstance(obj, Mapping):
-            return {
-                str(k): self._process_structure(v)
-                for k, v in sorted(obj.items(), key=lambda x: str(x[0]))
-            }
-
-        # Handle sets and frozensets specifically
-        if isinstance(obj, (set, frozenset)):
-            # Process each item first, then sort the processed results
-            processed_items = [self._process_structure(item) for item in obj]
-            return sorted(processed_items, key=str)
-
-        # Handle collections (list-like objects)
-        if isinstance(obj, Collection):
-            return [self._process_structure(item) for item in obj]
-
-        # For bytes and bytearray, convert to hex representation
-        if isinstance(obj, (bytes, bytearray)):
-            return obj.hex()
-
-        # For other objects, just use their string representation
-        return str(obj)
+from collections.abc import Collection
+from typing import Any, List, Tuple
 
 
 class Operation(HashableMixin):
@@ -168,15 +29,15 @@ class Operation(HashableMixin):
         self._label = label
 
     @property
-    def label(self) -> Optional[str]:
+    def label(self) -> str:
         """
-        The label of the operation. This is used to refer to the operation in the tracker
+        Overwrite this method to attain a custom label logic for the operation.
         """
-        if self._label is None:
-            # if the label is not set, use the class name as the label
-            self._label = self.__class__.__name__
-
         return self._label
+
+    @label.setter
+    def label(self, value: str) -> None:
+        self._label = value
 
     def identity_structure(self, *streams: "SyncStream") -> Any:
         # Default implementation of identity_structure for the operation only

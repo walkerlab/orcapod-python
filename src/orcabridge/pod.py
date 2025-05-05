@@ -4,7 +4,7 @@ logger = logging.getLogger(__name__)
 
 from pathlib import Path
 from typing import List, Optional, Tuple, Iterator, Iterable, Collection, Literal, Any
-from .utils.hash import function_content_hash, hash_dict, stable_hash
+from .hashing import function_content_hash, hash_dict, stable_hash
 from .utils.name import get_function_signature
 from .base import Operation
 from .mapper import Join
@@ -122,12 +122,6 @@ class FunctionPod(Pod):
         self.custom_hash = custom_hash
         self.skip_memoization = skip_memoization
         self.force_computation = force_computation
-
-    @property
-    def label(self) -> str:
-        if self._label is None:
-            return self.store_name
-        return self._label
 
     def __repr__(self) -> str:
         func_sig = get_function_signature(self.function)
