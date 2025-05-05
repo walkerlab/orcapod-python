@@ -3,9 +3,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 from pathlib import Path
-from typing import List, Optional, Tuple, Iterator, Iterable, Collection
-from .utils.hash import hash_dict
-from .utils.name import get_function_signature, function_content_hash
+from typing import List, Optional, Tuple, Iterator, Iterable, Collection, Literal, Any
+from .utils.hash import function_content_hash, hash_dict, stable_hash
+from .utils.name import get_function_signature
 from .base import Operation
 from .mapper import Join
 from .stream import SyncStream, SyncStreamFromGenerator
@@ -20,6 +20,8 @@ def function_pod(
     output_keys: Optional[Collection[str]] = None,
     store_name: Optional[str] = None,
     data_store: Optional[DataStore] = None,
+    function_hash_mode: Literal["signature", "content", "name", "custom"] = "name",
+    custom_hash: Optional[int] = None,
     force_computation: bool = False,
     skip_memoization: bool = False,
 ):
@@ -39,9 +41,11 @@ def function_pod(
         # Create a FunctionPod instance with the function and parameters
         pod = FunctionPod(
             function=func,
+            output_keys=output_keys,
             store_name=store_name,
             data_store=data_store,
-            output_keys=output_keys,
+            function_hash_mode=function_hash_mode,
+            custom_hash=custom_hash,
             force_computation=force_computation,
             skip_memoization=skip_memoization,
         )
@@ -87,8 +91,6 @@ class Pod(Operation):
 
         return SyncStreamFromGenerator(generator)
 
-    def __hash__(self) -> int: ...
-
     def process(self, packet: Packet) -> Packet: ...
 
 
@@ -102,26 +104,34 @@ class FunctionPod(Pod):
         output_keys: Optional[Collection[str]] = None,
         store_name=None,
         data_store: Optional[DataStore] = None,
+        function_hash_mode: Literal["signature", "content", "name", "custom"] = "name",
+        custom_hash: Optional[int] = None,
+        label: Optional[str] = None,
         force_computation: bool = False,
         skip_memoization: bool = False,
+        **kwargs,
     ) -> None:
-        super().__init__()
+        super().__init__(label=label, **kwargs)
         self.function = function
         if output_keys is None:
             output_keys = []
         self.output_keys = output_keys
         self.store_name = self.function.__name__ if store_name is None else store_name
         self.data_store = data_store if data_store is not None else NoOpDataStore()
+        self.function_hash_mode = function_hash_mode
+        self.custom_hash = custom_hash
         self.skip_memoization = skip_memoization
         self.force_computation = force_computation
+
+    @property
+    def label(self) -> str:
+        if self._label is None:
+            return self.store_name
+        return self._label
 
     def __repr__(self) -> str:
         func_sig = get_function_signature(self.function)
         return f"FunctionPod:{func_sig} ⇒ {self.output_keys}"
-
-    def __hash__(self) -> int:
-        function_hash = function_content_hash(self.function)
-        return hash((function_hash, tuple(self.output_keys)))
 
     def forward(self, *streams: SyncStream) -> SyncStream:
         # if multiple streams are provided, join them
@@ -138,7 +148,7 @@ class FunctionPod(Pod):
             n_computed = 0
             for tag, packet in stream:
                 memoized_packet = self.data_store.retrieve_memoized(
-                    self.store_name, packet
+                    self.store_name, self.content_hash(), packet
                 )
                 if not self.force_computation and memoized_packet is not None:
                     yield tag, memoized_packet
@@ -166,7 +176,7 @@ class FunctionPod(Pod):
                     # output packet may be modified by the memoization process
                     # e.g. if the output is a file, the path may be changed
                     output_packet = self.data_store.memoize(
-                        self.store_name, packet, output_packet
+                        self.store_name, self.content_hash(), packet, output_packet
                     )
 
                 n_computed += 1
@@ -175,10 +185,25 @@ class FunctionPod(Pod):
 
         return SyncStreamFromGenerator(generator)
 
-    def memoize(
-        self, packet: Packet, output_packet: Packet, overwrite: bool = False
-    ) -> Packet:
-        return output_packet
+    def identity_structure(self, *streams) -> Any:
+        if self.function_hash_mode == "content":
+            function_hash = function_content_hash(self.function)
+        elif self.function_hash_mode == "signature":
+            function_hash = get_function_signature(self.function)
+        elif self.function_hash_mode == "name":
+            function_hash = self.store_name
+        elif self.function_hash_mode == "custom":
+            if self.custom_hash is None:
+                raise ValueError("Custom hash function not provided")
+            function_hash = self.custom_hash
+        else:
+            raise ValueError(
+                f"Unknown function hash mode: {self.function_hash_mode}. "
+                "Must be one of 'content', 'signature', 'name', or 'custom'."
+            )
 
-    def retrieve_memoized(self, packet: Packet) -> Optional[Packet]:
-        return None
+        return (
+            self.__class__.__name__,
+            function_hash,
+            tuple(self.output_keys),
+        ) + tuple(streams)

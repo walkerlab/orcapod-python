@@ -24,6 +24,17 @@ def join_tags(tag1: Mapping[K, V], tag2: Mapping[K, V]) -> Optional[Mapping[K, V
     return joined_tag
 
 
+def check_packet_compatibility(packet1: Packet, packet2: Packet) -> bool:
+    """
+    Checks if two packets are compatible. If the packets have the same key, the value must be the same or False will be returned.
+    If the packets have different keys, they are compatible.
+    """
+    for k in packet1.keys():
+        if k in packet2 and packet1[k] != packet2[k]:
+            return False
+    return True
+
+
 def batch_tag(all_tags: Sequence[Tag]) -> Tag:
     """
     Batches the tags together. Grouping values under the same key into a list.

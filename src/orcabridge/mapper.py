@@ -2,7 +2,13 @@ from typing import Callable, Dict, Optional, List, Sequence
 
 from .stream import SyncStream, SyncStreamFromGenerator
 from .base import Operation
-from .utils.stream_utils import join_tags, batch_tag, batch_packet
+from .utils.stream_utils import (
+    join_tags,
+    check_packet_compatibility,
+    batch_tag,
+    batch_packet,
+)
+from .utils.hash import function_content_hash, stable_hash
 from .types import Tag, Packet
 from typing import Iterator, Tuple
 
@@ -15,6 +21,10 @@ class Mapper(Operation):
 
 
 class Join(Mapper):
+    def identity_structure(self, *streams):
+        # Join does not depend on the order of the streams -- convert it onto a set
+        return (self.__class__.__name__, set(streams))
+
     def forward(self, *streams: SyncStream) -> SyncStream:
         """
         Joins two streams together based on their tags.
@@ -29,6 +39,10 @@ class Join(Mapper):
             for left_tag, left_packet in left_stream:
                 for right_tag, right_packet in right_stream:
                     if (joined_tag := join_tags(left_tag, right_tag)) is not None:
+                        if not check_packet_compatibility(left_packet, right_packet):
+                            raise ValueError(
+                                f"Packets are not compatible: {left_packet} and {right_packet}"
+                            )
                         yield joined_tag, {**left_packet, **right_packet}
 
         return SyncStreamFromGenerator(generator)
@@ -37,7 +51,7 @@ class Join(Mapper):
         return "Join()"
 
     def __hash__(self) -> int:
-        return hash(self.__class__)
+        return stable_hash(self.__class__.__name__)
 
 
 class MapPackets(Mapper):
@@ -75,10 +89,12 @@ class MapPackets(Mapper):
         map_repr = ", ".join([f"{k} ⇒ {v}" for k, v in self.key_map.items()])
         return f"packets({map_repr})"
 
-    def __hash__(self) -> int:
-        return hash(
-            (self.__class__, tuple(sorted(self.key_map.items())), self.drop_unmapped)
-        )
+    def identity_structure(self, *streams):
+        return (
+            self.__class__.__name__,
+            tuple(sorted(self.key_map.items())),
+            self.drop_unmapped,
+        ) + tuple(streams)
 
 
 class MapTags(Operation):
@@ -89,9 +105,9 @@ class MapTags(Operation):
     drop_unmapped=False, in which case unmapped tags will be retained.
     """
 
-    def __init__(self, tag_map: Dict[str, str], drop_unmapped: bool = True) -> None:
+    def __init__(self, key_map: Dict[str, str], drop_unmapped: bool = True) -> None:
         super().__init__()
-        self.tag_map = tag_map
+        self.key_map = key_map
         self.drop_unmapped = drop_unmapped
 
     def forward(self, *streams: SyncStream) -> SyncStream:
@@ -100,24 +116,35 @@ class MapTags(Operation):
 
         stream = streams[0]
 
-        def generator():
+        def generator() -> Iterator[Tuple[Tag, Packet]]:
             for tag, packet in stream:
                 if self.drop_unmapped:
-                    tag = {v: tag[k] for k, v in self.tag_map.items() if k in tag}
+                    tag = {v: tag[k] for k, v in self.key_map.items() if k in tag}
                 else:
-                    tag = {self.tag_map.get(k, k): v for k, v in tag.items()}
+                    tag = {self.key_map.get(k, k): v for k, v in tag.items()}
                 yield tag, packet
 
         return SyncStreamFromGenerator(generator)
 
     def __repr__(self) -> str:
-        map_repr = ", ".join([f"{k} ⇒ {v}" for k, v in self.tag_map.items()])
+        map_repr = ", ".join([f"{k} ⇒ {v}" for k, v in self.key_map.items()])
         return f"tags({map_repr})"
 
     def __hash__(self) -> int:
-        return hash(
-            (self.__class__, tuple(sorted(self.tag_map.items())), self.drop_unmapped)
+        return stable_hash(
+            (
+                self.__class__.__name__,
+                tuple(sorted(self.key_map.items())),
+                self.drop_unmapped,
+            )
         )
+
+    def identity_structure(self, *streams):
+        return (
+            self.__class__.__name__,
+            tuple(sorted(self.tag_map.items())),
+            self.drop_unmapped,
+        ) + tuple(streams)
 
 
 class Filter(Mapper):
@@ -137,7 +164,7 @@ class Filter(Mapper):
 
         stream = streams[0]
 
-        def generator():
+        def generator() -> Iterator[Tuple[Tag, Packet]]:
             for tag, packet in stream:
                 if self.predicate(tag, packet):
                     yield tag, packet
@@ -147,8 +174,11 @@ class Filter(Mapper):
     def __repr__(self) -> str:
         return f"Filter({self.predicate})"
 
-    def __hash__(self) -> int:
-        return hash((self.__class__, self.predicate))
+    def identity_structure(self, *streams):
+        return (
+            self.__class__.__name__,
+            function_content_hash(self.predicate),
+        ) + tuple(streams)
 
 
 class Transform(Mapper):
@@ -168,7 +198,7 @@ class Transform(Mapper):
 
         stream = streams[0]
 
-        def generator():
+        def generator() -> Iterator[Tuple[Tag, Packet]]:
             for tag, packet in stream:
                 yield self.transform(tag, packet)
 
@@ -177,8 +207,11 @@ class Transform(Mapper):
     def __repr__(self) -> str:
         return f"Transform({self.transform})"
 
-    def __hash__(self) -> int:
-        return hash((self.__class__, self.transform))
+    def identity_structure(self, *streams):
+        return (
+            self.__class__.__name__,
+            function_content_hash(self.transform),
+        ) + tuple(streams)
 
 
 class Batch(Mapper):
@@ -226,10 +259,13 @@ class Batch(Mapper):
     def __repr__(self) -> str:
         return f"Batch(size={self.batch_size}, drop_last={self.drop_last})"
 
-    def __hash__(self) -> int:
-        return hash(
-            (self.__class__, self.batch_size, self.tag_processor, self.drop_last)
-        )
+    def identity_structure(self, *streams):
+        return (
+            self.__class__.__name__,
+            self.batch_size,
+            function_content_hash(self.tag_processor),
+            self.drop_last,
+        ) + tuple(streams)
 
 
 class CacheStream(Mapper):
@@ -273,10 +309,9 @@ class CacheStream(Mapper):
     def __repr__(self) -> str:
         return f"CacheStream(active:{self.is_cached})"
 
-    def __hash__(self) -> int:
-        # explicitly shown to signify that no two cachestreams are the same
-        # unless they are the same instance
-        return super().__hash__()
+    def identity_structure(self, *streams):
+        # treat every CacheStream as a different stream
+        return None
 
 
 def tag(
