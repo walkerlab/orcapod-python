@@ -27,7 +27,7 @@ def convert_to_query_mapper(operation: Mapper) -> QueryMapper:
         proj_map = {v: k for k, v in operation.key_map.items()}
         if operation.drop_unmapped:
             warnings.warn("Dropping unmapped tags is not supported in DataJoint")
-        return ProjectQuery(*args, **proj_map)
+        return ProjectQuery(..., **proj_map)
     else:
         raise ValueError(f"Unknown operation: {operation}")
 
