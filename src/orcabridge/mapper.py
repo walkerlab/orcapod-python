@@ -97,7 +97,7 @@ class MapPackets(Mapper):
         ) + tuple(streams)
 
 
-class MapTags(Operation):
+class MapTags(Mapper):
     """
     A Mapper that maps the tags of the packet in the stream to new tags. Packet remains unchanged.
     The mapping is done using a dictionary that maps old tags to new tags.
