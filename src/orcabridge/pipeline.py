@@ -5,7 +5,7 @@ from rustworkx.visualization import graphviz_draw
 # Example orcherstrator logic for deployment and exeution of a pipeline
 class Pod:
     def __init__(self, name):
-        self.name = name
+        self.node_name = name
         self.parent = (
             []
         )  # List of nodes that must be completed before this node can start
@@ -31,7 +31,7 @@ class Pod:
         )
 
     def node_exist_in_children_chain(self, target_node, num_matches=0):
-        if self.name.split("<")[0] == target_node.name:
+        if self.node_name.split("<")[0] == target_node.node_name:
             return 1
         else:
             return sum(
@@ -63,7 +63,7 @@ class Pod:
 
     def add_numeration(self, num_matches):
         if num_matches != 0:
-            return Pod(self.name + "<{}>".format(num_matches))
+            return Pod(self.node_name + "<{}>".format(num_matches))
         else:
             return self
 
@@ -73,7 +73,7 @@ class Pod:
             parent_idx = dag.add_node(root_node)
             root_node.add_children_to_dag(dag, parent_idx)
 
-        return graphviz_draw(dag, node_attr_fn=lambda node: {"label": node.name})
+        return graphviz_draw(dag, node_attr_fn=lambda node: {"label": node.node_name})
 
     def add_children_to_dag(self, dag, parent_idx):
         """
@@ -99,6 +99,12 @@ class Pod:
 
     def to_pipeline(self, name):
         return Pipeline(name, self.find_root_nodes())
+
+
+class Pod(Pod):
+    def __init__(self, name):
+        super().__init__(name)  # Make the node name same as pod by default
+        self.name = name
 
 
 class PodJob:
