@@ -1,7 +1,7 @@
 from .types import Tag, Packet
 from typing import Optional, Collection
 from pathlib import Path
-from .utils.hash import hash_dict
+from .hashing import hash_dict
 import shutil
 import logging
 import json

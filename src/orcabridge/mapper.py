@@ -8,7 +8,7 @@ from .utils.stream_utils import (
     batch_tag,
     batch_packet,
 )
-from .utils.hash import function_content_hash, stable_hash
+from .hashing import function_content_hash, stable_hash
 from .types import Tag, Packet
 from typing import Iterator, Tuple
 
@@ -142,7 +142,7 @@ class MapTags(Operation):
     def identity_structure(self, *streams):
         return (
             self.__class__.__name__,
-            tuple(sorted(self.tag_map.items())),
+            tuple(sorted(self.key_map.items())),
             self.drop_unmapped,
         ) + tuple(streams)
 
