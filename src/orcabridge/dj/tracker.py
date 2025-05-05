@@ -86,16 +86,12 @@ class QueryTracker(Tracker):
         node_lut = {}
         edge_lut = {}
         for invocation in nx.topological_sort(G):
-            # replace edges(streams) with updated streams if present
-            # TODO: consider better fix than to just take abs
-            invocation_id = abs(invocation.invocation_id)
-            print(("Processing", invocation, invocation_id))
             streams = [edge_lut.get(stream, stream) for stream in invocation.streams]
             new_node, converted = convert_to_query_operation(
                 invocation.operation,
                 schema,
                 table_name=None,
-                table_postfix=invocation_id,
+                table_postfix=invocation.content_hash_int(),
                 upstreams=streams,
             )
 
@@ -130,7 +126,6 @@ class QueryTracker(Tracker):
 
         for op in G_dj:
             if hasattr(op, "table"):
-                print(op.table)
                 table = op.table
                 table.__module__ = module
                 table_name = node_label_lut[op]
