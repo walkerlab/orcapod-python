@@ -142,7 +142,7 @@ class MapTags(Operation):
     def identity_structure(self, *streams):
         return (
             self.__class__.__name__,
-            tuple(sorted(self.tag_map.items())),
+            tuple(sorted(self.key_map.items())),
             self.drop_unmapped,
         ) + tuple(streams)
 
