@@ -67,10 +67,11 @@ class GlobSource(Source):
         return f"GlobSource({str(Path(self.file_path) / self.pattern)}) ⇒ {self.name}"
 
     def identity_structure(self, *streams) -> Any:
+
         return (
             self.__class__.__name__,
             self.name,
             str(self.file_path),
             self.pattern,
-            function_content_hash(self.tag_function),
+            function_content_hash(self.tag_function, exclude_name=True, exclude_module=True, exclude_declaration=True),
         ) + tuple(streams)
