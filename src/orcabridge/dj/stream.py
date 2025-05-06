@@ -93,13 +93,24 @@ class TableCachedStream(TableStream):
     all returned packets can be found in the table.
     """
 
-    def __init__(self, table: Table, stream: SyncStream) -> None:
+    def __init__(self, table: Table, stream: SyncStream, batch_size: int = 10) -> None:
         super().__init__(table)
         self.stream = stream
+        self.batch_size = batch_size
 
     def __iter__(self):
+        batch = []
+        batch_count = 0
         for tag, packet in self.stream:
             # cache the packet into the table
             if not self.table & tag:
-                self.table.insert1(tag | packet)  # insert the packet into the table
+                batch.append(tag | packet)  # insert the packet into the table
+            batch_count += 1
+            if batch_count >= self.batch_size:
+                self.table.insert(batch)
+                batch = []
+                batch_count = 0
             yield tag, packet
+        if batch:
+            self.table.insert(batch)
+
