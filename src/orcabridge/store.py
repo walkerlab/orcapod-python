@@ -74,7 +74,7 @@ class DirDataStore(DataStore):
         output_dir = self.store_dir / store_name / content_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
 
-        if info_path.exists() and not overwrite:
+        if info_path.exists() and not self.overwrite:
             raise ValueError(
                 f"Entry for packet {packet} already exists, and will not be overwritten"
             )

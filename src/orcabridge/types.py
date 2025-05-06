@@ -7,16 +7,16 @@ L: TypeAlias = Sequence[Union[str, None, "L"]]
 
 # the top level tag is a mapping from string keys to values that can be a string or
 # an arbitrary depth of nested list of strings or None
-Tag = Mapping[str, Union[str, L]]
+Tag: TypeAlias = Mapping[str, Union[str, L]]
 
 # a pathset is a path or an arbitrary depth of nested list of paths
 Pathset: TypeAlias = Union[PathLike, Sequence["Pathset"]]
 
 # a packet is a mapping from string keys to pathsets
-Packet = Mapping[str, Pathset]
+Packet: TypeAlias = Mapping[str, Pathset]
 
 # a batch is a tuple of a tag and a list of packets
-Batch = Tuple[Tag, Sequence[Packet]]
+Batch: TypeAlias = Tuple[Tag, Sequence[Packet]]
 
 
 class PodFunction(Protocol):
