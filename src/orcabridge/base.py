@@ -49,9 +49,7 @@ class Operation(HashableMixin):
     def __call__(self, *streams: "SyncStream") -> "SyncStream":
         # trigger call on source if passed as stream
 
-        streams = [
-            stream() if isinstance(stream, Source) else stream for stream in streams
-        ]
+        streams = [stream() if isinstance(stream, Source) else stream for stream in streams]
         output_stream = self.forward(*streams)
         # create an invocation instance
         invocation = Invocation(self, streams)
@@ -164,9 +162,7 @@ class SyncStream(Stream):
     """
 
     def content_hash(self) -> str:
-        if (
-            self.invocation is not None
-        ):  # and hasattr(self.invocation, "invocation_id"):
+        if self.invocation is not None:  # and hasattr(self.invocation, "invocation_id"):
             # use the invocation ID as the hash
             return self.invocation.content_hash()
         return super().content_hash()
