@@ -69,11 +69,10 @@ class Pod(Operation):
     of Pod can dependent on the tags of the packets. This is a design choice to ensure that
     the pods act as pure functions which is a necessary condition to guarantee reproducibility.
     """
-
-    def forward(self, *streams: SyncStream) -> SyncStream:
+    def process_stream(self, *streams: SyncStream) -> SyncStream:
         """
-        The forward method is the main entry point for the pod. It takes a stream of packets
-        and returns a stream of packets.
+        Prepare the incoming streams for execution in the pod. This default implementation
+        joins all the streams together and raises and error if no streams are provided.
         """
         # if multiple streams are provided, join them
         if len(streams) > 1:
@@ -84,7 +83,17 @@ class Pod(Operation):
             stream = streams[0]
         else:
             raise ValueError("No streams provided to FunctionPod")
+        return stream
+    
+    def __call__(self, *streams: SyncStream) -> SyncStream:
+        stream = self.process_stream(*streams)
+        return super().__call__(stream)
 
+    def forward(self, *streams: SyncStream) -> SyncStream:
+        """
+        The forward method is the main entry point for the pod. It takes a stream of packets
+        and returns a stream of packets.
+        """
         def generator() -> Iterator[Tuple[Tag, Packet]]:
             n_computed = 0
             for tag, packet in stream:
