@@ -52,20 +52,22 @@ class DirDataStore(DataStore):
         store_dir="./pod_data",
         copy_files=True,
         preserve_filename=True,
+        overwrite=False,
     ) -> None:
         self.store_dir = Path(store_dir)
         # Create the data directory if it doesn't exist
         self.store_dir.mkdir(parents=True, exist_ok=True)
         self.copy_files = copy_files
         self.preserve_filename = preserve_filename
-
+        self.overwrite = overwrite
+    
     def memoize(
         self,
         store_name: str,
-        content_hash: int,
+        content_hash: str,
         packet: Packet,
         output_packet: Packet,
-        overwrite: bool = False,
+
     ) -> Packet:
 
         packet_hash = hash_dict(packet)
@@ -84,20 +86,21 @@ class DirDataStore(DataStore):
                 for key, value in output_packet.items():
                     if self.preserve_filename:
                         relative_output_path = Path(value).name
-                        if (output_dir / relative_output_path).exists():
-                            raise ValueError(
-                                f"File {relative_output_path} already exists in {output_path}"
-                            )
                     else:
                         # preserve the suffix of the original if present
                         relative_output_path = key + Path(value).suffix
 
                     output_path = output_dir / relative_output_path
-                    if output_path.exists() and not overwrite:
-                        # TODO: handle case where it's a directory
-                        raise ValueError(
-                            f"File {relative_output_path} already exists in {output_path}"
-                        )
+                    if output_path.exists() and not self.overwrite:
+                        logger.warning(f"File {relative_output_path} already exists in {output_path}")
+                        if not self.overwrite:
+                            raise ValueError(
+                                f"File {relative_output_path} already exists in {output_path}"
+                            )
+                        else:
+                            logger.warning(f"Removing file {relative_output_path} in {output_path}")
+                            shutil.rmtree(output_path)
+                    logger.info(f"Copying file {value} to {output_path}")
                     shutil.copy(value, output_path)
                     # register the key with the new path
                     new_output_packet[key] = str(relative_output_path)
@@ -105,7 +108,7 @@ class DirDataStore(DataStore):
             # store the packet in a json file
             with open(info_path, "w") as f:
                 json.dump(output_packet, f)
-            logger.info(f"Stored output for packet {packet} at {output_path}")
+            logger.info(f"Stored output for packet {packet} at {output_dir}")
 
             # retrieve back the memoized packet and return
             # TODO: consider if we want to return the original packet or the memoized one
@@ -122,13 +125,19 @@ class DirDataStore(DataStore):
         output_dir = self.store_dir / store_name / content_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
 
+        
         if info_path.exists():
-            with open(info_path, "r") as f:
-                output_packet = json.load(f)
-            # update the paths to be absolute
-            for key, value in output_packet.items():
-                output_packet[key] = str(output_dir / value)
-            logger.info(f"Retrieved output for packet {packet} from {info_path}")
+            # TODO: perform better error handling
+            try:    
+                with open(info_path, "r") as f:
+                    output_packet = json.load(f)
+                # update the paths to be absolute
+                for key, value in output_packet.items():
+                    output_packet[key] = str(output_dir / value)
+                logger.info(f"Retrieved output for packet {packet} from {info_path}")
+            except:
+                logger.error(f"Error loading memoized output for packet {packet} from {info_path}")
+                return None
             return output_packet
         else:
             logger.info(f"No memoized output found for packet {packet}")
