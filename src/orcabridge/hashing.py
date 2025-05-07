@@ -149,7 +149,7 @@ class HashableMixin:
         # We avoid using id() since it's not stable across sessions
         if structure is None:
             logger.warning(
-                f"HashableMixin.content_hash_int called on {self.__class__.__name__} "
+                f"HashableMixin.content_hash called on {self.__class__.__name__} "
                 "instance without identity_structure() implementation. "
                 "Using class name as default identity, which may not correctly reflect object uniqueness."
             )
@@ -203,7 +203,7 @@ class HashableMixin:
         # We avoid using id() since it's not stable across sessions
         if structure is None:
             logger.warning(
-                f"HashableMixin.content_hash_int called on {self.__class__.__name__} "
+                f"HashableMixin.content_hash_uuid called on {self.__class__.__name__} "
                 "instance without identity_structure() implementation. "
                 "Using class name as default identity, which may not correctly reflect object uniqueness."
             )

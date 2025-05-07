@@ -46,14 +46,14 @@ class GlobSource(Source):
         label: Optional[str] = None,
         tag_function: Optional[Callable[[PathLike], Tag]] = None,
         tag_function_hash_mode: Literal["content", "signature", "name"] = "name",
-        expected_packet_keys: Optional[Collection[str]] = None,
+        expected_tag_keys: Optional[Collection[str]] = None,
         **kwargs,
     ) -> None:
         super().__init__(label=label, **kwargs)
         self.name = name
         self.file_path = file_path
         self.pattern = pattern
-        self.expected_packet_keys = expected_packet_keys
+        self.expected_tag_keys = expected_tag_keys
         if tag_function is None:
             # extract the file name without extension
             tag_function = self.__class__.default_tag_function
@@ -66,8 +66,8 @@ class GlobSource(Source):
         in the stream. The keys are used to identify the packets in the stream.
         If expected_keys are provided, they will be used instead of the default keys.
         """
-        if self.expected_packet_keys is not None:
-            return tuple(self.name), tuple(self.expected_packet_keys)
+        if self.expected_tag_keys is not None:
+            return tuple(self.expected_tag_keys), (self.name,)
         return super().keys()
 
     def forward(self) -> SyncStream:
