@@ -39,7 +39,8 @@ class TableSource(QuerySource):
         """
         if len(streams) > 0:
             raise ValueError("No streams should be passed to TableSource")
-        return QueryStream(self.table, [self.table])
+        # make sure to pass in an instance of the table for the query
+        return QueryStream(self.table(), [self.table()])
 
     def proj(self, *args, **kwargs) -> "TableSource":
         """
@@ -60,14 +61,14 @@ class TableSource(QuerySource):
         return TableSource(self.table & other)
 
     def __repr__(self):
-        return self.table.__repr__()
+        return self.table().__repr__()
 
     def preview(self, limit=None, width=None):
-        return self.table.preview(limit=limit, width=width)
+        return self.table().preview(limit=limit, width=width)
 
     def _repr_html_(self):
         """:return: HTML to display table in Jupyter notebook."""
-        return self.table._repr_html_()
+        return self.table()._repr_html_()
 
 
 class TableCachedStreamSource(QuerySource):
@@ -89,7 +90,7 @@ class TableCachedStreamSource(QuerySource):
         # if table name is not provided, use the name of the stream source
         if table_name is None:
             if stream.invocation is not None:
-                table_name = stream.invocation.__class__.__name__
+                table_name = stream.invocation.operation.__class__.__name__
             else:
                 table_name = stream.__class__.__name__
         # make sure the table name is in snake case

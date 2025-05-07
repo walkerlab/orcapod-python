@@ -25,15 +25,11 @@ class QueryStream(SyncStream):
     iterating over the query results.
     """
 
-    def __init__(
-        self, query: QueryExpression, upstream_tables: Collection[Table]
-    ) -> None:
+    def __init__(self, query: QueryExpression, upstream_tables: Collection[Table]) -> None:
         super().__init__()
         self.query = query
         # remove the restriction from the query
-        self.upstream_tables = [
-            query_without_restriction(table) for table in upstream_tables
-        ]
+        self.upstream_tables = [query_without_restriction(table) for table in upstream_tables]
 
     def __iter__(self):
         for row in self.query.fetch(as_dict=True):
@@ -75,6 +71,9 @@ class QueryStream(SyncStream):
         """:return: HTML to display table in Jupyter notebook."""
         return self.query._repr_html_()
 
+    def identity_structure(self, *streams) -> Any:
+        return (self.__class__.__name__, self.query.make_sql())
+
 
 class TableStream(QueryStream):
     """
@@ -82,6 +81,8 @@ class TableStream(QueryStream):
     """
 
     def __init__(self, table: Table) -> None:
+        if isinstance(table, type):
+            table = table()
         super().__init__(table, [table])
         self.table = table
 
@@ -94,6 +95,8 @@ class TableCachedStream(TableStream):
     """
 
     def __init__(self, table: Table, stream: SyncStream, batch_size: int = 10) -> None:
+        if isinstance(table, type):
+            table = table()
         super().__init__(table)
         self.stream = stream
         self.batch_size = batch_size
@@ -113,4 +116,3 @@ class TableCachedStream(TableStream):
             yield tag, packet
         if batch:
             self.table.insert(batch)
-
