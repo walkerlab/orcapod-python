@@ -8,7 +8,7 @@ from .utils.stream_utils import (
     batch_tag,
     batch_packet,
 )
-from .hashing import function_content_hash, stable_hash
+from .hashing import hash_function
 from .types import Tag, Packet
 from typing import Iterator, Tuple, Any, Collection
 
@@ -67,9 +67,6 @@ class Join(Mapper):
     def __repr__(self) -> str:
         return "Join()"
 
-    def __hash__(self) -> int:
-        return stable_hash(self.__class__.__name__)
-
 
 class MapPackets(Mapper):
     """
@@ -126,7 +123,7 @@ class MapPackets(Mapper):
     def identity_structure(self, *streams):
         return (
             self.__class__.__name__,
-            tuple(sorted(self.key_map.items())),
+            self.key_map,
             self.drop_unmapped,
         ) + tuple(streams)
 
@@ -183,19 +180,10 @@ class MapTags(Mapper):
         map_repr = ", ".join([f"{k} ⇒ {v}" for k, v in self.key_map.items()])
         return f"tags({map_repr})"
 
-    def __hash__(self) -> int:
-        return stable_hash(
-            (
-                self.__class__.__name__,
-                tuple(sorted(self.key_map.items())),
-                self.drop_unmapped,
-            )
-        )
-
     def identity_structure(self, *streams):
         return (
             self.__class__.__name__,
-            tuple(sorted(self.key_map.items())),
+            self.key_map,
             self.drop_unmapped,
         ) + tuple(streams)
 
@@ -273,7 +261,7 @@ class Transform(Mapper):
     def identity_structure(self, *streams):
         return (
             self.__class__.__name__,
-            function_content_hash(self.transform),
+            function_hash(self.transform),
         ) + tuple(streams)
 
 
@@ -336,7 +324,10 @@ class Batch(Mapper):
         return (
             self.__class__.__name__,
             self.batch_size,
-            function_content_hash(self.tag_processor),
+            hash_function(
+                self.tag_processor,
+                function_hash_mode="name",
+            ),
             self.drop_last,
         ) + tuple(streams)
 

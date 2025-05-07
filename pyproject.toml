@@ -28,4 +28,4 @@ version_file = "src/orcabridge/_version.py"
 dependencies = { file = ["src/requirements.txt"] }
 
 [tool.black]
-line-length = 120
+line-length = 80

@@ -4,8 +4,7 @@ logger = logging.getLogger(__name__)
 
 from pathlib import Path
 from typing import List, Optional, Tuple, Iterator, Iterable, Collection, Literal, Any
-from .hashing import function_content_hash, hash_dict, stable_hash
-from .utils.name import get_function_signature
+from .hashing import hash_function, get_function_signature
 from .base import Operation
 from .mapper import Join
 from .stream import SyncStream, SyncStreamFromGenerator
@@ -126,6 +125,7 @@ class FunctionPod(Pod):
         force_computation: bool = False,
         skip_memoization: bool = False,
         error_handling: Literal["raise", "ignore", "warn"] = "raise",
+        _hash_function_kwargs: Optional[dict] = None,
         **kwargs,
     ) -> None:
         super().__init__(label=label, **kwargs)
@@ -140,6 +140,7 @@ class FunctionPod(Pod):
         self.force_computation = force_computation
         self.skip_memoization = skip_memoization
         self.error_handling = error_handling
+        self._hash_function_kwargs = _hash_function_kwargs
 
     def __repr__(self) -> str:
         func_sig = get_function_signature(self.function)
@@ -160,7 +161,9 @@ class FunctionPod(Pod):
             n_computed = 0
             for tag, packet in stream:
                 try:
-                    memoized_packet = self.data_store.retrieve_memoized(self.store_name, self.content_hash(), packet)
+                    memoized_packet = self.data_store.retrieve_memoized(
+                        self.store_name, self.content_hash(char_count=16), packet
+                    )
                     if not self.force_computation and memoized_packet is not None:
                         yield tag, memoized_packet
                         continue
@@ -200,16 +203,29 @@ class FunctionPod(Pod):
         return SyncStreamFromGenerator(generator)
 
     def identity_structure(self, *streams) -> Any:
+        content_kwargs = self._hash_function_kwargs
         if self.function_hash_mode == "content":
-            function_hash = function_content_hash(self.function)
+            if content_kwargs is None:
+                content_kwargs = {
+                    "include_name": False,
+                    "include_module": False,
+                    "include_declaration": False,
+                }
+            function_hash_value = hash_function(
+                self.function,
+                function_hash_mode="content",
+                content_kwargs=content_kwargs,
+            )
         elif self.function_hash_mode == "signature":
-            function_hash = get_function_signature(self.function)
+            function_hash_value = hash_function(
+                self.function, function_hash_mode="signature", content_kwargs=content_kwargs
+            )
         elif self.function_hash_mode == "name":
-            function_hash = self.store_name
+            function_hash_value = hash_function(self.function, function_hash_mode="name", content_kwargs=content_kwargs)
         elif self.function_hash_mode == "custom":
             if self.custom_hash is None:
                 raise ValueError("Custom hash function not provided")
-            function_hash = self.custom_hash
+            function_hash_value = self.custom_hash
         else:
             raise ValueError(
                 f"Unknown function hash mode: {self.function_hash_mode}. "
@@ -218,6 +234,6 @@ class FunctionPod(Pod):
 
         return (
             self.__class__.__name__,
-            function_hash,
+            function_hash_value,
             tuple(self.output_keys),
         ) + tuple(streams)

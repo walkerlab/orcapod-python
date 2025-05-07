@@ -4,7 +4,7 @@ from .types import Tag, Packet
 from typing import Iterator, Tuple, Optional, Callable, Any, Collection, Literal
 from os import PathLike
 from pathlib import Path
-from .hashing import function_content_hash, hash_function
+from .hashing import hash_function
 
 
 class GlobSource(Source):
@@ -83,14 +83,15 @@ class GlobSource(Source):
     def identity_structure(self, *streams) -> Any:
         hash_function_kwargs = {}
         if self.tag_function_hash_mode == "content":
+            # if using content hash, exclude few
             hash_function_kwargs = {
-                "exclude_name": True,
-                "exclude_module": True,
-                "exclude_declaration": True,
+                "include_name": False,
+                "include_module": False,
+                "include_declaration": False,
             }
 
         tag_function_hash = hash_function(
-            self.tag_function, function_hash_mode=self.tag_function_hash_mode, **hash_function_kwargs
+            self.tag_function, function_hash_mode=self.tag_function_hash_mode, hash_kwargs=hash_function_kwargs
         )
         return (
             self.__class__.__name__,

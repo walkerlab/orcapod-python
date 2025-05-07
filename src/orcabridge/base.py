@@ -98,14 +98,6 @@ class Invocation(HashableMixin):
         self.operation = operation
         self.streams = streams
 
-    # @property
-    # def invocation_id(self) -> int:
-    #     """
-    #     The invocation ID is a unique identifier for the invocation.
-    #     It is used to track the invocation in the tracker.
-    #     """
-    #     return hash(self)
-
     def __hash__(self) -> int:
         return super().__hash__()
 
@@ -178,9 +170,6 @@ class SyncStream(Stream):
             # use the invocation ID as the hash
             return self.invocation.content_hash()
         return super().content_hash()
-
-    def __hash__(self) -> int:
-        return hash(self.content_hash())
 
     def keys(self) -> Tuple[Collection[str], Collection[str]]:
         """
