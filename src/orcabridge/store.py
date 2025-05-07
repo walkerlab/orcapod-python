@@ -19,9 +19,7 @@ class DataStore:
         overwrite: bool = False,
     ) -> Packet: ...
 
-    def retrieve_memoized(
-        self, store_name: str, content_hash: str, packet: Packet
-    ) -> Optional[Packet]: ...
+    def retrieve_memoized(self, store_name: str, content_hash: str, packet: Packet) -> Optional[Packet]: ...
 
 
 class NoOpDataStore(DataStore):
@@ -40,9 +38,7 @@ class NoOpDataStore(DataStore):
     ) -> Packet:
         return output_packet
 
-    def retrieve_memoized(
-        self, store_name: str, content_hash: str, packet: Packet
-    ) -> Optional[Packet]:
+    def retrieve_memoized(self, store_name: str, content_hash: str, packet: Packet) -> Optional[Packet]:
         return None
 
 
@@ -60,24 +56,21 @@ class DirDataStore(DataStore):
         self.copy_files = copy_files
         self.preserve_filename = preserve_filename
         self.overwrite = overwrite
-    
+
     def memoize(
         self,
         store_name: str,
         content_hash: str,
         packet: Packet,
         output_packet: Packet,
-
     ) -> Packet:
 
-        packet_hash = hash_dict(packet)
+        packet_hash = hash_to_uuid(packet)
         output_dir = self.store_dir / store_name / content_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
 
         if info_path.exists() and not self.overwrite:
-            raise ValueError(
-                f"Entry for packet {packet} already exists, and will not be overwritten"
-            )
+            raise ValueError(f"Entry for packet {packet} already exists, and will not be overwritten")
         else:
             output_dir.mkdir(parents=True, exist_ok=True)
             if self.copy_files:
@@ -94,9 +87,7 @@ class DirDataStore(DataStore):
                     if output_path.exists() and not self.overwrite:
                         logger.warning(f"File {relative_output_path} already exists in {output_path}")
                         if not self.overwrite:
-                            raise ValueError(
-                                f"File {relative_output_path} already exists in {output_path}"
-                            )
+                            raise ValueError(f"File {relative_output_path} already exists in {output_path}")
                         else:
                             logger.warning(f"Removing file {relative_output_path} in {output_path}")
                             shutil.rmtree(output_path)
@@ -118,17 +109,14 @@ class DirDataStore(DataStore):
 
             return output_packet
 
-    def retrieve_memoized(
-        self, store_name: str, content_hash: str, packet: Packet
-    ) -> Optional[Packet]:
+    def retrieve_memoized(self, store_name: str, content_hash: str, packet: Packet) -> Optional[Packet]:
         packet_hash = hash_dict(packet)
         output_dir = self.store_dir / store_name / content_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
 
-        
         if info_path.exists():
             # TODO: perform better error handling
-            try:    
+            try:
                 with open(info_path, "r") as f:
                     output_packet = json.load(f)
                 # update the paths to be absolute
@@ -147,6 +135,42 @@ class DirDataStore(DataStore):
         # delete the folder self.data_dir and its content
         shutil.rmtree(self.store_dir / store_name)
 
-    def clear_all_stores(self) -> None:
+    def clear_all_stores(self, interactive=True, store_name="", force=False) -> None:
+        """
+        Clear all stores in the data directory.
+        This is a dangerous operation -- please double- and triple-check before proceeding!
+
+        Args:
+            interactive (bool): If True, prompt the user for confirmation before deleting.
+                If False, it will delete only if `force=True`. The user will be prompted
+                to type in the full name of the storage (as shown in the prompt)
+                to confirm deletion.
+            store_name (str): The name of the store to delete. If not using interactive mode,
+                this must be set to the store_dir path in order to proceed with the deletion.
+            force (bool): If True, delete the store without prompting the user for confirmation.
+                If False and interactive is False, the `store_name` must match the store_dir
+                for the deletion to proceed.
+        """
         # delete the folder self.data_dir and its content
-        shutil.rmtree(self.store_dir)
+        # This is a dangerous operation -- double prompt the user for confirmation!
+        if not force and interactive:
+            confirm = input(f"Are you sure you want to delete all stores in {self.store_dir}? (y/n): ")
+            if confirm.lower() != "y":
+                logger.info("Aborting deletion of all stores")
+                return
+            store_name = input(f"Type in the store name {self.store_dir} to confirm the deletion: ")
+            if store_name != str(self.store_dir):
+                logger.info("Aborting deletion of all stores")
+                return
+
+        if not force and store_name != str(self.store_dir):
+            logger.info(f"Aborting deletion of all stores in {self.store_dir}")
+            return
+
+        logger.info(f"Deleting all stores in {self.store_dir}")
+        try:
+            shutil.rmtree(self.store_dir)
+        except:
+            logger.error(f"Error during the deletion of all stores in {self.store_dir}")
+            raise
+        logger.info(f"Deleted all stores in {self.store_dir}")
