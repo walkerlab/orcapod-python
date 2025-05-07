@@ -20,9 +20,7 @@ class TableSource(QuerySource):
     A source that reads from a table.
     """
 
-    def __init__(
-        self, table: Union[Table, type[Table]], label: Optional[str] = None
-    ) -> None:
+    def __init__(self, table: Union[Table, type[Table]], label: Optional[str] = None) -> None:
         super().__init__(label=label)
         # if table is an instance, grab the class for consistency
         if not isinstance(table, type):
@@ -35,7 +33,7 @@ class TableSource(QuerySource):
             return self.table.__name__
         return self._label
 
-    def __call__(self, *streams: SyncStream) -> QueryStream:
+    def forward(self, *streams: SyncStream) -> QueryStream:
         """
         Read from the table and return a stream of packets.
         """
@@ -102,10 +100,7 @@ class TableCachedStreamSource(QuerySource):
     @property
     def label(self) -> str:
         if self._label is None:
-            if (
-                hasattr(self.stream.invocation, "label")
-                and self.stream.invocation.label is not None
-            ):
+            if hasattr(self.stream.invocation, "label") and self.stream.invocation.label is not None:
                 return self.stream.invocation.label
             else:
                 return snake_to_pascal(self.table_name)
@@ -159,11 +154,9 @@ class TableCachedSource(QuerySource):
         self.source = source
         self.schema = schema
         # if table name is not provided, use the name of the source
-        self.table_name = (
-            table_name
-            if table_name is not None
-            else pascal_to_snake(source.__class__.__name__)
-        ) + (f"_{table_postfix}" if table_postfix else "")
+        self.table_name = (table_name if table_name is not None else pascal_to_snake(source.__class__.__name__)) + (
+            f"_{table_postfix}" if table_postfix else ""
+        )
         self.table = None
 
     @property

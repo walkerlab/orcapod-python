@@ -1,10 +1,10 @@
 from .base import Source
 from .stream import SyncStream, SyncStreamFromGenerator
 from .types import Tag, Packet
-from typing import Iterator, Tuple, Optional, Callable, Any
+from typing import Iterator, Tuple, Optional, Callable, Any, Collection, Literal
 from os import PathLike
 from pathlib import Path
-from .hashing import function_content_hash, stable_hash
+from .hashing import function_content_hash, hash_function
 
 
 class GlobSource(Source):
@@ -45,16 +45,30 @@ class GlobSource(Source):
         pattern: str = "*",
         label: Optional[str] = None,
         tag_function: Optional[Callable[[PathLike], Tag]] = None,
+        tag_function_hash_mode: Literal["content", "signature", "name"] = "name",
+        expected_packet_keys: Optional[Collection[str]] = None,
         **kwargs,
     ) -> None:
         super().__init__(label=label, **kwargs)
         self.name = name
         self.file_path = file_path
         self.pattern = pattern
+        self.expected_packet_keys = expected_packet_keys
         if tag_function is None:
             # extract the file name without extension
             tag_function = self.__class__.default_tag_function
         self.tag_function = tag_function
+        self.tag_function_hash_mode = tag_function_hash_mode
+
+    def keys(self) -> Tuple[Collection[str], Collection[str]]:
+        """
+        Returns the keys of the stream. The keys are the names of the packets
+        in the stream. The keys are used to identify the packets in the stream.
+        If expected_keys are provided, they will be used instead of the default keys.
+        """
+        if self.expected_packet_keys is not None:
+            return tuple(self.name), tuple(self.expected_packet_keys)
+        return super().keys()
 
     def forward(self) -> SyncStream:
         def generator() -> Iterator[Tuple[Tag, Packet]]:
@@ -67,11 +81,21 @@ class GlobSource(Source):
         return f"GlobSource({str(Path(self.file_path) / self.pattern)}) ⇒ {self.name}"
 
     def identity_structure(self, *streams) -> Any:
+        hash_function_kwargs = {}
+        if self.tag_function_hash_mode == "content":
+            hash_function_kwargs = {
+                "exclude_name": True,
+                "exclude_module": True,
+                "exclude_declaration": True,
+            }
 
+        tag_function_hash = hash_function(
+            self.tag_function, function_hash_mode=self.tag_function_hash_mode, **hash_function_kwargs
+        )
         return (
             self.__class__.__name__,
             self.name,
             str(self.file_path),
             self.pattern,
-            function_content_hash(self.tag_function, exclude_name=True, exclude_module=True, exclude_declaration=True),
+            tag_function_hash,
         ) + tuple(streams)
