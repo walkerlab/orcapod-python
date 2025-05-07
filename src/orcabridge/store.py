@@ -5,6 +5,7 @@ from .hashing import hash_packet
 import shutil
 import logging
 import json
+from os import PathLike
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ class NoOpDataStore(DataStore):
 class DirDataStore(DataStore):
     def __init__(
         self,
-        store_dir="./pod_data",
+        store_dir: str | PathLike = "./pod_data",
         copy_files=True,
         preserve_filename=True,
         overwrite=False,
