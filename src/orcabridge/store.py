@@ -1,7 +1,7 @@
 from .types import Tag, Packet
 from typing import Optional, Collection
 from pathlib import Path
-from .hashing import hash_to_uuid
+from .hashing import hash_packet
 import shutil
 import logging
 import json
@@ -65,7 +65,7 @@ class DirDataStore(DataStore):
         output_packet: Packet,
     ) -> Packet:
 
-        packet_hash = hash_to_uuid(packet)
+        packet_hash = hash_packet(packet)
         output_dir = self.store_dir / store_name / content_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
 
@@ -110,7 +110,7 @@ class DirDataStore(DataStore):
             return output_packet
 
     def retrieve_memoized(self, store_name: str, content_hash: str, packet: Packet) -> Optional[Packet]:
-        packet_hash = hash_to_uuid(packet)
+        packet_hash = hash_packet(packet)
         output_dir = self.store_dir / store_name / content_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
 
@@ -121,6 +121,8 @@ class DirDataStore(DataStore):
                     output_packet = json.load(f)
                 # update the paths to be absolute
                 for key, value in output_packet.items():
+                    # Note: if value is an absolute path, this will not change it as
+                    # Pathlib is smart enough to preserve the last occurring absolute path (if present)
                     output_packet[key] = str(output_dir / value)
                 logger.info(f"Retrieved output for packet {packet} from {info_path}")
             except:
