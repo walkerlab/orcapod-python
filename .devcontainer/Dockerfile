@@ -1,17 +1,7 @@
 # DevContainer image
 FROM debian:bookworm-slim
 RUN \
-    adduser --system --disabled-password --shell /bin/bash --home /home/vscode vscode && \
-    # docker setup
-    apt-get update && \
-    apt-get install ca-certificates curl gnupg lsb-release -y && \
-    mkdir -m 0755 -p /etc/apt/keyrings && \
-    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg && \
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null && \
-    apt-get update && \
-    apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin -y && \
-    usermod -aG docker vscode && \
-    apt-get clean
+    adduser --system --disabled-password --shell /bin/bash --home /home/vscode vscode
 RUN \
     # common dev setup
     apt update && \
@@ -26,7 +16,7 @@ RUN \
 USER vscode
 ENV PATH=/home/vscode/.local/bin:$PATH
 WORKDIR /home/vscode
-COPY --chown=vscode:nogroup src/orcabridge/requirements.txt /tmp/requirements.txt
+COPY --chown=vscode:nogroup src/requirements.txt /tmp/requirements.txt
 RUN \
     # python setup
     curl -LsSf https://astral.sh/uv/install.sh | sh && \
@@ -37,4 +27,4 @@ RUN \
     echo '. ~/.local/share/base/bin/activate' >> ~/.bashrc
 ENV VIRTUAL_ENV=/home/vscode/.local/share/base
 
-CMD ["bash", "-c", "sudo rm /var/run/docker.pid; sudo dockerd"]
+CMD ["tail", "-f", "/dev/null"]
