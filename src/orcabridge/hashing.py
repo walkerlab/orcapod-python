@@ -38,23 +38,32 @@ def stable_hash(s):
     return int(hash_hex[:16], 16)
 
 
-def function_content_hash(func):
+def function_content_hash(
+    func, exclude_name=False, exclude_module=False, exclude_declaration=False, return_components=False
+):
     """
     Compute a hash based on the function's source code, name, module, and closure variables.
     """
     components = []
 
     # Add function name
-    components.append(f"name:{func.__name__}")
+    if not exclude_name:
+        components.append(f"name:{func.__name__}")
 
     # Add module
-    components.append(f"module:{func.__module__}")
+    if not exclude_module:
+        components.append(f"module:{func.__module__}")
 
     # Get the function's source code
     try:
         source = inspect.getsource(func)
         # Clean up the source code
         source = source.strip()
+        # Remove the function definition line
+        if exclude_declaration:
+            # find the line that starts with def and remove it
+            # TODO: consider dealing with more sophisticated cases like decorators
+            source = "\n".join(line for line in source.split("\n") if not line.startswith("def "))
         components.append(f"source:{source}")
     except (IOError, TypeError):
         # If we can't get the source (e.g., built-in function), use the function's string representation
@@ -84,9 +93,7 @@ def function_content_hash(func):
         components.append(f"defaults:{defaults_str}")
 
     if hasattr(func, "__kwdefaults__") and func.__kwdefaults__:
-        kwdefaults_str = ",".join(
-            f"{k}={repr(v)}" for k, v in func.__kwdefaults__.items()
-        )
+        kwdefaults_str = ",".join(f"{k}={repr(v)}" for k, v in func.__kwdefaults__.items())
         components.append(f"kwdefaults:{kwdefaults_str}")
 
     # Function's code object properties (excluding filename and line numbers)
@@ -103,6 +110,8 @@ def function_content_hash(func):
         "co_varnames": code.co_varnames,
     }
     components.append(f"code_properties:{repr(code_props)}")
+    if return_components:
+        return components
 
     # Join all components and compute hash
     combined = "\n".join(components)
@@ -213,16 +222,11 @@ class HashableMixin:
         # Handle named tuples (which are subclasses of tuple)
         if hasattr(obj, "_fields") and isinstance(obj, tuple):
             # For namedtuples, convert to dict and then process
-            return self._process_structure(
-                {field: value for field, value in zip(obj._fields, obj)}
-            )
+            return self._process_structure({field: value for field, value in zip(obj._fields, obj)})
 
         # Handle mappings (dict-like objects)
         if isinstance(obj, Mapping):
-            return {
-                str(k): self._process_structure(v)
-                for k, v in sorted(obj.items(), key=lambda x: str(x[0]))
-            }
+            return {str(k): self._process_structure(v) for k, v in sorted(obj.items(), key=lambda x: str(x[0]))}
 
         # Handle sets and frozensets specifically
         if isinstance(obj, (set, frozenset)):

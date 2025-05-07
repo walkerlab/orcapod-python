@@ -14,7 +14,7 @@ from .store import DataStore, NoOpDataStore
 import json
 import shutil
 import functools
-
+import warnings
 
 def function_pod(
     output_keys: Optional[Collection[str]] = None,
@@ -24,6 +24,8 @@ def function_pod(
     custom_hash: Optional[int] = None,
     force_computation: bool = False,
     skip_memoization: bool = False,
+    error_handling: Literal["raise", "ignore", "warn"] = "raise",
+    **kwargs,
 ):
     """
     Decorator that wraps a function in a FunctionPod instance.
@@ -48,6 +50,8 @@ def function_pod(
             custom_hash=custom_hash,
             force_computation=force_computation,
             skip_memoization=skip_memoization,
+            error_handling=error_handling,
+            **kwargs,
         )
 
         # Update the metadata to make the pod look more like the original function
@@ -65,11 +69,10 @@ class Pod(Operation):
     of Pod can dependent on the tags of the packets. This is a design choice to ensure that
     the pods act as pure functions which is a necessary condition to guarantee reproducibility.
     """
-
-    def forward(self, *streams: SyncStream) -> SyncStream:
+    def process_stream(self, *streams: SyncStream) -> SyncStream:
         """
-        The forward method is the main entry point for the pod. It takes a stream of packets
-        and returns a stream of packets.
+        Prepare the incoming streams for execution in the pod. This default implementation
+        joins all the streams together and raises and error if no streams are provided.
         """
         # if multiple streams are provided, join them
         if len(streams) > 1:
@@ -80,7 +83,17 @@ class Pod(Operation):
             stream = streams[0]
         else:
             raise ValueError("No streams provided to FunctionPod")
+        return stream
+    
+    def __call__(self, *streams: SyncStream) -> SyncStream:
+        stream = self.process_stream(*streams)
+        return super().__call__(stream)
 
+    def forward(self, *streams: SyncStream) -> SyncStream:
+        """
+        The forward method is the main entry point for the pod. It takes a stream of packets
+        and returns a stream of packets.
+        """
         def generator() -> Iterator[Tuple[Tag, Packet]]:
             n_computed = 0
             for tag, packet in stream:
@@ -109,6 +122,7 @@ class FunctionPod(Pod):
         label: Optional[str] = None,
         force_computation: bool = False,
         skip_memoization: bool = False,
+        error_handling: Literal["raise", "ignore", "warn"] = "raise",
         **kwargs,
     ) -> None:
         super().__init__(label=label, **kwargs)
@@ -120,9 +134,9 @@ class FunctionPod(Pod):
         self.data_store = data_store if data_store is not None else NoOpDataStore()
         self.function_hash_mode = function_hash_mode
         self.custom_hash = custom_hash
-        self.skip_memoization = skip_memoization
         self.force_computation = force_computation
-
+        self.skip_memoization = skip_memoization
+        self.error_handling = error_handling
     def __repr__(self) -> str:
         func_sig = get_function_signature(self.function)
         return f"FunctionPod:{func_sig} ⇒ {self.output_keys}"
@@ -141,28 +155,38 @@ class FunctionPod(Pod):
         def generator() -> Iterator[Tuple[Tag, Packet]]:
             n_computed = 0
             for tag, packet in stream:
-                memoized_packet = self.data_store.retrieve_memoized(
-                    self.store_name, self.content_hash(), packet
-                )
-                if not self.force_computation and memoized_packet is not None:
-                    yield tag, memoized_packet
-                    continue
-                values = self.function(**packet)
-                if len(self.output_keys) == 0:
-                    values = []
-                elif len(self.output_keys) == 1:
-                    values = [values]
-                elif isinstance(values, Iterable):
-                    values = list(values)
-                elif len(self.output_keys) > 1:
-                    raise ValueError(
-                        "Values returned by function must be a pathlike or a sequence of pathlikes"
+                try:
+                    memoized_packet = self.data_store.retrieve_memoized(
+                        self.store_name, self.content_hash(), packet
                     )
+                    if not self.force_computation and memoized_packet is not None:
+                        yield tag, memoized_packet
+                        continue
+                    values = self.function(**packet)
+                    if len(self.output_keys) == 0:
+                        values = []
+                    elif len(self.output_keys) == 1:
+                        values = [values]
+                    elif isinstance(values, Iterable):
+                        values = list(values)
+                    elif len(self.output_keys) > 1:
+                        raise ValueError(
+                            "Values returned by function must be a pathlike or a sequence of pathlikes"
+                        )
 
-                if len(values) != len(self.output_keys):
-                    raise ValueError(
-                        "Number of output keys does not match number of values returned by function"
-                    )
+                    if len(values) != len(self.output_keys):
+                        raise ValueError(
+                            "Number of output keys does not match number of values returned by function"
+                        )
+                except Exception as e:
+                    logger.error(f"Error processing packet {packet}: {e}")
+                    if self.error_handling == "raise":
+                        raise e
+                    elif self.error_handling == "ignore":
+                        continue
+                    elif self.error_handling == "warn":
+                        warnings.warn(f"Error processing packet {packet}: {e}")
+                        continue
 
                 output_packet: Packet = {k: v for k, v in zip(self.output_keys, values)}
 
