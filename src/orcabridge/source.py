@@ -1,25 +1,10 @@
-from .base import Operation
+from .base import Source
 from .stream import SyncStream, SyncStreamFromGenerator
 from .types import Tag, Packet
-from typing import Iterator, Tuple, Optional, Callable
+from typing import Iterator, Tuple, Optional, Callable, Any
 from os import PathLike
 from pathlib import Path
-
-
-class Source(Operation, SyncStream):
-    """
-    A base class for all sources in the system. A source can be seen as a special
-    type of Operation that takes no input and produces a stream of packets.
-    For convenience, the source itself is also a stream and thus can be used
-    as an input to other operations directly.
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._source = self
-
-    def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
-        yield from self()
+from .hashing import function_content_hash, stable_hash
 
 
 class GlobSource(Source):
@@ -51,20 +36,24 @@ class GlobSource(Source):
     ...                     lambda f: {'date': Path(f).stem[:8]})
     """
 
+    default_tag_function = lambda f: {"file_name": Path(f).stem}
+
     def __init__(
         self,
         name: str,
         file_path: PathLike,
         pattern: str = "*",
+        label: Optional[str] = None,
         tag_function: Optional[Callable[[PathLike], Tag]] = None,
+        **kwargs,
     ) -> None:
-        super().__init__()
+        super().__init__(label=label, **kwargs)
         self.name = name
         self.file_path = file_path
         self.pattern = pattern
         if tag_function is None:
             # extract the file name without extension
-            tag_function = lambda file: {"file_name": Path(file).stem}
+            tag_function = self.__class__.default_tag_function
         self.tag_function = tag_function
 
     def forward(self) -> SyncStream:
@@ -73,3 +62,15 @@ class GlobSource(Source):
                 yield self.tag_function(file), {self.name: file}
 
         return SyncStreamFromGenerator(generator)
+
+    def __repr__(self) -> str:
+        return f"GlobSource({str(Path(self.file_path) / self.pattern)}) ⇒ {self.name}"
+
+    def identity_structure(self, *streams) -> Any:
+        return (
+            self.__class__.__name__,
+            self.name,
+            str(self.file_path),
+            self.pattern,
+            function_content_hash(self.tag_function),
+        ) + tuple(streams)

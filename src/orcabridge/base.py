@@ -1,10 +1,19 @@
+from orcabridge.hashing import HashableMixin
 from .types import Tag, Packet
-from typing import Optional, Tuple, List, Dict, Any, Collection, Callable, Iterator
-from .utils.hash import hash_dict
-import networkx as nx
+from typing import (
+    Optional,
+    Tuple,
+    List,
+    Any,
+    Collection,
+    Callable,
+    Iterator,
+)
+from collections.abc import Collection
+from typing import Any, List, Tuple
 
 
-class Operation:
+class Operation(HashableMixin):
     """
     Operation defines a generic operation that can be performed on a stream of data.
     It is a base class for all operations that can be performed on a collection of streams
@@ -15,35 +24,39 @@ class Operation:
     information is stored as Invocation object and attached to the output stream.
     """
 
-    def get_invocation(self, *streams: "SyncStream") -> str:
-        """
-        Given a list of streams to perform the operation on, define
-        the invocation ID that would uniquely identify this particular
-        invocation of the operation. This ID is used to track each distinct
-        invocation of the operation and its associated streams.
-        The default implementation is to use the hash of the streams
-        as the invocation ID. This is sensitive to the order of the streams.
+    def __init__(self, label: Optional[str] = None, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._label = label
 
-        For operations that are not sensitive to the order of the streams,
-        this method should be overridden to provide a more appropriate
-        invocation ID. For example, a join operation may want to use the
-        hash of the joined streams instead of the individual stream hashes.
+    @property
+    def label(self) -> str:
         """
-        # default implementation where ID is stream order sensitive
-        invocation_id = ":".join([str(hash(s)) for s in streams])
-        return Invocation(self, invocation_id, streams)
+        Overwrite this method to attain a custom label logic for the operation.
+        """
+        return self._label
+
+    @label.setter
+    def label(self, value: str) -> None:
+        self._label = value
+
+    def identity_structure(self, *streams: "SyncStream") -> Any:
+        # Default implementation of identity_structure for the operation only
+        # concerns the operation class and the streams if present. Subclasses of
+        # Operations should override this method to provide a more meaningful
+        # representation of the operation.
+        return (self.__class__.__name__, streams)
 
     def __call__(self, *streams: "SyncStream") -> "SyncStream":
-        # if any source is passed in as a stream, invoke it to extract stream first
-        from .source import Source
+        # trigger call on source if passed as stream
 
-        streams = [s() if isinstance(s, Source) else s for s in streams]
-
+        streams = [
+            stream() if isinstance(stream, Source) else stream for stream in streams
+        ]
         output_stream = self.forward(*streams)
         # create an invocation instance
-        invocation = self.get_invocation(*streams)
+        invocation = Invocation(self, streams)
         # label the output_stream with the invocation information
-        output_stream.source = invocation
+        output_stream.invocation = invocation
 
         # delay import to avoid circular import
         from .tracker import Tracker
@@ -61,7 +74,7 @@ class Operation:
     def forward(self, *streams: "SyncStream") -> "SyncStream": ...
 
 
-class Invocation:
+class Invocation(HashableMixin):
     """
     This class represents an invocation of an operation on a collection of streams.
     It contains the operation, the invocation ID, and the streams that were used
@@ -73,59 +86,72 @@ class Invocation:
     def __init__(
         self,
         operation: Operation,
-        invocation_id: str,
         streams: Collection["SyncStream"],
     ) -> None:
         self.operation = operation
-        self.invocation_id = invocation_id
         self.streams = streams
 
-    def __repr__(self) -> str:
-        return f"Invocation({self.operation}, ID:{self.invocation_id})"
+    # @property
+    # def invocation_id(self) -> int:
+    #     """
+    #     The invocation ID is a unique identifier for the invocation.
+    #     It is used to track the invocation in the tracker.
+    #     """
+    #     return hash(self)
 
     def __hash__(self) -> int:
-        # TODO: use a better hash function that is based on the operation,
-        # invocation_id and the streams (ideally invocation objects attached to the streams)
         return super().__hash__()
+
+    def __repr__(self) -> str:
+        return f"Invocation({self.operation}, ID:{hash(self)})"
+
+    def identity_structure(self) -> int:
+        # default implementation is streams order sensitive. If an operation does
+        # not depend on the order of the streams, it should override this method
+        return self.operation.identity_structure(*self.streams)
 
     def __eq__(self, other: Any) -> bool:
         if not isinstance(other, Invocation):
             return False
-        return (
-            self.operation == other.operation
-            and self.invocation_id == other.invocation_id
-        )
+        return hash(self) == hash(other)
 
     def __lt__(self, other: Any) -> bool:
         if not isinstance(other, Invocation):
             return NotImplemented
 
         if self.operation == other.operation:
-            return self.invocation_id < other.invocation_id
-        return self.operation < other.operation
+            return hash(self) < hash(other)
+        # otherwise, order by the operation
+        return hash(self.operation) < hash(other.operation)
 
 
-class Stream:
+class Stream(HashableMixin):
     """
     A stream is a collection of tagged-packets that are generated by an operation.
     The stream is iterable and can be used to access the packets in the stream.
 
-    A stream has propery `source` that is an instance of Invocation that generated the stream.
+    A stream has propery `invocation` that is an instance of Invocation that generated the stream.
     This may be None if the stream is not generated by an operation.
     """
 
-    def __init__(self):
-        self._source: Optional[Invocation] = None
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._invocation: Optional[Invocation] = None
+
+    def identity_structure(self) -> Any:
+        if self.invocation is not None:
+            return self.invocation.identity_structure()
+        return super().identity_structure()
 
     @property
-    def source(self) -> Optional[Invocation]:
-        return self._source
+    def invocation(self) -> Optional[Invocation]:
+        return self._invocation
 
-    @source.setter
-    def source(self, value: Invocation) -> None:
+    @invocation.setter
+    def invocation(self, value: Invocation) -> None:
         if not isinstance(value, Invocation):
-            raise TypeError("source must be an instance of Invocation")
-        self._source = value
+            raise TypeError("invocation field must be an instance of Invocation")
+        self._invocation = value
 
     def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
         raise NotImplementedError("Subclasses must implement __iter__ method")
@@ -137,8 +163,16 @@ class SyncStream(Stream):
     will have to wait for the stream to finish before proceeding.
     """
 
+    def content_hash(self) -> str:
+        if (
+            self.invocation is not None
+        ):  # and hasattr(self.invocation, "invocation_id"):
+            # use the invocation ID as the hash
+            return self.invocation.content_hash()
+        return super().content_hash()
+
     def __hash__(self) -> int:
-        return super().__hash__()
+        return hash(self.content_hash())
 
     def keys(self) -> Tuple[List[str], List[str]]:
         """
@@ -153,7 +187,7 @@ class SyncStream(Stream):
         tag, packet = next(iter(self))
         return list(tag.keys()), list(packet.keys())
 
-    def preview(self, n: int = 1) -> None:
+    def head(self, n: int = 5) -> None:
         """
         Print the first n elements of the stream.
         This method is useful for previewing the stream
@@ -172,3 +206,43 @@ class SyncStream(Stream):
         This method is not guaranteed to be efficient and should be used with caution.
         """
         return sum(1 for _ in self)
+
+    def __rshift__(self, transformer: Any) -> "SyncStream":
+        """
+        Returns a new stream that is the result of applying the mapping to the stream.
+        The mapping is applied to each packet in the stream and the resulting packets
+        are returned in a new stream.
+        """
+        from .mapper import MapPackets
+
+        # TODO: extend to generic mapping
+        if isinstance(transformer, dict):
+            return MapPackets(transformer)(self)
+        elif isinstance(transformer, Callable):
+            return transformer(self)
+
+    def __mul__(self, other: "SyncStream") -> "SyncStream":
+        """
+        Returns a new stream that is the result joining with the other stream
+        """
+        from .mapper import Join
+
+        if not isinstance(other, SyncStream):
+            raise TypeError("other must be a SyncStream")
+        return Join()(self, other)
+
+
+class Source(Operation, SyncStream):
+    """
+    A base class for all sources in the system. A source can be seen as a special
+    type of Operation that takes no input and produces a stream of packets.
+    For convenience, the source itself is also a stream and thus can be used
+    as an input to other operations directly.
+    """
+
+    def __init__(self, label: Optional[str] = None, **kwargs) -> None:
+        super().__init__(label=label, **kwargs)
+        self._invocation = None
+
+    def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
+        yield from self()
