@@ -158,6 +158,13 @@ class Stream(HashableMixin):
     def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
         raise NotImplementedError("Subclasses must implement __iter__ method")
 
+    def flow(self) -> Collection[Tuple[Tag, Packet]]:
+        """
+        Flow everything through the stream, returning the entire collection of
+        (Tag, Packet) as a collection. This will tigger any upstream computation of the stream.
+        """
+        return list(self)
+
 
 class SyncStream(Stream):
     """
