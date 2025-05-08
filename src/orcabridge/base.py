@@ -55,11 +55,11 @@ class Operation(HashableMixin):
         # representation of the operation.
         return (self.__class__.__name__, streams)
 
-    def __call__(self, *streams: "SyncStream") -> "SyncStream":
+    def __call__(self, *streams: "SyncStream", **kwargs) -> "SyncStream":
         # trigger call on source if passed as stream
 
         streams = [stream() if isinstance(stream, Source) else stream for stream in streams]
-        output_stream = self.forward(*streams)
+        output_stream = self.forward(*streams, **kwargs)
         # create an invocation instance
         invocation = Invocation(self, streams)
         # label the output_stream with the invocation information
