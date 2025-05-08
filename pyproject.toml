@@ -25,7 +25,7 @@ where = ["src"]
 version_file = "src/orcabridge/_version.py"
 
 [tool.setuptools.dynamic]
-dependencies = { file = ["src/requirements.txt"] }
+dependencies = { file = ["requirements.txt"] }
 
 [tool.black]
 line-length = 80
