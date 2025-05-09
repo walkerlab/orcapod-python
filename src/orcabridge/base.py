@@ -55,11 +55,11 @@ class Operation(HashableMixin):
         # representation of the operation.
         return (self.__class__.__name__, streams)
 
-    def __call__(self, *streams: "SyncStream") -> "SyncStream":
+    def __call__(self, *streams: "SyncStream", **kwargs) -> "SyncStream":
         # trigger call on source if passed as stream
 
         streams = [stream() if isinstance(stream, Source) else stream for stream in streams]
-        output_stream = self.forward(*streams)
+        output_stream = self.forward(*streams, **kwargs)
         # create an invocation instance
         invocation = Invocation(self, streams)
         # label the output_stream with the invocation information
@@ -157,6 +157,13 @@ class Stream(HashableMixin):
 
     def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
         raise NotImplementedError("Subclasses must implement __iter__ method")
+
+    def flow(self) -> Collection[Tuple[Tag, Packet]]:
+        """
+        Flow everything through the stream, returning the entire collection of
+        (Tag, Packet) as a collection. This will tigger any upstream computation of the stream.
+        """
+        return list(self)
 
 
 class SyncStream(Stream):

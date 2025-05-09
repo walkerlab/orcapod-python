@@ -171,9 +171,8 @@ class TableCachedSource(QuerySource):
         key_fields = "\n".join([f"{k}: varchar(255)" for k in tag_keys])
         output_fields = "\n".join([f"{k}: varchar(255)" for k in packet_keys])
 
-        outer_class = self
-
         class CachedTable(dj.Manual):
+            _parent = self # this refers to the outer class instance
             definition = f"""
             # {self.table_name} outputs
             {key_fields}
@@ -181,17 +180,17 @@ class TableCachedSource(QuerySource):
             {output_fields}
             """
 
-            def populate(self):
-                return sum(1 for _ in outer_class())
+            def populate(self, batch_size: int = 10, use_skip_duplicates: bool = False) -> int:
+                return sum(1 for _ in self._parent(batch_size=batch_size, use_skip_duplicates=use_skip_duplicates))
 
         CachedTable.__name__ = snake_to_pascal(self.table_name)
         CachedTable = self.schema(CachedTable)
         self.table = CachedTable
 
-    def forward(self, *streams: QueryStream) -> QueryStream:
+    def forward(self, *streams: QueryStream, batch_size: int=10, use_skip_duplicates: bool = False) -> QueryStream:
         if len(streams) > 0:
             raise ValueError("No streams should be passed to TableCachedSource")
 
         if self.table is None:
             self.compile(*self.source().keys())
-        return TableCachedStream(self.table, self.source())
+        return TableCachedStream(self.table, self.source(), batch_size=batch_size, use_skip_duplicates=use_skip_duplicates)

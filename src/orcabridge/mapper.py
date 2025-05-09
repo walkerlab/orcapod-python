@@ -261,7 +261,7 @@ class Transform(Mapper):
     def identity_structure(self, *streams):
         return (
             self.__class__.__name__,
-            function_hash(self.transform),
+            hash_function(self.transform),
         ) + tuple(streams)
 
 

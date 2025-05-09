@@ -6,6 +6,7 @@ A library for creating stable, content-based hashes that remain consistent acros
 suitable for arbitrarily nested data structures and custom objects via HashableMixin.
 """
 
+from ast import Str
 import hashlib
 import inspect
 import json
@@ -13,6 +14,11 @@ import logging
 from uuid import UUID
 from typing import Any, Dict, Optional, Union, Collection, Mapping, Callable, TypeVar, Set, Literal
 from pathlib import Path
+from os import PathLike
+import os
+import xxhash
+import zlib
+from .types import Pathset, Packet
 
 # Configure logging with __name__ for proper hierarchy
 logger = logging.getLogger(__name__)
@@ -737,3 +743,115 @@ def stable_hash(s: Any) -> int:
         An integer hash
     """
     return hash_to_int(s)
+
+
+def hash_packet(
+    packet: Packet,
+    algorithm: str = "sha256",
+    buffer_size: int = 65536,
+    char_count: Optional[int] = 32,
+    prefix_algorithm: bool = True,
+) -> str:
+    """
+    Generate a hash for a packet based on its content.
+
+    Args:
+        packet: The packet to hash
+
+    Returns:
+        A hexadecimal digest of the packet's content
+    """
+    hash_results = {}
+    for key, pathset in packet.items():
+        hash_results[key] = hash_pathset(pathset, algorithm=algorithm, buffer_size=buffer_size)
+
+    packet_hash = hash_to_hex(hash_results, char_count=char_count)
+
+    if prefix_algorithm:
+        # Prefix the hash with the algorithm name
+        packet_hash = f"{algorithm}-{packet_hash}"
+
+    return packet_hash
+
+
+def hash_pathset(pathset: Pathset, algorithm="sha256", buffer_size=65536) -> str:
+    """
+    Generate hash of the pathset based primarily on the content of the files.
+    If the pathset is a collection of files or a directory, the name of the file
+    will be included in the hash calculation.
+
+    Currently only support hashing of Pathset if Pathset points to a single file.
+    """
+    # Currently only suports single file Pathset
+    if isinstance(pathset, str) or isinstance(pathset, PathLike):
+        pathset = Path(pathset)
+        if not pathset.exists():
+            raise FileNotFoundError(f"Path {pathset} does not exist")
+        if pathset.is_dir():
+            raise NotImplementedError(f"Hashing of directories is not supported yet: failed to hash {pathset}")
+
+        return hash_file(pathset, algorithm=algorithm, buffer_size=buffer_size)
+
+    raise NotImplementedError(
+        f"Hashing of pathset of type {type(pathset)} is not supported yet: failed to hash {pathset}"
+    )
+    if isinstance(pathset, Collection):
+        hash_dict = {}
+        for path in pathset:
+            file_name = Path(path).name
+            hash_dict[file_name] = hash_file(path)
+
+
+def hash_file(file_path, algorithm="sha256", buffer_size=65536) -> str:
+    """
+    Calculate the hash of a file using the specified algorithm.
+
+    Parameters:
+        file_path (str): Path to the file to hash
+        algorithm (str): Hash algorithm to use - options include:
+                         'md5', 'sha1', 'sha256', 'sha512', 'xxh64', 'crc32'
+        buffer_size (int): Size of chunks to read from the file at a time
+
+    Returns:
+        str: Hexadecimal digest of the hash
+    """
+    # Verify the file exists
+    if not Path(file_path).is_file():
+        raise FileNotFoundError(f"The file {file_path} does not exist")
+
+    # Handle non-cryptographic hash functions
+    if algorithm == "xxh64":
+        hasher = xxhash.xxh64()
+        with open(file_path, "rb") as file:
+            while True:
+                data = file.read(buffer_size)
+                if not data:
+                    break
+                hasher.update(data)
+        return hasher.hexdigest()
+
+    if algorithm == "crc32":
+        crc = 0
+        with open(file_path, "rb") as file:
+            while True:
+                data = file.read(buffer_size)
+                if not data:
+                    break
+                crc = zlib.crc32(data, crc)
+        return format(crc & 0xFFFFFFFF, "08x")  # Convert to hex string
+
+    # Handle cryptographic hash functions from hashlib
+    try:
+        hasher = hashlib.new(algorithm)
+    except ValueError:
+        valid_algorithms = ", ".join(sorted(hashlib.algorithms_available))
+        raise ValueError(f"Invalid algorithm: {algorithm}. Available algorithms: {valid_algorithms}, xxh64, crc32")
+
+    with open(file_path, "rb") as file:
+        while True:
+            data = file.read(buffer_size)
+            if not data:
+                break
+            hasher.update(data)
+
+    return hasher.hexdigest()
