@@ -45,15 +45,11 @@ def batch_tag(all_tags: Sequence[Tag]) -> Tag:
     batch_tag = {key: [] for key in all_keys}  # Initialize batch_tag with all keys
     for tag in all_tags:
         for k in all_keys:
-            batch_tag[k].append(
-                tag.get(k, None)
-            )  # Append the value or None if the key is not present
+            batch_tag[k].append(tag.get(k, None))  # Append the value or None if the key is not present
     return batch_tag
 
 
-def batch_packet(
-    all_packets: Sequence[Packet], drop_missing_keys: bool = True
-) -> Packet:
+def batch_packet(all_packets: Sequence[Packet], drop_missing_keys: bool = True) -> Packet:
     """
     Batches the packets together. Grouping values under the same key into a list.
     If all packets do not have the same key, raise an error unless drop_missing_keys is True

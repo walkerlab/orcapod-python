@@ -8,5 +8,5 @@ class QueryOperation(Operation):
     QueryStreams
     """
 
-    def __call__(self, *streams: QueryStream) -> QueryStream:
-        return super().__call__(*streams)
+    def __call__(self, *streams: QueryStream, **kwargs) -> QueryStream:
+        return super().__call__(*streams, **kwargs)
