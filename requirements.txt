@@ -1,2 +1,7 @@
 numpy
 xxhash
+networkx
+pygraphviz
+matplotlib
+pyyaml
+orcapod @ git+https://github.com/walkerlab/orcapod@dev

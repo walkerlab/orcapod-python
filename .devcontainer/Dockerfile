@@ -5,7 +5,11 @@ RUN \
 RUN \
     # common dev setup
     apt update && \
-    apt-get install sudo curl jq git bash-completion -y && \
+    apt-get install sudo curl jq git bash-completion graphviz libgraphviz-dev gcc g++ -y && \
+    curl https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -Lo /usr/local/bin/yq && \
+    chmod +x /usr/local/bin/yq && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | bash -s -- -y && \
+    echo ". ~/.cargo/env" >> ~/.bashrc && \
     usermod -aG sudo vscode && \
     echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
     echo '. /etc/bash_completion' >> /home/vscode/.bashrc && \
@@ -16,7 +20,7 @@ RUN \
 USER vscode
 ENV PATH=/home/vscode/.local/bin:$PATH
 WORKDIR /home/vscode
-COPY --chown=vscode:nogroup src/requirements.txt /tmp/requirements.txt
+COPY --chown=vscode:nogroup requirements.txt /tmp/requirements.txt
 RUN \
     # python setup
     curl -LsSf https://astral.sh/uv/install.sh | sh && \

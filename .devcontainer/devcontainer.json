@@ -7,7 +7,8 @@
 	"overrideCommand": false,
 	"workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
 	"remoteEnv": {
-		"LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
+		"LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}",
+		"RUST_BACKTRACE": "1"
 	},
 	"postStartCommand": "uv pip install -e .",
 	"hostRequirements": {

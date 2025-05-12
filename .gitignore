@@ -184,3 +184,5 @@ cython_debug/
 dj_*_conf.json
 # directory excluded from source control e.g. trash, scratch work, etc.
 .untracked
+# used for temporary data e.g. local file store
+.tmp
