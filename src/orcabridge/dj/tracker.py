@@ -127,7 +127,7 @@ class QueryTracker(Tracker):
         for op in G_dj:
             if hasattr(op, "table"):
                 table = op.table
-                table.__module__ = module
+                table.__module__ = str(module)
                 table_name = node_label_lut[op]
                 setattr(module, table_name, table)
 

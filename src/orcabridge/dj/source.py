@@ -20,9 +20,7 @@ class TableSource(QuerySource):
     A source that reads from a table.
     """
 
-    def __init__(
-        self, table: Union[Table, type[Table]], label: Optional[str] = None
-    ) -> None:
+    def __init__(self, table: Union[Table, type[Table]], label: Optional[str] = None) -> None:
         super().__init__(label=label)
         # if table is an instance, grab the class for consistency
         if not isinstance(table, type):
@@ -35,13 +33,14 @@ class TableSource(QuerySource):
             return self.table.__name__
         return self._label
 
-    def __call__(self, *streams: SyncStream) -> QueryStream:
+    def forward(self, *streams: SyncStream) -> QueryStream:
         """
         Read from the table and return a stream of packets.
         """
         if len(streams) > 0:
             raise ValueError("No streams should be passed to TableSource")
-        return QueryStream(self.table, [self.table])
+        # make sure to pass in an instance of the table for the query
+        return QueryStream(self.table(), [self.table()])
 
     def proj(self, *args, **kwargs) -> "TableSource":
         """
@@ -62,14 +61,14 @@ class TableSource(QuerySource):
         return TableSource(self.table & other)
 
     def __repr__(self):
-        return self.table.__repr__()
+        return self.table().__repr__()
 
     def preview(self, limit=None, width=None):
-        return self.table.preview(limit=limit, width=width)
+        return self.table().preview(limit=limit, width=width)
 
     def _repr_html_(self):
         """:return: HTML to display table in Jupyter notebook."""
-        return self.table._repr_html_()
+        return self.table()._repr_html_()
 
 
 class TableCachedStreamSource(QuerySource):
@@ -91,7 +90,7 @@ class TableCachedStreamSource(QuerySource):
         # if table name is not provided, use the name of the stream source
         if table_name is None:
             if stream.invocation is not None:
-                table_name = stream.invocation.__class__.__name__
+                table_name = stream.invocation.operation.__class__.__name__
             else:
                 table_name = stream.__class__.__name__
         # make sure the table name is in snake case
@@ -102,10 +101,7 @@ class TableCachedStreamSource(QuerySource):
     @property
     def label(self) -> str:
         if self._label is None:
-            if (
-                hasattr(self.stream.invocation, "label")
-                and self.stream.invocation.label is not None
-            ):
+            if hasattr(self.stream.invocation, "label") and self.stream.invocation.label is not None:
                 return self.stream.invocation.label
             else:
                 return snake_to_pascal(self.table_name)
@@ -159,11 +155,9 @@ class TableCachedSource(QuerySource):
         self.source = source
         self.schema = schema
         # if table name is not provided, use the name of the source
-        self.table_name = (
-            table_name
-            if table_name is not None
-            else pascal_to_snake(source.__class__.__name__)
-        ) + (f"_{table_postfix}" if table_postfix else "")
+        self.table_name = (table_name if table_name is not None else pascal_to_snake(source.__class__.__name__)) + (
+            f"_{table_postfix}" if table_postfix else ""
+        )
         self.table = None
 
     @property
@@ -177,9 +171,8 @@ class TableCachedSource(QuerySource):
         key_fields = "\n".join([f"{k}: varchar(255)" for k in tag_keys])
         output_fields = "\n".join([f"{k}: varchar(255)" for k in packet_keys])
 
-        outer_class = self
-
         class CachedTable(dj.Manual):
+            _parent = self # this refers to the outer class instance
             definition = f"""
             # {self.table_name} outputs
             {key_fields}
@@ -187,17 +180,17 @@ class TableCachedSource(QuerySource):
             {output_fields}
             """
 
-            def populate(self):
-                return sum(1 for _ in outer_class())
+            def populate(self, batch_size: int = 10, use_skip_duplicates: bool = False) -> int:
+                return sum(1 for _ in self._parent(batch_size=batch_size, use_skip_duplicates=use_skip_duplicates))
 
         CachedTable.__name__ = snake_to_pascal(self.table_name)
         CachedTable = self.schema(CachedTable)
         self.table = CachedTable
 
-    def forward(self, *streams: QueryStream) -> QueryStream:
+    def forward(self, *streams: QueryStream, batch_size: int=10, use_skip_duplicates: bool = False) -> QueryStream:
         if len(streams) > 0:
             raise ValueError("No streams should be passed to TableCachedSource")
 
         if self.table is None:
             self.compile(*self.source().keys())
-        return TableCachedStream(self.table, self.source())
+        return TableCachedStream(self.table, self.source(), batch_size=batch_size, use_skip_duplicates=use_skip_duplicates)

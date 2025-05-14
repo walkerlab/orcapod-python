@@ -5,6 +5,9 @@ import copy
 from datajoint.expression import QueryExpression
 from datajoint.table import Table
 from typing import Collection, Any
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def query_without_restriction(query: QueryExpression) -> QueryExpression:
@@ -25,15 +28,11 @@ class QueryStream(SyncStream):
     iterating over the query results.
     """
 
-    def __init__(
-        self, query: QueryExpression, upstream_tables: Collection[Table]
-    ) -> None:
+    def __init__(self, query: QueryExpression, upstream_tables: Collection[Table]) -> None:
         super().__init__()
         self.query = query
         # remove the restriction from the query
-        self.upstream_tables = [
-            query_without_restriction(table) for table in upstream_tables
-        ]
+        self.upstream_tables = [query_without_restriction(table) for table in upstream_tables]
 
     def __iter__(self):
         for row in self.query.fetch(as_dict=True):
@@ -75,6 +74,9 @@ class QueryStream(SyncStream):
         """:return: HTML to display table in Jupyter notebook."""
         return self.query._repr_html_()
 
+    def identity_structure(self, *streams) -> Any:
+        return (self.__class__.__name__, self.query.make_sql())
+
 
 class TableStream(QueryStream):
     """
@@ -82,6 +84,8 @@ class TableStream(QueryStream):
     """
 
     def __init__(self, table: Table) -> None:
+        if isinstance(table, type):
+            table = table()
         super().__init__(table, [table])
         self.table = table
 
@@ -93,24 +97,34 @@ class TableCachedStream(TableStream):
     all returned packets can be found in the table.
     """
 
-    def __init__(self, table: Table, stream: SyncStream, batch_size: int = 10) -> None:
+    def __init__(self, table: Table, stream: SyncStream, batch_size: int = 1, use_skip_duplicates=False) -> None:
+        if isinstance(table, type):
+            table = table()
         super().__init__(table)
         self.stream = stream
         self.batch_size = batch_size
+        self.use_skip_duplicates = use_skip_duplicates
 
     def __iter__(self):
-        batch = []
+        logger.info(f"Caching stream into table {self.table.table_name} with batch size {self.batch_size}, use_skip_duplicates={self.use_skip_duplicates}")
+        batch = [] 
         batch_count = 0
         for tag, packet in self.stream:
             # cache the packet into the table
-            if not self.table & tag:
-                batch.append(tag | packet)  # insert the packet into the table
-            batch_count += 1
-            if batch_count >= self.batch_size:
-                self.table.insert(batch)
+            if self.use_skip_duplicates or not self.table & tag:
+                # if use_skip_duplicates is True, skip duplicates
+                # if not, insert the packet into the table
+                batch.append(tag | packet)
+                batch_count += 1
+
+            # if batch_size is <= 0, will accumulate all packets into the batch
+            # and insert at the very end
+            if self.batch_size > 0 and batch_count >= self.batch_size:
+                self.table.insert(batch, skip_duplicates=self.use_skip_duplicates)
+                logger.debug(f'Inserted batch of size {len(batch)} into table {self.table.table_name}')
                 batch = []
                 batch_count = 0
             yield tag, packet
         if batch:
-            self.table.insert(batch)
-
+            logger.debug(f'Inserted the final batch of size {len(batch)} into table {self.table.table_name}')
+            self.table.insert(batch, skip_duplicates=self.use_skip_duplicates)
