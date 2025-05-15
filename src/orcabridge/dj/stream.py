@@ -7,6 +7,7 @@ from datajoint.table import Table
 from typing import Collection, Any
 import logging
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -44,15 +45,15 @@ class QueryStream(SyncStream):
         """
         Project the table and return a new source.
         """
-        return QueryStream(
-            self.query.proj(*args, **kwargs),
-            [table.proj(*args, **kwargs) for table in self.upstream_tables],
-        )
+        from .mapper import ProjectQuery
+        return ProjectQuery(*args, **kwargs)(self)
+
 
     def __and__(self, other: Any) -> "QueryStream":
         """
         Join the table with another table and return a new source.
         """
+        from .mapper import RestrictQuery
         # lazy load to avoid circular import
         from ..source import TableSource
 
@@ -62,7 +63,7 @@ class QueryStream(SyncStream):
             other = other.query
         else:
             raise ValueError(f"Object of type {type(other)} is not supported.")
-        return QueryStream(self.query & other, self.upstream_tables)
+        return RestrictQuery(other)(self)
 
     def __repr__(self):
         return self.query.__repr__()
