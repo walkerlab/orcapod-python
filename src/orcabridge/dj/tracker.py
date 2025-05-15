@@ -1,6 +1,6 @@
 from ..tracker import Tracker
 from datajoint import Schema
-from typing import List, Collection, Tuple, Optional
+from typing import List, Collection, Tuple, Optional, Any
 from types import ModuleType
 import networkx as nx
 
@@ -74,19 +74,25 @@ class QueryTracker(Tracker):
         super().__init__()
         self._converted_graph = None
 
-    def generate_tables(self, schema: Schema, module_name="dj_tables") -> List:
+    def generate_tables(
+        self, schema: Schema, module_name="pipeline"
+    ) -> Tuple[Any, ModuleType, ModuleType]:
 
         G = self.generate_graph()
 
         # create a new module and add the tables to it
-        module = ModuleType(module_name)
-        module.__name__ = module_name
+        table_module = ModuleType(module_name)
+        table_module.__name__ = module_name + "_tables"
+        op_module = ModuleType(module_name)
+        op_module.__name__ = module_name + "_op"
 
         desired_labels_lut = defaultdict(list)
         node_lut = {}
         edge_lut = {}
         for invocation in nx.topological_sort(G):
-            streams = [edge_lut.get(stream, stream) for stream in invocation.streams]
+            streams = [
+                edge_lut.get(stream, stream) for stream in invocation.streams
+            ]
             new_node, converted = convert_to_query_operation(
                 invocation.operation,
                 schema,
@@ -126,12 +132,16 @@ class QueryTracker(Tracker):
 
         for op in G_dj:
             if hasattr(op, "table"):
+                op.__module__ = str(op_module)
+                op.__name__ = node_label_lut[op]
+                setattr(op_module, node_label_lut[op], op)
+
                 table = op.table
-                table.__module__ = str(module)
+                table.__module__ = str(table_module)
                 table_name = node_label_lut[op]
-                setattr(module, table_name, table)
+                setattr(table_module, table_name, table)
 
-        setattr(module, "schema", schema)
-        sys.modules[module_name] = module
+        setattr(table_module, "schema", schema)
+        sys.modules[module_name] = table_module
 
-        return G_dj, module
+        return G_dj, op_module, table_module
