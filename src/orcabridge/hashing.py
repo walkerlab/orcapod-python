@@ -913,7 +913,7 @@ def hash_file(file_path, algorithm="sha256", buffer_size=65536) -> str:
     Parameters:
         file_path (str): Path to the file to hash
         algorithm (str): Hash algorithm to use - options include:
-                         'md5', 'sha1', 'sha256', 'sha512', 'xxh64', 'crc32'
+                         'md5', 'sha1', 'sha256', 'sha512', 'xxh64', 'crc32', 'hash_path'
         buffer_size (int): Size of chunks to read from the file at a time
 
     Returns:
@@ -922,6 +922,13 @@ def hash_file(file_path, algorithm="sha256", buffer_size=65536) -> str:
     # Verify the file exists
     if not Path(file_path).is_file():
         raise FileNotFoundError(f"The file {file_path} does not exist")
+
+    # Handle special case for 'hash_path' algorithm
+    if algorithm == "hash_path":
+        # Hash the name of the file instead of its content
+        # This is useful for cases where the file content is well known or
+        # not relevant
+        return hash_to_hex(file_path)
 
     # Handle non-cryptographic hash functions
     if algorithm == "xxh64":
