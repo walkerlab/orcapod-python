@@ -29,7 +29,7 @@ from os import PathLike
 import os
 import xxhash
 import zlib
-from .types import Pathset, Packet
+from .types import PathSet, Packet
 
 # Configure logging with __name__ for proper hierarchy
 logger = logging.getLogger(__name__)
@@ -859,7 +859,7 @@ def hash_packet(
 
 
 def hash_pathset(
-    pathset: Pathset,
+    pathset: PathSet,
     algorithm="sha256",
     buffer_size=65536,
     char_count: Optional[int] = 32,
