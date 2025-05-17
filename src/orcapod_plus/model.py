@@ -15,9 +15,11 @@ class Pipeline:
             raise Exception("Store needed to resolve links.")
         # add validation checks e.g. do links exist? is syntax correct?
         pass
-        # resolve name resolution (hash->hash + latest annotation, annotation->hash+annotation)
+        # resolve name resolution (hash->hash + latest annotation?, annotation->hash+annotation)
         pass
         # save inline definitions
+        pass
+        # normalize the node names for consistent hashing
         pass
         # add style convention
         shape_lookup = {
