@@ -12,7 +12,18 @@ import inspect
 import json
 import logging
 from uuid import UUID
-from typing import Any, Dict, Optional, Union, Collection, Mapping, Callable, TypeVar, Set, Literal
+from typing import (
+    Any,
+    Dict,
+    Optional,
+    Union,
+    Collection,
+    Mapping,
+    Callable,
+    TypeVar,
+    Set,
+    Literal,
+)
 from pathlib import Path
 from os import PathLike
 import os
@@ -25,7 +36,9 @@ logger = logging.getLogger(__name__)
 
 # Type for recursive dictionary structures
 T = TypeVar("T")
-NestedDict = Dict[str, Union[str, int, float, bool, None, "NestedDict", list, tuple, set]]
+NestedDict = Dict[
+    str, Union[str, int, float, bool, None, "NestedDict", list, tuple, set]
+]
 
 
 def configure_logging(level=logging.INFO, enable_console=True, log_file=None):
@@ -43,7 +56,9 @@ def configure_logging(level=logging.INFO, enable_console=True, log_file=None):
     lib_logger.setLevel(level)
 
     # Create a formatter
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
 
     # Add console handler if requested
     if enable_console:
@@ -95,7 +110,10 @@ def _serialize_for_hashing(processed_obj):
     if isinstance(processed_obj, dict):
         # Sort keys for deterministic order
         sorted_items = sorted(processed_obj.items(), key=lambda x: str(x[0]))
-        serialized_items = [_serialize_for_hashing(k) + b":" + _serialize_for_hashing(v) for k, v in sorted_items]
+        serialized_items = [
+            _serialize_for_hashing(k) + b":" + _serialize_for_hashing(v)
+            for k, v in sorted_items
+        ]
         return b"{" + b",".join(serialized_items) + b"}"
 
     # Fallback for any other type - should not happen after _process_structure
@@ -163,7 +181,9 @@ class HashableMixin:
             return f"HashableMixin-DefaultIdentity-{self.__class__.__name__}"
 
         # Generate a hash from the identity structure
-        logger.debug(f"Generating content hash for {self.__class__.__name__} using identity structure")
+        logger.debug(
+            f"Generating content hash for {self.__class__.__name__} using identity structure"
+        )
         return hash_to_hex(structure, char_count=char_count)
 
     def content_hash_int(self, hexdigits: int = 16) -> int:
@@ -188,11 +208,15 @@ class HashableMixin:
                 "Using class name as default identity, which may not correctly reflect object uniqueness."
             )
             # Use the same default identity as content_hash for consistency
-            default_identity = f"HashableMixin-DefaultIdentity-{self.__class__.__name__}"
+            default_identity = (
+                f"HashableMixin-DefaultIdentity-{self.__class__.__name__}"
+            )
             return hash_to_int(default_identity, hexdigits=hexdigits)
 
         # Generate a hash from the identity structure
-        logger.debug(f"Generating content hash (int) for {self.__class__.__name__} using identity structure")
+        logger.debug(
+            f"Generating content hash (int) for {self.__class__.__name__} using identity structure"
+        )
         return hash_to_int(structure, hexdigits=hexdigits)
 
     def content_hash_uuid(self) -> UUID:
@@ -214,11 +238,15 @@ class HashableMixin:
                 "Using class name as default identity, which may not correctly reflect object uniqueness."
             )
             # Use the same default identity as content_hash for consistency
-            default_identity = f"HashableMixin-DefaultIdentity-{self.__class__.__name__}"
+            default_identity = (
+                f"HashableMixin-DefaultIdentity-{self.__class__.__name__}"
+            )
             return hash_to_uuid(default_identity)
 
         # Generate a hash from the identity structure
-        logger.debug(f"Generating content hash (UUID) for {self.__class__.__name__} using identity structure")
+        logger.debug(
+            f"Generating content hash (UUID) for {self.__class__.__name__} using identity structure"
+        )
         return hash_to_uuid(structure)
 
     def __hash__(self) -> int:
@@ -242,7 +270,9 @@ class HashableMixin:
             return super().__hash__()
 
         # Generate a hash and convert to integer
-        logger.debug(f"Generating hash for {self.__class__.__name__} using identity structure")
+        logger.debug(
+            f"Generating hash for {self.__class__.__name__} using identity structure"
+        )
         return hash_to_int(structure)
 
 
@@ -268,7 +298,9 @@ def hash_to_hex(obj: Any, char_count: Optional[int] = 32) -> str:
     try:
         # Use custom serialization for maximum stability
         json_str = _serialize_for_hashing(processed)
-        logger.debug(f"Successfully serialized {type(obj).__name__} using custom serializer")
+        logger.debug(
+            f"Successfully serialized {type(obj).__name__} using custom serializer"
+        )
     except Exception as e:
         # Fall back to string representation if serialization fails
         logger.warning(
@@ -278,11 +310,14 @@ def hash_to_hex(obj: Any, char_count: Optional[int] = 32) -> str:
         try:
             # Try standard JSON first
             json_str = json.dumps(processed, sort_keys=True).encode("utf-8")
-            logger.info(f"Successfully used standard JSON serialization as fallback")
+            logger.info(
+                f"Successfully used standard JSON serialization as fallback"
+            )
         except (TypeError, ValueError) as json_err:
             # If JSON also fails, use simple string representation
             logger.warning(
-                f"JSON serialization also failed: {json_err}. " "Using basic string representation as last resort."
+                f"JSON serialization also failed: {json_err}. "
+                "Using basic string representation as last resort."
             )
             json_str = str(processed).encode("utf-8")
 
@@ -345,11 +380,15 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
     # to detect circular references, not as part of the final hash
     obj_id = id(obj)
     if obj_id in visited:
-        logger.debug(f"Detected circular reference for object of type {type(obj).__name__}")
+        logger.debug(
+            f"Detected circular reference for object of type {type(obj).__name__}"
+        )
         return "CircularRef"  # Don't include the actual id in hash output
 
     # For objects that could contain circular references, add to visited
-    if isinstance(obj, (dict, list, tuple, set)) or not isinstance(obj, (str, int, float, bool, type(None))):
+    if isinstance(obj, (dict, list, tuple, set)) or not isinstance(
+        obj, (str, int, float, bool, type(None))
+    ):
         visited.add(obj_id)
 
     # Handle None
@@ -358,7 +397,9 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
 
     # If the object is a HashableMixin, use its content_hash
     if isinstance(obj, HashableMixin):
-        logger.debug(f"Processing HashableMixin instance of type {type(obj).__name__}")
+        logger.debug(
+            f"Processing HashableMixin instance of type {type(obj).__name__}"
+        )
         return obj.content_hash()
 
     # Handle basic types
@@ -367,7 +408,9 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
 
     # Handle bytes and bytearray
     if isinstance(obj, (bytes, bytearray)):
-        logger.debug(f"Converting bytes/bytearray of length {len(obj)} to hex representation")
+        logger.debug(
+            f"Converting bytes/bytearray of length {len(obj)} to hex representation"
+        )
         return obj.hex()
 
     # Handle Path objects
@@ -390,24 +433,34 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
     # Handle mappings (dict-like objects)
     if isinstance(obj, Mapping):
         # Process both keys and values
-        processed_items = [(_process_structure(k, visited), _process_structure(v, visited)) for k, v in obj.items()]
+        processed_items = [
+            (_process_structure(k, visited), _process_structure(v, visited))
+            for k, v in obj.items()
+        ]
 
         # Sort by the processed keys for deterministic order
         processed_items.sort(key=lambda x: str(x[0]))
 
         # Create a new dictionary with string keys based on processed keys
-        return {str(processed_k): processed_v for processed_k, processed_v in processed_items}
+        return {
+            str(processed_k): processed_v
+            for processed_k, processed_v in processed_items
+        }
 
     # Handle sets and frozensets
     if isinstance(obj, (set, frozenset)):
-        logger.debug(f"Processing set/frozenset of type {type(obj).__name__} with {len(obj)} items")
+        logger.debug(
+            f"Processing set/frozenset of type {type(obj).__name__} with {len(obj)} items"
+        )
         # Process each item first, then sort the processed results
         processed_items = [_process_structure(item, visited) for item in obj]
         return sorted(processed_items, key=str)
 
     # Handle collections (list-like objects)
     if isinstance(obj, Collection) and not isinstance(obj, str):
-        logger.debug(f"Processing collection of type {type(obj).__name__} with {len(obj)} items")
+        logger.debug(
+            f"Processing collection of type {type(obj).__name__} with {len(obj)} items"
+        )
         return [_process_structure(item, visited) for item in obj]
 
     # For functions, use the function_content_hash
@@ -422,24 +475,34 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
         class_name = obj.__class__.__name__
         module_name = obj.__class__.__module__
 
-        logger.debug(f"Processing generic object of type {module_name}.{class_name}")
+        logger.debug(
+            f"Processing generic object of type {module_name}.{class_name}"
+        )
 
         # Try to get a stable dict representation if possible
         if hasattr(obj, "__dict__"):
             # Sort attributes to ensure stable order
-            attrs = sorted((k, v) for k, v in obj.__dict__.items() if not k.startswith("_"))
+            attrs = sorted(
+                (k, v) for k, v in obj.__dict__.items() if not k.startswith("_")
+            )
             # Limit to first 10 attributes to avoid extremely long representations
             if len(attrs) > 10:
-                logger.debug(f"Object has {len(attrs)} attributes, limiting to first 10")
+                logger.debug(
+                    f"Object has {len(attrs)} attributes, limiting to first 10"
+                )
                 attrs = attrs[:10]
             attr_strs = [f"{k}={type(v).__name__}" for k, v in attrs]
             obj_repr = f"{{{', '.join(attr_strs)}}}"
         else:
             # Get basic repr but remove memory addresses
-            logger.debug(f"Object has no __dict__, using repr() with memory address removal")
+            logger.debug(
+                f"Object has no __dict__, using repr() with memory address removal"
+            )
             obj_repr = repr(obj)
             if len(obj_repr) > 1000:
-                logger.debug(f"Object repr is {len(obj_repr)} chars, truncating to 1000")
+                logger.debug(
+                    f"Object repr is {len(obj_repr)} chars, truncating to 1000"
+                )
                 obj_repr = obj_repr[:1000] + "..."
             # Remove memory addresses which look like '0x7f9a1c2b3d4e'
             obj_repr = re.sub(r" at 0x[0-9a-f]+", " at 0xMEMADDR", obj_repr)
@@ -451,14 +514,18 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
         try:
             return f"Object-{obj.__class__.__module__}.{obj.__class__.__name__}"
         except:
-            logger.error("Could not determine object class, using UnknownObject")
+            logger.error(
+                "Could not determine object class, using UnknownObject"
+            )
             return "UnknownObject"
 
 
 # Function hashing utilities
 
 
-def get_function_signature(func: Callable, include_defaults: bool = True, include_module: bool = True) -> str:
+def get_function_signature(
+    func: Callable, include_defaults: bool = True, include_module: bool = True
+) -> str:
     """
     Get a stable string representation of a function's signature.
 
@@ -521,12 +588,17 @@ def function_content_hash(
     """
     logger.debug(f"Generating content hash for function '{func.__name__}'")
     components = get_function_components(
-        func, include_name=include_name, include_module=include_module, include_declaration=include_declaration
+        func,
+        include_name=include_name,
+        include_module=include_module,
+        include_declaration=include_declaration,
     )
 
     # Join all components and compute hash
     combined = "\n".join(components)
-    logger.debug(f"Function components joined, length: {len(combined)} characters")
+    logger.debug(
+        f"Function components joined, length: {len(combined)} characters"
+    )
     return hash_to_hex(combined, char_count=char_count)
 
 
@@ -619,7 +691,11 @@ def get_function_components(
             components.append(f"builtin:True")
 
     # Add function annotations if requested
-    if include_annotations and hasattr(func, "__annotations__") and func.__annotations__:
+    if (
+        include_annotations
+        and hasattr(func, "__annotations__")
+        and func.__annotations__
+    ):
         sorted_annotations = sorted(func.__annotations__.items())
         annotations_str = ";".join(f"{k}:{v}" for k, v in sorted_annotations)
         components.append(f"annotations:{annotations_str}")
@@ -646,7 +722,9 @@ def _is_in_string(line, pos):
     for i in range(pos):
         if line[i] == "'" and not in_double and (i == 0 or line[i - 1] != "\\"):
             in_single = not in_single
-        elif line[i] == '"' and not in_single and (i == 0 or line[i - 1] != "\\"):
+        elif (
+            line[i] == '"' and not in_single and (i == 0 or line[i - 1] != "\\")
+        ):
             in_double = not in_double
     return in_single or in_double
 
@@ -687,10 +765,14 @@ def hash_function(
     content_kwargs = content_kwargs or {}
     hash_kwargs = hash_kwargs or {}
 
-    logger.debug(f"Hashing function '{function.__name__}' using mode '{function_hash_mode}'")
+    logger.debug(
+        f"Hashing function '{function.__name__}' using mode '{function_hash_mode}'"
+    )
 
     if function_hash_mode == "content":
-        hash_content = "\n".join(get_function_components(function, **content_kwargs))
+        hash_content = "\n".join(
+            get_function_components(function, **content_kwargs)
+        )
     elif function_hash_mode == "signature":
         hash_content = get_function_signature(function, **content_kwargs)
     elif function_hash_mode == "name":
@@ -763,7 +845,9 @@ def hash_packet(
     """
     hash_results = {}
     for key, pathset in packet.items():
-        hash_results[key] = hash_pathset(pathset, algorithm=algorithm, buffer_size=buffer_size)
+        hash_results[key] = hash_pathset(
+            pathset, algorithm=algorithm, buffer_size=buffer_size
+        )
 
     packet_hash = hash_to_hex(hash_results, char_count=char_count)
 
@@ -774,7 +858,12 @@ def hash_packet(
     return packet_hash
 
 
-def hash_pathset(pathset: Pathset, algorithm="sha256", buffer_size=65536) -> str:
+def hash_pathset(
+    pathset: Pathset,
+    algorithm="sha256",
+    buffer_size=65536,
+    char_count: Optional[int] = 32,
+) -> str:
     """
     Generate hash of the pathset based primarily on the content of the files.
     If the pathset is a collection of files or a directory, the name of the file
@@ -782,24 +871,39 @@ def hash_pathset(pathset: Pathset, algorithm="sha256", buffer_size=65536) -> str
 
     Currently only support hashing of Pathset if Pathset points to a single file.
     """
-    # Currently only suports single file Pathset
     if isinstance(pathset, str) or isinstance(pathset, PathLike):
         pathset = Path(pathset)
         if not pathset.exists():
             raise FileNotFoundError(f"Path {pathset} does not exist")
         if pathset.is_dir():
-            raise NotImplementedError(f"Hashing of directories is not supported yet: failed to hash {pathset}")
+            # iterate over all entries in the directory include subdirectory (single step)
+            hash_dict = {}
+            for entry in pathset.iterdir():
+                file_name = entry.name
+                hash_dict[file_name] = hash_pathset(
+                    entry,
+                    algorithm=algorithm,
+                    buffer_size=buffer_size,
+                    char_count=char_count,
+                )
+            return hash_to_hex(hash_dict, char_count=char_count)
+        else:
+            # it's a file, hash it directly
+            return hash_file(
+                pathset, algorithm=algorithm, buffer_size=buffer_size
+            )
 
-        return hash_file(pathset, algorithm=algorithm, buffer_size=buffer_size)
-
-    raise NotImplementedError(
-        f"Hashing of pathset of type {type(pathset)} is not supported yet: failed to hash {pathset}"
-    )
     if isinstance(pathset, Collection):
         hash_dict = {}
         for path in pathset:
             file_name = Path(path).name
-            hash_dict[file_name] = hash_file(path)
+            hash_dict[file_name] = hash_pathset(
+                path,
+                algorithm=algorithm,
+                buffer_size=buffer_size,
+                char_count=char_count,
+            )
+        return hash_to_hex(hash_dict, char_count=char_count)
 
 
 def hash_file(file_path, algorithm="sha256", buffer_size=65536) -> str:
@@ -809,7 +913,7 @@ def hash_file(file_path, algorithm="sha256", buffer_size=65536) -> str:
     Parameters:
         file_path (str): Path to the file to hash
         algorithm (str): Hash algorithm to use - options include:
-                         'md5', 'sha1', 'sha256', 'sha512', 'xxh64', 'crc32'
+                         'md5', 'sha1', 'sha256', 'sha512', 'xxh64', 'crc32', 'hash_path'
         buffer_size (int): Size of chunks to read from the file at a time
 
     Returns:
@@ -818,6 +922,13 @@ def hash_file(file_path, algorithm="sha256", buffer_size=65536) -> str:
     # Verify the file exists
     if not Path(file_path).is_file():
         raise FileNotFoundError(f"The file {file_path} does not exist")
+
+    # Handle special case for 'hash_path' algorithm
+    if algorithm == "hash_path":
+        # Hash the name of the file instead of its content
+        # This is useful for cases where the file content is well known or
+        # not relevant
+        return hash_to_hex(file_path)
 
     # Handle non-cryptographic hash functions
     if algorithm == "xxh64":
@@ -845,7 +956,9 @@ def hash_file(file_path, algorithm="sha256", buffer_size=65536) -> str:
         hasher = hashlib.new(algorithm)
     except ValueError:
         valid_algorithms = ", ".join(sorted(hashlib.algorithms_available))
-        raise ValueError(f"Invalid algorithm: {algorithm}. Available algorithms: {valid_algorithms}, xxh64, crc32")
+        raise ValueError(
+            f"Invalid algorithm: {algorithm}. Available algorithms: {valid_algorithms}, xxh64, crc32"
+        )
 
     with open(file_path, "rb") as file:
         while True:
