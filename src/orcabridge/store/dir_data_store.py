@@ -55,6 +55,7 @@ class DirDataStore(DataStore):
         preserve_filename=True,
         algorithm="sha256",
         overwrite=False,
+        supplement_source=False,
     ) -> None:
         self.store_dir = Path(store_dir)
         # Create the data directory if it doesn't exist
@@ -63,6 +64,7 @@ class DirDataStore(DataStore):
         self.preserve_filename = preserve_filename
         self.overwrite = overwrite
         self.algorithm = algorithm
+        self.supplement_source = supplement_source
 
     def memoize(
         self,
@@ -77,6 +79,7 @@ class DirDataStore(DataStore):
             self.store_dir / store_name / content_hash / str(packet_hash)
         )
         info_path = output_dir / "_info.json"
+        source_path = output_dir / "_source.json"
 
         if info_path.exists() and not self.overwrite:
             raise ValueError(
@@ -113,9 +116,12 @@ class DirDataStore(DataStore):
                     # register the key with the new path
                     new_output_packet[key] = str(relative_output_path)
                 output_packet = new_output_packet
-            # store the packet in a json file
+            # store the output packet in a json file
             with open(info_path, "w") as f:
                 json.dump(output_packet, f)
+            # store the source packet in a json file
+            with open(source_path, "w") as f:
+                json.dump(packet, f)
             logger.info(f"Stored output for packet {packet} at {output_dir}")
 
             # retrieve back the memoized packet and return
@@ -138,6 +144,7 @@ class DirDataStore(DataStore):
             self.store_dir / store_name / content_hash / str(packet_hash)
         )
         info_path = output_dir / "_info.json"
+        source_path = output_dir / "_source.json"
 
         if info_path.exists():
             # TODO: perform better error handling
@@ -152,6 +159,13 @@ class DirDataStore(DataStore):
                 logger.info(
                     f"Retrieved output for packet {packet} from {info_path}"
                 )
+                # check if source json exists -- if not, supplement it
+                if self.supplement_source and not source_path.exists():
+                    with open(source_path, "w") as f:
+                        json.dump(packet, f)
+                    logger.info(
+                        f"Supplemented source for packet {packet} at {source_path}"
+                    )
             except:
                 logger.error(
                     f"Error loading memoized output for packet {packet} from {info_path}"

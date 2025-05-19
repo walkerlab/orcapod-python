@@ -7,6 +7,10 @@ from pathlib import Path
 from .hashing import hash_function
 
 
+class LoadFromSource(Source):
+    pass
+
+
 class GlobSource(Source):
     """
     A stream source that sources files from a directory matching a glob pattern.
@@ -45,7 +49,9 @@ class GlobSource(Source):
         pattern: str = "*",
         label: Optional[str] = None,
         tag_function: Optional[Callable[[PathLike], Tag]] = None,
-        tag_function_hash_mode: Literal["content", "signature", "name"] = "name",
+        tag_function_hash_mode: Literal[
+            "content", "signature", "name"
+        ] = "name",
         expected_tag_keys: Optional[Collection[str]] = None,
         **kwargs,
     ) -> None:
@@ -73,7 +79,7 @@ class GlobSource(Source):
     def forward(self) -> SyncStream:
         def generator() -> Iterator[Tuple[Tag, Packet]]:
             for file in Path(self.file_path).glob(self.pattern):
-                yield self.tag_function(file), {self.name: file}
+                yield self.tag_function(file), {self.name: str(file)}
 
         return SyncStreamFromGenerator(generator)
 
@@ -91,7 +97,9 @@ class GlobSource(Source):
             }
 
         tag_function_hash = hash_function(
-            self.tag_function, function_hash_mode=self.tag_function_hash_mode, hash_kwargs=hash_function_kwargs
+            self.tag_function,
+            function_hash_mode=self.tag_function_hash_mode,
+            hash_kwargs=hash_function_kwargs,
         )
         return (
             self.__class__.__name__,

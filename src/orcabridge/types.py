@@ -1,23 +1,25 @@
-from typing import Union, List, Tuple, Protocol, Sequence, Mapping
+from typing import Union, List, Tuple, Protocol, Mapping, Collection
 from anyio import Path
 from typing_extensions import TypeAlias
-from os import PathLike
+import os
+
+PathLike = Union[str, bytes, os.PathLike]
 
 # arbitrary depth of nested list of strings or None
-L: TypeAlias = Sequence[Union[str, None, "L"]]
+L: TypeAlias = Collection[Union[str, None, "L"]]
 
 # the top level tag is a mapping from string keys to values that can be a string or
 # an arbitrary depth of nested list of strings or None
 Tag: TypeAlias = Mapping[str, Union[str, L]]
 
 # a pathset is a path or an arbitrary depth of nested list of paths
-Pathset: TypeAlias = Union[PathLike, Sequence[PathLike]]
+PathSet: TypeAlias = Union[PathLike, Collection[PathLike]]
 
 # a packet is a mapping from string keys to pathsets
-Packet: TypeAlias = Mapping[str, Pathset]
+Packet: TypeAlias = Mapping[str, PathSet]
 
 # a batch is a tuple of a tag and a list of packets
-Batch: TypeAlias = Tuple[Tag, Sequence[Packet]]
+Batch: TypeAlias = Tuple[Tag, Collection[Packet]]
 
 
 class PodFunction(Protocol):
@@ -27,4 +29,4 @@ class PodFunction(Protocol):
     and returns a path or a list of paths
     """
 
-    def __call__(self, **kwargs: Pathset) -> Union[PathLike, List[Pathset]]: ...
+    def __call__(self, **kwargs: PathSet) -> PathSet: ...
