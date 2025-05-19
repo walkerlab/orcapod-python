@@ -3,7 +3,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 from pathlib import Path
-from typing import List, Optional, Tuple, Iterator, Iterable, Collection, Literal, Any
+from typing import (
+    List,
+    Optional,
+    Tuple,
+    Iterator,
+    Iterable,
+    Collection,
+    Literal,
+    Any,
+)
 from .hashing import hash_function, get_function_signature
 from .base import Operation
 from .mapper import Join
@@ -20,7 +29,9 @@ def function_pod(
     output_keys: Optional[Collection[str]] = None,
     store_name: Optional[str] = None,
     data_store: Optional[DataStore] = None,
-    function_hash_mode: Literal["signature", "content", "name", "custom"] = "name",
+    function_hash_mode: Literal[
+        "signature", "content", "name", "custom"
+    ] = "name",
     custom_hash: Optional[int] = None,
     force_computation: bool = False,
     skip_memoization: bool = False,
@@ -103,7 +114,9 @@ class FunctionPod(Pod):
         output_keys: Optional[Collection[str]] = None,
         store_name=None,
         data_store: Optional[DataStore] = None,
-        function_hash_mode: Literal["signature", "content", "name", "custom"] = "name",
+        function_hash_mode: Literal[
+            "signature", "content", "name", "custom"
+        ] = "name",
         custom_hash: Optional[int] = None,
         label: Optional[str] = None,
         force_computation: bool = False,
@@ -117,8 +130,12 @@ class FunctionPod(Pod):
         if output_keys is None:
             output_keys = []
         self.output_keys = output_keys
-        self.store_name = self.function.__name__ if store_name is None else store_name
-        self.data_store = data_store if data_store is not None else NoOpDataStore()
+        self.store_name = (
+            self.function.__name__ if store_name is None else store_name
+        )
+        self.data_store = (
+            data_store if data_store is not None else NoOpDataStore()
+        )
         self.function_hash_mode = function_hash_mode
         self.custom_hash = custom_hash
         self.force_computation = force_computation
@@ -130,25 +147,36 @@ class FunctionPod(Pod):
         func_sig = get_function_signature(self.function)
         return f"FunctionPod:{func_sig} ⇒ {self.output_keys}"
 
+    def keys(
+        self, *streams: SyncStream
+    ) -> Tuple[Collection[str], Collection[str]]:
+        stream = self.process_stream(*streams)
+        tag_keys, _ = stream[0].keys()
+        return tag_keys, tuple(self.output_keys)
+
     def forward(self, *streams: SyncStream) -> SyncStream:
         # if multiple streams are provided, join them
         if len(streams) > 1:
-            stream = streams[0]
-            for next_stream in streams[1:]:
-                stream = Join()(stream, next_stream)
-        elif len(streams) == 1:
-            stream = streams[0]
-        else:
-            raise ValueError("No streams provided to FunctionPod")
+            raise ValueError(
+                "Multiple streams should be joined before calling forward"
+            )
+        if len(streams) == 0:
+            raise ValueError("No streams provided to forward")
+        stream = streams[0]
 
         def generator() -> Iterator[Tuple[Tag, Packet]]:
             n_computed = 0
             for tag, packet in stream:
                 try:
                     memoized_packet = self.data_store.retrieve_memoized(
-                        self.store_name, self.content_hash(char_count=16), packet
+                        self.store_name,
+                        self.content_hash(char_count=16),
+                        packet,
                     )
-                    if not self.force_computation and memoized_packet is not None:
+                    if (
+                        not self.force_computation
+                        and memoized_packet is not None
+                    ):
                         yield tag, memoized_packet
                         continue
                     values = self.function(**packet)
@@ -159,10 +187,14 @@ class FunctionPod(Pod):
                     elif isinstance(values, Iterable):
                         values = list(values)
                     elif len(self.output_keys) > 1:
-                        raise ValueError("Values returned by function must be a pathlike or a sequence of pathlikes")
+                        raise ValueError(
+                            "Values returned by function must be a pathlike or a sequence of pathlikes"
+                        )
 
                     if len(values) != len(self.output_keys):
-                        raise ValueError("Number of output keys does not match number of values returned by function")
+                        raise ValueError(
+                            "Number of output keys does not match number of values returned by function"
+                        )
                 except Exception as e:
                     logger.error(f"Error processing packet {packet}: {e}")
                     if self.error_handling == "raise":
@@ -173,12 +205,19 @@ class FunctionPod(Pod):
                         warnings.warn(f"Error processing packet {packet}: {e}")
                         continue
 
-                output_packet: Packet = {k: v for k, v in zip(self.output_keys, values)}
+                output_packet: Packet = {
+                    k: v for k, v in zip(self.output_keys, values)
+                }
 
                 if not self.skip_memoization:
                     # output packet may be modified by the memoization process
                     # e.g. if the output is a file, the path may be changed
-                    output_packet = self.data_store.memoize(self.store_name, self.content_hash(), packet, output_packet)
+                    output_packet = self.data_store.memoize(
+                        self.store_name,
+                        self.content_hash(),
+                        packet,
+                        output_packet,
+                    )
 
                 n_computed += 1
                 logger.info(f"Computed item {n_computed}")
@@ -202,10 +241,16 @@ class FunctionPod(Pod):
             )
         elif self.function_hash_mode == "signature":
             function_hash_value = hash_function(
-                self.function, function_hash_mode="signature", content_kwargs=content_kwargs
+                self.function,
+                function_hash_mode="signature",
+                content_kwargs=content_kwargs,
             )
         elif self.function_hash_mode == "name":
-            function_hash_value = hash_function(self.function, function_hash_mode="name", content_kwargs=content_kwargs)
+            function_hash_value = hash_function(
+                self.function,
+                function_hash_mode="name",
+                content_kwargs=content_kwargs,
+            )
         elif self.function_hash_mode == "custom":
             if self.custom_hash is None:
                 raise ValueError("Custom hash function not provided")

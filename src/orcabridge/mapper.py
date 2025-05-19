@@ -11,6 +11,7 @@ from .utils.stream_utils import (
 from .hashing import hash_function
 from .types import Tag, Packet
 from typing import Iterator, Tuple, Any, Collection
+from itertools import chain
 
 
 class Mapper(Operation):
@@ -61,6 +62,57 @@ class Repeat(Mapper):
 
     def __repr__(self) -> str:
         return f"Repeat(count={self.repeat_count})"
+
+
+def fill_missing(dict, keys, default=None):
+    """
+    Fill the missing keys in the dictionary with the specified default value.
+    """
+    for key in keys:
+        if key not in dict:
+            dict[key] = default
+    return dict
+
+
+class Merge(Mapper):
+    def identity_structure(self, *streams):
+        # Merge does not depend on the order of the streams -- convert it onto a set
+        return (self.__class__.__name__, set(streams))
+
+    def keys(
+        self, *streams: SyncStream
+    ) -> Tuple[Collection[str], Collection[str]]:
+        """
+        Merge does not alter the keys of the stream.
+        """
+        if len(streams) < 2:
+            raise ValueError("Merge operation requires at least two streams")
+
+        merged_tag_keys = set()
+        merged_packet_keys = set()
+
+        for stream in streams:
+            tag_keys, packet_keys = stream.keys()
+            merged_tag_keys.update(tag_keys)
+            merged_packet_keys.update(packet_keys)
+
+        return list(merged_tag_keys), list(merged_packet_keys)
+
+    def forward(self, *streams: SyncStream) -> SyncStream:
+
+        tag_keys, packet_keys = self.keys(*streams)
+
+        def generator() -> Iterator[Tuple[Tag, Packet]]:
+            for tag, packet in chain(*streams):
+                # fill missing keys with None
+                tag = fill_missing(tag, tag_keys)
+                packet = fill_missing(packet, packet_keys)
+                yield tag, packet
+
+        return SyncStreamFromGenerator(generator)
+
+    def __repr__(self) -> str:
+        return "Merge()"
 
 
 class Join(Mapper):
@@ -268,6 +320,49 @@ class MapPackets(Mapper):
             self.key_map,
             self.drop_unmapped,
         ) + tuple(streams)
+
+
+class DefaultTag(Mapper):
+    """
+    A Mapper that adds a default tag to the packets in the stream.
+    The default tag is added to all packets in the stream. If the
+    tag already contains the same key, it will not be overwritten.
+    """
+
+    def __init__(self, default_tag: Tag) -> None:
+        super().__init__()
+        self.default_tag = default_tag
+
+    def keys(
+        self, *streams: SyncStream
+    ) -> Tuple[Collection[str], Collection[str]]:
+        """
+        Returns the keys of the operation.
+        The first list contains the keys of the tags, and the second list contains the keys of the packets.
+        The keys are inferred based on the first (tag, packet) pair in the stream.
+        """
+        if len(streams) != 1:
+            raise ValueError("DefaultTag operation requires exactly one stream")
+
+        stream = streams[0]
+        tag_keys, packet_keys = stream.keys()
+        tag_keys = list(set(tag_keys) | set(self.default_tag.keys()))
+        return tag_keys, packet_keys
+
+    def forward(self, *streams: SyncStream) -> SyncStream:
+        if len(streams) != 1:
+            raise ValueError("DefaultTag operation requires exactly one stream")
+
+        stream = streams[0]
+
+        def generator() -> Iterator[Tuple[Tag, Packet]]:
+            for tag, packet in stream:
+                yield {**self.default_tag, **tag}, packet
+
+        return SyncStreamFromGenerator(generator)
+
+    def __repr__(self) -> str:
+        return f"DefaultTag({self.default_tag})"
 
 
 class MapTags(Mapper):
