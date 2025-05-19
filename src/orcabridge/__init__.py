@@ -6,15 +6,16 @@ DEFAULT_TRACKER.activate()
 # make modules and subpackages available
 from . import hashing
 from . import pod
-from . import store
 from . import mapper
 from . import stream
 from . import source
+from . import store
 
 __all__ = [
     "hashing",
-    "pod",
     "store",
+    "pod",
+    "dir_data_store",
     "mapper",
     "stream",
     "source",
@@ -27,10 +28,11 @@ __all__ = [
     "function_pod",
     "GlobSource",
     "DirDataStore",
+    "SafeDirDataStore",
     "DEFAULT_TRACKER",
 ]
 
 from .mapper import MapTags, MapPackets, Join, tag, packet
 from .pod import FunctionPod, function_pod
 from .source import GlobSource
-from .store import DirDataStore
+from .store import DirDataStore, SafeDirDataStore

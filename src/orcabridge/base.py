@@ -53,7 +53,7 @@ class Operation(HashableMixin):
         # concerns the operation class and the streams if present. Subclasses of
         # Operations should override this method to provide a more meaningful
         # representation of the operation.
-        return (self.__class__.__name__, streams)
+        return (self.__class__.__name__,) + tuple(streams)
 
     def __call__(self, *streams: "SyncStream", **kwargs) -> "SyncStream":
         # trigger call on source if passed as stream

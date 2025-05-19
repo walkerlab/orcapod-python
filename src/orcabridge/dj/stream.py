@@ -4,8 +4,9 @@ import copy
 
 from datajoint.expression import QueryExpression
 from datajoint.table import Table
-from typing import Collection, Any
+from typing import Collection, Any, Union
 import logging
+
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +29,15 @@ class QueryStream(SyncStream):
     iterating over the query results.
     """
 
-    def __init__(self, query: QueryExpression, upstream_tables: Collection[Table]) -> None:
+    def __init__(
+        self, query: QueryExpression, upstream_tables: Collection[Table]
+    ) -> None:
         super().__init__()
         self.query = query
         # remove the restriction from the query
-        self.upstream_tables = [query_without_restriction(table) for table in upstream_tables]
+        self.upstream_tables = [
+            query_without_restriction(table) for table in upstream_tables
+        ]
 
     def __iter__(self):
         for row in self.query.fetch(as_dict=True):
@@ -42,17 +47,18 @@ class QueryStream(SyncStream):
 
     def proj(self, *args, **kwargs) -> "QueryStream":
         """
-        Project the table and return a new source.
+        Project the query stream and return a new query stream
         """
-        return QueryStream(
-            self.query.proj(*args, **kwargs),
-            [table.proj(*args, **kwargs) for table in self.upstream_tables],
-        )
+        from .mapper import ProjectQuery
+
+        return ProjectQuery(*args, **kwargs)(self)
 
     def __and__(self, other: Any) -> "QueryStream":
         """
-        Join the table with another table and return a new source.
+        Restrict the query stream by `other` and return a new query stream
         """
+        from .mapper import RestrictQuery
+
         # lazy load to avoid circular import
         from ..source import TableSource
 
@@ -62,7 +68,16 @@ class QueryStream(SyncStream):
             other = other.query
         else:
             raise ValueError(f"Object of type {type(other)} is not supported.")
-        return QueryStream(self.query & other, self.upstream_tables)
+        return RestrictQuery(other)(self)
+
+    def __mul__(self, other: Any) -> Union["QueryStream", SyncStream]:
+        from .mapper import JoinQuery
+
+        if isinstance(other, QueryStream):
+            return JoinQuery()(self, other)
+        else:
+            # fallback to default handling that returns a SyncStream
+            return super().__mul__(other)
 
     def __repr__(self):
         return self.query.__repr__()
@@ -97,7 +112,13 @@ class TableCachedStream(TableStream):
     all returned packets can be found in the table.
     """
 
-    def __init__(self, table: Table, stream: SyncStream, batch_size: int = 1, use_skip_duplicates=False) -> None:
+    def __init__(
+        self,
+        table: Table,
+        stream: SyncStream,
+        batch_size: int = 1,
+        use_skip_duplicates=False,
+    ) -> None:
         if isinstance(table, type):
             table = table()
         super().__init__(table)
@@ -106,8 +127,10 @@ class TableCachedStream(TableStream):
         self.use_skip_duplicates = use_skip_duplicates
 
     def __iter__(self):
-        logger.info(f"Caching stream into table {self.table.table_name} with batch size {self.batch_size}, use_skip_duplicates={self.use_skip_duplicates}")
-        batch = [] 
+        logger.info(
+            f"Caching stream into table {self.table.table_name} with batch size {self.batch_size}, use_skip_duplicates={self.use_skip_duplicates}"
+        )
+        batch = []
         batch_count = 0
         for tag, packet in self.stream:
             # cache the packet into the table
@@ -120,11 +143,17 @@ class TableCachedStream(TableStream):
             # if batch_size is <= 0, will accumulate all packets into the batch
             # and insert at the very end
             if self.batch_size > 0 and batch_count >= self.batch_size:
-                self.table.insert(batch, skip_duplicates=self.use_skip_duplicates)
-                logger.debug(f'Inserted batch of size {len(batch)} into table {self.table.table_name}')
+                self.table.insert(
+                    batch, skip_duplicates=self.use_skip_duplicates
+                )
+                logger.debug(
+                    f"Inserted batch of size {len(batch)} into table {self.table.table_name}"
+                )
                 batch = []
                 batch_count = 0
             yield tag, packet
         if batch:
-            logger.debug(f'Inserted the final batch of size {len(batch)} into table {self.table.table_name}')
+            logger.debug(
+                f"Inserted the final batch of size {len(batch)} into table {self.table.table_name}"
+            )
             self.table.insert(batch, skip_duplicates=self.use_skip_duplicates)

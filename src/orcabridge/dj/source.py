@@ -27,6 +27,12 @@ class TableSource(QuerySource):
             table = table.__class__
         self.table = table
 
+    def identity_structure(self, *streams):
+        return (
+            self.__class__.__name__,
+            str(self.table.full_table_name),
+        ) + tuple(streams)
+    
     @property
     def label(self) -> str:
         if self._label is None:
@@ -98,6 +104,14 @@ class TableCachedStreamSource(QuerySource):
 
         self.table = None
 
+    def identity_structure(self, *streams):
+        return (
+            self.__class__.__name__,
+            self.stream,
+            str(self.schema),
+            self.table_name,
+        ) + tuple(streams)
+
     @property
     def label(self) -> str:
         if self._label is None:
@@ -114,6 +128,7 @@ class TableCachedStreamSource(QuerySource):
         output_fields = "\n".join([f"{k}: varchar(255)" for k in packet_keys])
 
         class CachedTable(dj.Manual):
+            source = self # this refers to the outer class instance
             definition = f"""
             # {self.table_name} outputs
             {key_fields}
@@ -160,6 +175,14 @@ class TableCachedSource(QuerySource):
         )
         self.table = None
 
+    def identity_structure(self, *streams):
+        return (
+            self.__class__.__name__,
+            self.source,
+            str(self.schema),
+            self.table_name,
+        ) + tuple(streams)
+
     @property
     def label(self) -> str:
         if self._label is None:
@@ -172,7 +195,7 @@ class TableCachedSource(QuerySource):
         output_fields = "\n".join([f"{k}: varchar(255)" for k in packet_keys])
 
         class CachedTable(dj.Manual):
-            _parent = self # this refers to the outer class instance
+            source = self # this refers to the outer class instance
             definition = f"""
             # {self.table_name} outputs
             {key_fields}
@@ -181,7 +204,7 @@ class TableCachedSource(QuerySource):
             """
 
             def populate(self, batch_size: int = 10, use_skip_duplicates: bool = False) -> int:
-                return sum(1 for _ in self._parent(batch_size=batch_size, use_skip_duplicates=use_skip_duplicates))
+                return sum(1 for _ in self.operation(batch_size=batch_size, use_skip_duplicates=use_skip_duplicates))
 
         CachedTable.__name__ = snake_to_pascal(self.table_name)
         CachedTable = self.schema(CachedTable)

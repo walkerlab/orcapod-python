@@ -28,16 +28,19 @@ def convert_to_query_mapper(operation: Mapper) -> QueryMapper:
         if operation.drop_unmapped:
             warnings.warn("Dropping unmapped tags is not supported in DataJoint")
         return ProjectQuery(..., **proj_map)
+    elif isinstance(operation, QueryOperation):
+        # if the operation is already a QueryOperation, just return it
+        return operation
     else:
         raise ValueError(f"Unknown operation: {operation}")
 
 
-class JoinQuery(Mapper):
+class JoinQuery(QueryMapper):
     """
     DataJoint specific Join operation that only works on QueryStream
     """
 
-    def __call__(self, *streams: QueryStream, project=False) -> QueryStream:
+    def forward(self, *streams: QueryStream, project=False) -> QueryStream:
         if len(streams) < 2:
             raise ValueError("Join operation requires at least two streams")
 
@@ -58,7 +61,7 @@ class JoinQuery(Mapper):
         return QueryStream(joined_query, upstream_tables)
 
 
-class ProjectQuery(Mapper):
+class ProjectQuery(QueryMapper):
     """
     Project (rename/remove) tag and packet keys
     """
@@ -68,7 +71,14 @@ class ProjectQuery(Mapper):
         self.projection_args = args
         self.projection_kwargs = projection_kwargs
 
-    def __call__(self, *streams: QueryStream) -> QueryStream:
+    def identity_structure(self, *streams):
+        return (
+            self.__class__.__name__,
+            str(self.projection_args),
+            str(self.projection_kwargs),
+        ) + tuple(streams)
+
+    def forward(self, *streams: QueryStream) -> QueryStream:
         if len(streams) != 1:
             raise ValueError("Project operation requires exactly one stream")
 
@@ -87,7 +97,7 @@ class ProjectQuery(Mapper):
         return QueryStream(projected_query, projected_upstreams)
 
 
-class RestrictQuery(Mapper):
+class RestrictQuery(QueryMapper):
     """
     Restrict (filter) tag and packet keys
     """
@@ -96,7 +106,13 @@ class RestrictQuery(Mapper):
         super().__init__(label=label)
         self.restrictions = restrictions
 
-    def __call__(self, *streams: QueryStream) -> QueryStream:
+    def identity_structure(self, *streams):
+        return (
+            self.__class__.__name__,
+            str(self.restrictions),
+        ) + tuple(streams)
+
+    def forward(self, *streams: QueryStream) -> QueryStream:
         if len(streams) != 1:
             raise ValueError("Restrict operation requires exactly one stream")
 

@@ -2,6 +2,7 @@ from .stream import QueryStream, TableStream, TableCachedStream
 from ..utils.name import pascal_to_snake, snake_to_pascal
 from .operation import QueryOperation
 from ..pod import Pod, FunctionPod
+from .source import QuerySource
 from .mapper import JoinQuery
 import datajoint as dj
 from datajoint import Schema
@@ -20,7 +21,7 @@ class QueryPod(Pod, QueryOperation):
     """
 
 
-class TableCachedPod(QueryPod):
+class TableCachedPod(QueryPod, QuerySource):
     def __init__(
         self,
         fp: FunctionPod,
@@ -44,6 +45,14 @@ class TableCachedPod(QueryPod):
         self.table = None
         if create_table:
             self.compile()
+
+    def identity_structure(self, *streams):
+        return (
+            self.__class__.__name__,
+            str(self.schema),
+            self.table_name,
+            self.fp
+        ) + tuple(self.streams)
 
     @property
     def label(self) -> str:
@@ -75,8 +84,6 @@ class TableCachedPod(QueryPod):
         )
         outputs = "\n".join([f"{k}: varchar(255)" for k in self.fp.output_keys])
 
-        outer_class = self
-
         class PodTable(dj.Computed):
             definition = f"""
             # {self.table_name} outputs
@@ -84,6 +91,8 @@ class TableCachedPod(QueryPod):
             ---
             {outputs}
             """
+
+            source = self
 
             @property
             def key_source(self):
@@ -93,7 +102,7 @@ class TableCachedPod(QueryPod):
                 # form QueryStream using key
                 query_stream = QueryStream(source_query & key, upstream_tables)
 
-                for key, packet in outer_class.fp(query_stream):
+                for key, packet in self.source.fp(query_stream):
                     key.update(packet)
                     self.insert1(key)
                     logger.info(f"Inserted key: {key}")
