@@ -221,7 +221,7 @@ class TableCachedSource(QuerySource):
             ) -> int:
                 return sum(
                     1
-                    for _ in self.operation(
+                    for _ in self.source(
                         batch_size=batch_size,
                         use_skip_duplicates=use_skip_duplicates,
                     )
@@ -252,10 +252,7 @@ class TableCachedSource(QuerySource):
 
 class MergedQuerySource(QuerySource):
     """
-    A source that represents multiple merged query, holding
-    the entries in one or more tables. When used as an operation,
-    it will return a stream of packets that are the result of
-    merging the packets from the source queries.
+    A source that represents multiple merged query.
     """
 
     def __init__(
@@ -269,3 +266,40 @@ class MergedQuerySource(QuerySource):
             self.__class__.__name__,
             str(self.sources),
         ) + tuple(streams)
+
+    def forward(self, *streams: SyncStream) -> QueryStream:
+        if len(streams) > 0:
+            raise NotImplementedError(
+                "Passing streams through MergedQuerySource is not implemented yet"
+            )
+
+    def compile(
+        self, tag_keys: Collection[str], packet_keys: Collection[str]
+    ) -> None:
+        # create a table to store the cached packets
+        key_fields = "\n".join([f"{k}: varchar(255)" for k in tag_keys])
+        output_fields = "\n".join([f"{k}: varchar(255)" for k in packet_keys])
+
+        class CachedTable(dj.Manual):
+            source = self  # this refers to the outer class instance
+            definition = f"""
+            # {self.table_name} outputs
+            {key_fields}
+            ---
+            {output_fields}
+            """
+
+            def populate(
+                self, batch_size: int = 10, use_skip_duplicates: bool = False
+            ) -> int:
+                return sum(
+                    1
+                    for _ in self.operation(
+                        batch_size=batch_size,
+                        use_skip_duplicates=use_skip_duplicates,
+                    )
+                )
+
+        CachedTable.__name__ = snake_to_pascal(self.table_name)
+        CachedTable = self.schema(CachedTable)
+        self.table = CachedTable
