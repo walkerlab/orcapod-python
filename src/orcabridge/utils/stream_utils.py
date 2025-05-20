@@ -3,14 +3,42 @@ Utility functions for handling tags
 """
 
 from _collections_abc import dict_keys
-from typing import List, Dict, Optional, Any, TypeVar, Set, Union, Sequence, Mapping
+from typing import (
+    List,
+    Dict,
+    Optional,
+    Any,
+    TypeVar,
+    Set,
+    Union,
+    Sequence,
+    Mapping,
+    Collection,
+)
 from ..types import Tag, Packet
 
 K = TypeVar("K")
 V = TypeVar("V")
 
 
-def join_tags(tag1: Mapping[K, V], tag2: Mapping[K, V]) -> Optional[Mapping[K, V]]:
+def common_elements(*values) -> Collection[str]:
+    """
+    Returns the common keys between all lists of values. The identified common elements are
+    order preserved with respect to the first list of values
+    """
+    if len(values) == 0:
+        return []
+    common_keys = set(values[0])
+    for tag in values[1:]:
+        common_keys.intersection_update(tag)
+    # Preserve the order of the first list of values
+    common_keys = [k for k in values[0] if k in common_keys]
+    return common_keys
+
+
+def join_tags(
+    tag1: Mapping[K, V], tag2: Mapping[K, V]
+) -> Optional[Mapping[K, V]]:
     """
     Joins two tags together. If the tags have the same key, the value must be the same or None will be returned.
     """
@@ -42,14 +70,20 @@ def batch_tag(all_tags: Sequence[Tag]) -> Tag:
     all_keys: Set[str] = set()
     for tag in all_tags:
         all_keys.update(tag.keys())
-    batch_tag = {key: [] for key in all_keys}  # Initialize batch_tag with all keys
+    batch_tag = {
+        key: [] for key in all_keys
+    }  # Initialize batch_tag with all keys
     for tag in all_tags:
         for k in all_keys:
-            batch_tag[k].append(tag.get(k, None))  # Append the value or None if the key is not present
+            batch_tag[k].append(
+                tag.get(k, None)
+            )  # Append the value or None if the key is not present
     return batch_tag
 
 
-def batch_packet(all_packets: Sequence[Packet], drop_missing_keys: bool = True) -> Packet:
+def batch_packet(
+    all_packets: Sequence[Packet], drop_missing_keys: bool = True
+) -> Packet:
     """
     Batches the packets together. Grouping values under the same key into a list.
     If all packets do not have the same key, raise an error unless drop_missing_keys is True

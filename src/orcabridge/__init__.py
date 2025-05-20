@@ -30,9 +30,11 @@ __all__ = [
     "DirDataStore",
     "SafeDirDataStore",
     "DEFAULT_TRACKER",
+    "SyncStreamFromLists",
 ]
 
 from .mapper import MapTags, MapPackets, Join, tag, packet
 from .pod import FunctionPod, function_pod
 from .source import GlobSource
 from .store import DirDataStore, SafeDirDataStore
+from .stream import SyncStreamFromLists as SimpleStream

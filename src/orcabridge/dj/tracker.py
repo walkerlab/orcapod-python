@@ -6,10 +6,10 @@ import networkx as nx
 
 
 from ..base import Operation, Source
-from ..mapper import Mapper
+from ..mapper import Mapper, Merge
 from ..pod import FunctionPod
 from .stream import QueryStream
-from .source import TableCachedSource
+from .source import TableCachedSource, MergedQuerySource
 from .operation import QueryOperation
 from .pod import TableCachedPod
 from .mapper import convert_to_query_mapper
@@ -53,6 +53,17 @@ def convert_to_query_operation(
                 table_name=table_name,
                 table_postfix=table_postfix,
                 streams=upstreams,
+            ),
+            True,
+        )
+
+    if isinstance(operation, Merge):
+        return (
+            MergedQuerySource(
+                *upstreams,
+                schema=schema,
+                table_name=table_name,
+                table_postfix=table_postfix,
             ),
             True,
         )

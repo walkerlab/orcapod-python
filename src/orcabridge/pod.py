@@ -23,6 +23,7 @@ import json
 import shutil
 import functools
 import warnings
+import time
 
 
 def function_pod(
@@ -120,6 +121,7 @@ class FunctionPod(Pod):
         custom_hash: Optional[int] = None,
         label: Optional[str] = None,
         force_computation: bool = False,
+        skip_cache_lookup: bool = False,
         skip_memoization: bool = False,
         error_handling: Literal["raise", "ignore", "warn"] = "raise",
         _hash_function_kwargs: Optional[dict] = None,
@@ -139,6 +141,7 @@ class FunctionPod(Pod):
         self.function_hash_mode = function_hash_mode
         self.custom_hash = custom_hash
         self.force_computation = force_computation
+        self.skip_cache_lookup = skip_cache_lookup
         self.skip_memoization = skip_memoization
         self.error_handling = error_handling
         self._hash_function_kwargs = _hash_function_kwargs
@@ -168,15 +171,21 @@ class FunctionPod(Pod):
             n_computed = 0
             for tag, packet in stream:
                 try:
-                    memoized_packet = self.data_store.retrieve_memoized(
-                        self.store_name,
-                        self.content_hash(char_count=16),
-                        packet,
-                    )
+                    if not self.skip_cache_lookup:
+                        memoized_packet = self.data_store.retrieve_memoized(
+                            self.store_name,
+                            self.content_hash(char_count=16),
+                            packet,
+                        )
+                    else:
+                        memoized_packet = None
                     if (
                         not self.force_computation
                         and memoized_packet is not None
                     ):
+                        print(
+                            "Memoized packet found! Using it to skip computation"
+                        )
                         yield tag, memoized_packet
                         continue
                     values = self.function(**packet)
@@ -214,7 +223,7 @@ class FunctionPod(Pod):
                     # e.g. if the output is a file, the path may be changed
                     output_packet = self.data_store.memoize(
                         self.store_name,
-                        self.content_hash(),
+                        self.content_hash(),  # identity of this function pod
                         packet,
                         output_packet,
                     )
