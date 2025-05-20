@@ -1,6 +1,7 @@
-from .base import Source
-from .stream import SyncStream, SyncStreamFromGenerator
-from .types import Tag, Packet
+from orcabridge.types import Tag, Packet
+from orcabridge.hashing import hash_function
+from orcabridge.base import Source
+from orcabridge.stream import SyncStream, SyncStreamFromGenerator
 from typing import (
     Iterator,
     Tuple,
@@ -13,7 +14,6 @@ from typing import (
 )
 from os import PathLike
 from pathlib import Path
-from .hashing import hash_function
 
 
 class LoadFromSource(Source):
