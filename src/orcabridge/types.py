@@ -1,19 +1,22 @@
-from typing import Union, List, Tuple, Protocol, Mapping, Collection
+from typing import Union, Tuple, Protocol, Mapping, Collection, Optional
 from anyio import Path
 from typing_extensions import TypeAlias
 import os
 
+# Convenience alias for anything pathlike
 PathLike = Union[str, bytes, os.PathLike]
 
 # arbitrary depth of nested list of strings or None
-L: TypeAlias = Collection[Union[str, None, "L"]]
+L: TypeAlias = Union[str, None, Collection[Optional[str]]]
+
 
 # the top level tag is a mapping from string keys to values that can be a string or
 # an arbitrary depth of nested list of strings or None
 Tag: TypeAlias = Mapping[str, Union[str, L]]
 
+
 # a pathset is a path or an arbitrary depth of nested list of paths
-PathSet: TypeAlias = Union[PathLike, Collection[PathLike]]
+PathSet: TypeAlias = Union[PathLike, Collection[Optional[PathLike]]]
 
 # a packet is a mapping from string keys to pathsets
 Packet: TypeAlias = Mapping[str, PathSet]
