@@ -9,6 +9,17 @@ import types
 import ast
 
 
+def find_noncolliding_name(name: str, lut: dict) -> str:
+    if name not in lut:
+        return name
+
+    suffix = 1
+    while f"{name}_{suffix}" in lut:
+        suffix += 1
+
+    return f"{name}_{suffix}"
+
+
 def pascal_to_snake(name: str) -> str:
     # Convert PascalCase to snake_case
     # if already in snake_case, return as is

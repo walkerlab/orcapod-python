@@ -6,7 +6,6 @@ A library for creating stable, content-based hashes that remain consistent acros
 suitable for arbitrarily nested data structures and custom objects via HashableMixin.
 """
 
-from ast import Str
 import hashlib
 import inspect
 import json
@@ -26,10 +25,10 @@ from typing import (
 )
 from pathlib import Path
 from os import PathLike
-import os
 import xxhash
 import zlib
-from .types import PathSet, Packet
+from orcabridge.types import PathSet, Packet
+from orcabridge.utils.name import find_noncolliding_name
 
 # Configure logging with __name__ for proper hierarchy
 logger = logging.getLogger(__name__)
@@ -827,6 +826,70 @@ def stable_hash(s: Any) -> int:
     return hash_to_int(s)
 
 
+# Hashing of packets and PathSet
+
+
+class PathSetHasher:
+    def __init__(self, char_count=32):
+        self.char_count = char_count
+
+    def hash_pathset(self, pathset: PathSet) -> str:
+        if isinstance(pathset, str) or isinstance(pathset, PathLike):
+            pathset = Path(pathset)
+            if not pathset.exists():
+                raise FileNotFoundError(f"Path {pathset} does not exist")
+            if pathset.is_dir():
+                # iterate over all entries in the directory include subdirectory (single step)
+                hash_dict = {}
+                for entry in pathset.iterdir():
+                    file_name = find_noncolliding_name(entry.name, hash_dict)
+                    hash_dict[file_name] = self.hash_pathset(entry)
+                return hash_to_hex(hash_dict, char_count=self.char_count)
+            else:
+                # it's a file, hash it directly
+                return hash_file(pathset)
+
+        if isinstance(pathset, Collection):
+            hash_dict = {}
+            for path in pathset:
+                file_name = find_noncolliding_name(Path(path).name, hash_dict)
+                hash_dict[file_name] = self.hash_pathset(path)
+            return hash_to_hex(hash_dict, char_count=self.char_count)
+
+        raise ValueError(f"PathSet of type {type(pathset)} is not supported")
+
+    def hash_file(self, filepath) -> str: ...
+
+    def id(self) -> str: ...
+
+
+def hash_packet_with_psh(
+    packet: Packet, algo: PathSetHasher, prefix_algorithm: bool = True
+) -> str:
+    """
+    Generate a hash for a packet based on its content.
+
+    Args:
+        packet: The packet to hash
+        algorithm: The algorithm to use for hashing
+        prefix_algorithm: Whether to prefix the hash with the algorithm name
+
+    Returns:
+        A hexadecimal digest of the packet's content
+    """
+    hash_results = {}
+    for key, pathset in packet.items():
+        hash_results[key] = algo.hash_pathset(pathset)
+
+    packet_hash = hash_to_hex(hash_results)
+
+    if prefix_algorithm:
+        # Prefix the hash with the algorithm name
+        packet_hash = f"{algo.id()}-{packet_hash}"
+
+    return packet_hash
+
+
 def hash_packet(
     packet: Packet,
     algorithm: str = "sha256",
@@ -879,7 +942,7 @@ def hash_pathset(
             # iterate over all entries in the directory include subdirectory (single step)
             hash_dict = {}
             for entry in pathset.iterdir():
-                file_name = entry.name
+                file_name = find_noncolliding_name(entry.name, hash_dict)
                 hash_dict[file_name] = hash_pathset(
                     entry,
                     algorithm=algorithm,
@@ -896,7 +959,7 @@ def hash_pathset(
     if isinstance(pathset, Collection):
         hash_dict = {}
         for path in pathset:
-            file_name = Path(path).name
+            file_name = find_noncolliding_name(Path(path).name, hash_dict)
             hash_dict[file_name] = hash_pathset(
                 path,
                 algorithm=algorithm,
