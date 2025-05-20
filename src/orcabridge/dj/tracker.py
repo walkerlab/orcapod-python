@@ -1,13 +1,13 @@
-from ..tracker import Tracker
+from orcabridge.tracker import GraphTracker
 from datajoint import Schema
 from typing import List, Collection, Tuple, Optional, Any
 from types import ModuleType
 import networkx as nx
 
 
-from ..base import Operation, Source
-from ..mapper import Mapper, Merge
-from ..pod import FunctionPod
+from orcabridge.base import Operation, Source
+from orcabridge.mapper import Mapper, Merge
+from orcabridge.pod import FunctionPod
 from .stream import QueryStream
 from .source import TableCachedSource, MergedQuerySource
 from .operation import QueryOperation
@@ -75,7 +75,7 @@ def convert_to_query_operation(
     raise ValueError(f"Unsupported operation for DJ conversion: {operation}")
 
 
-class QueryTracker(Tracker):
+class QueryTracker(GraphTracker):
     """
     Query-specific tracker that tracks the invocations of operations
     and their associated streams.
