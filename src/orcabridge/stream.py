@@ -9,8 +9,8 @@ from typing import (
     List,
     Collection,
 )
-from .types import Tag, Packet
-from .base import SyncStream
+from orcabridge.types import Tag, Packet
+from orcabridge.base import SyncStream
 
 
 class SyncStreamFromLists(SyncStream):
