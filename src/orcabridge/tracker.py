@@ -1,21 +1,26 @@
 import threading
 from typing import Dict, Collection, List
 import networkx as nx
-from .base import Operation, Invocation
+from orcabridge.base import Operation, Invocation, Tracker
 import matplotlib.pyplot as plt
 
 
-class Tracker:
+class GraphTracker(Tracker):
+    """
+    A tracker that records the invocations of operations and generates a graph
+    of the invocations and their dependencies.
+    """
 
     # Thread-local storage to track active trackers
-    _local = threading.local()
 
     def __init__(self) -> None:
-        self.active = False
+        super().__init__()
         self.invocation_lut: Dict[Operation, Collection[Invocation]] = {}
 
     def record(self, invocation: Invocation) -> None:
-        invocation_list = self.invocation_lut.setdefault(invocation.operation, [])
+        invocation_list = self.invocation_lut.setdefault(
+            invocation.operation, []
+        )
         if invocation not in invocation_list:
             invocation_list.append(invocation)
 
@@ -42,22 +47,6 @@ class Tracker:
             for idx, invocation in enumerate(invocations):
                 namemap[invocation] = f"{node_label}_{idx}"
         return namemap
-
-    def activate(self) -> None:
-        """
-        Activate the tracker. This is a no-op if the tracker is already active.
-        """
-        if not self.active:
-            if not hasattr(self._local, "active_trackers"):
-                self._local.active_trackers = []
-            self._local.active_trackers.append(self)
-            self.active = True
-
-    def deactivate(self) -> None:
-        # Remove this tracker from active trackers
-        if hasattr(self._local, "active_trackers") and self.active:
-            self._local.active_trackers.remove(self)
-            self.active = False
 
     def generate_graph(self):
         G = nx.DiGraph()
@@ -90,16 +79,3 @@ class Tracker:
             arrowsize=20,
         )
         plt.tight_layout()
-
-    def __enter__(self):
-        self.activate()
-        return self
-
-    def __exit__(self, exc_type, exc_val, ext_tb):
-        self.deactivate()
-
-    @classmethod
-    def get_active_trackers(cls) -> List["Tracker"]:
-        if hasattr(cls._local, "active_trackers"):
-            return cls._local.active_trackers
-        return []
