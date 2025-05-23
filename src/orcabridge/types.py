@@ -1,5 +1,5 @@
 from typing import Union, Tuple, Protocol, Mapping, Collection, Optional
-from anyio import Path
+from pathlib import Path
 from typing_extensions import TypeAlias
 import os
 
