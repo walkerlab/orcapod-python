@@ -4,8 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "orcabridge"
-description = "Prototype Oracapod Pipeline implementation in Python"
-dynamic = ["version", "dependencies"]
+description = "Function-based Oracapod Pipeline implementation in Python"
+dynamic = ["version"]
+dependencies = [
+    "numpy",
+    "xxhash",
+    "networkx",
+    "matplotlib",
+    "typing_extensions",
+]
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT License" }
@@ -18,14 +25,12 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/walkerlab/orcabridge"
 
+[project.optional-dependencies]
+test = ["pytest>=7.4.0", "pytest-cov>=4.1.0"]
+dev = ["black>=23.0.0", "flake8>=6.0.0", "isort>=5.12.0", "orcabridge[test]"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools_scm]
 version_file = "src/orcabridge/_version.py"
-
-[tool.setuptools.dynamic]
-dependencies = { file = ["requirements.txt"] }
-
-[tool.black]
-line-length = 80
