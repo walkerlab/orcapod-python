@@ -15,9 +15,13 @@ from orcabridge.hashing import hash_to_hex, hash_to_int, hash_to_uuid
 SAMPLES_DIR = Path(__file__).parent / "hash_samples"
 SAMPLES_DIR.mkdir(exist_ok=True)
 
+# Create data_structures subdirectory for the hash examples
+DATA_STRUCTURES_DIR = SAMPLES_DIR / "data_structures"
+DATA_STRUCTURES_DIR.mkdir(exist_ok=True)
+
 # Format the current date and time for the filename
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-output_file = SAMPLES_DIR / f"hash_examples_{timestamp}.json"
+output_file = DATA_STRUCTURES_DIR / f"hash_examples_{timestamp}.json"
 
 
 def generate_hash_examples():
