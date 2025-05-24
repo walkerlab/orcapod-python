@@ -168,7 +168,7 @@
     "uuid_hash": "a615eeae-e21d-e517-9de0-80de8c3052c8"
   },
   {
-    "value": "set:['c', 'a', 'b']",
+    "value": "set:['b', 'c', 'a']",
     "hex_hash": "fa1844c2988ad15ab7b49e0ece096845",
     "int_hash": 18021229511496618330,
     "uuid_hash": "fa1844c2-988a-d15a-b7b4-9e0ece096845"
