@@ -600,16 +600,14 @@ class CacheStream(Mapper):
         self.is_cached = False
 
     def forward(self, *streams: SyncStream) -> SyncStream:
-        if len(streams) != 1:
+        if not self.is_cached and len(streams) != 1:
             raise ValueError(
                 "CacheStream operation requires exactly one stream"
             )
 
-        stream = streams[0]
-
         def generator() -> Iterator[Tuple[Tag, Packet]]:
             if not self.is_cached:
-                for tag, packet in stream:
+                for tag, packet in streams[0]:
                     self.cache.append((tag, packet))
                     yield tag, packet
                 self.is_cached = True
