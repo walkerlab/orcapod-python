@@ -178,8 +178,8 @@ class FunctionPod(Pod):
                         not self.force_computation
                         and memoized_packet is not None
                     ):
-                        print(
-                            "Memoized packet found! Using it to skip computation"
+                        logger.info(
+                            "Memoized packet found, skipping computation"
                         )
                         yield tag, memoized_packet
                         continue
