@@ -51,7 +51,8 @@ class GlobSource(Source):
     ...                     lambda f: {'date': Path(f).stem[:8]})
     """
 
-    default_tag_function = lambda f: {"file_name": Path(f).stem}
+    
+    default_tag_function = lambda f: {"file_name": Path(f).stem}  # noqa: E731
 
     def __init__(
         self,
@@ -60,9 +61,7 @@ class GlobSource(Source):
         pattern: str = "*",
         label: Optional[str] = None,
         tag_function: Optional[Union[str, Callable[[PathLike], Tag]]] = None,
-        tag_function_hash_mode: Literal[
-            "content", "signature", "name"
-        ] = "name",
+        tag_function_hash_mode: Literal["content", "signature", "name"] = "name",
         expected_tag_keys: Optional[Collection[str]] = None,
         **kwargs,
     ) -> None:
@@ -77,7 +76,7 @@ class GlobSource(Source):
             tag_function = self.__class__.default_tag_function
         elif isinstance(tag_function, str):
             tag_key = tag_function
-            tag_function = lambda f: {tag_key: Path(f).stem}
+            tag_function = lambda f: {tag_key: Path(f).stem}  # noqa: E731
         self.tag_function = tag_function
         self.tag_function_hash_mode = tag_function_hash_mode
 

@@ -20,9 +20,7 @@ from orcabridge.hashing import hash_file
 
 def load_hash_lut():
     """Load the hash lookup table from the JSON file."""
-    hash_lut_path = (
-        Path(__file__).parent / "hash_samples" / "file_hash_lut.json"
-    )
+    hash_lut_path = Path(__file__).parent / "hash_samples" / "file_hash_lut.json"
 
     if not hash_lut_path.exists():
         pytest.skip(
@@ -85,9 +83,7 @@ def test_file_hash_algorithm_parameters():
         try:
             hash1 = hash_file(file_path, algorithm=algorithm)
             hash2 = hash_file(file_path, algorithm=algorithm)
-            assert (
-                hash1 == hash2
-            ), f"Hash inconsistent for algorithm {algorithm}"
+            assert hash1 == hash2, f"Hash inconsistent for algorithm {algorithm}"
             print(f"Verified {algorithm} hash consistency: {hash1}")
         except ValueError as e:
             print(f"Algorithm {algorithm} not supported: {e}")
@@ -98,12 +94,8 @@ def test_file_hash_algorithm_parameters():
     for buffer_size in buffer_sizes:
         hash1 = hash_file(file_path, buffer_size=buffer_size)
         hash2 = hash_file(file_path, buffer_size=buffer_size)
-        assert (
-            hash1 == hash2
-        ), f"Hash inconsistent for buffer size {buffer_size}"
-        print(
-            f"Verified hash consistency with buffer size {buffer_size}: {hash1}"
-        )
+        assert hash1 == hash2, f"Hash inconsistent for buffer size {buffer_size}"
+        print(f"Verified hash consistency with buffer size {buffer_size}: {hash1}")
 
 
 if __name__ == "__main__":
