@@ -8,7 +8,6 @@ hash values for the sample files created by generate_file_hashes.py.
 """
 
 import json
-import os
 import pytest
 from pathlib import Path
 import sys
