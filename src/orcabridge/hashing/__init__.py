@@ -6,6 +6,7 @@ from .hashing import (
     hash_to_int,
     hash_to_uuid,
     hash_function,
+    get_function_signature,
     HashableMixin,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     "hash_to_int",
     "hash_to_uuid",
     "hash_function",
+    "get_function_signature",
     "HashableMixin",
 ]
