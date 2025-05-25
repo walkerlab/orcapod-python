@@ -1,7 +1,3 @@
-import logging
-
-logger = logging.getLogger(__name__)
-
 from typing import (
     Optional,
     Tuple,
@@ -19,15 +15,16 @@ from orcabridge.mapper import Join
 from orcabridge.store import DataStore, NoOpDataStore
 import functools
 import warnings
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def function_pod(
     output_keys: Optional[Collection[str]] = None,
     store_name: Optional[str] = None,
     data_store: Optional[DataStore] = None,
-    function_hash_mode: Literal[
-        "signature", "content", "name", "custom"
-    ] = "name",
+    function_hash_mode: Literal["signature", "content", "name", "custom"] = "name",
     custom_hash: Optional[int] = None,
     force_computation: bool = False,
     skip_memoization: bool = False,
@@ -110,9 +107,7 @@ class FunctionPod(Pod):
         output_keys: Optional[Collection[str]] = None,
         store_name=None,
         data_store: Optional[DataStore] = None,
-        function_hash_mode: Literal[
-            "signature", "content", "name", "custom"
-        ] = "name",
+        function_hash_mode: Literal["signature", "content", "name", "custom"] = "name",
         custom_hash: Optional[int] = None,
         label: Optional[str] = None,
         force_computation: bool = False,
@@ -127,12 +122,8 @@ class FunctionPod(Pod):
         if output_keys is None:
             output_keys = []
         self.output_keys = output_keys
-        self.store_name = (
-            self.function.__name__ if store_name is None else store_name
-        )
-        self.data_store = (
-            data_store if data_store is not None else NoOpDataStore()
-        )
+        self.store_name = self.function.__name__ if store_name is None else store_name
+        self.data_store = data_store if data_store is not None else NoOpDataStore()
         self.function_hash_mode = function_hash_mode
         self.custom_hash = custom_hash
         self.force_computation = force_computation
@@ -145,9 +136,7 @@ class FunctionPod(Pod):
         func_sig = get_function_signature(self.function)
         return f"FunctionPod:{func_sig} ⇒ {self.output_keys}"
 
-    def keys(
-        self, *streams: SyncStream
-    ) -> Tuple[Collection[str], Collection[str]]:
+    def keys(self, *streams: SyncStream) -> Tuple[Collection[str], Collection[str]]:
         stream = self.process_stream(*streams)
         tag_keys, _ = stream[0].keys()
         return tag_keys, tuple(self.output_keys)
@@ -155,9 +144,7 @@ class FunctionPod(Pod):
     def forward(self, *streams: SyncStream) -> SyncStream:
         # if multiple streams are provided, join them
         if len(streams) > 1:
-            raise ValueError(
-                "Multiple streams should be joined before calling forward"
-            )
+            raise ValueError("Multiple streams should be joined before calling forward")
         if len(streams) == 0:
             raise ValueError("No streams provided to forward")
         stream = streams[0]
@@ -174,13 +161,8 @@ class FunctionPod(Pod):
                         )
                     else:
                         memoized_packet = None
-                    if (
-                        not self.force_computation
-                        and memoized_packet is not None
-                    ):
-                        logger.info(
-                            "Memoized packet found, skipping computation"
-                        )
+                    if not self.force_computation and memoized_packet is not None:
+                        logger.info("Memoized packet found, skipping computation")
                         yield tag, memoized_packet
                         continue
                     values = self.function(**packet)
@@ -209,9 +191,7 @@ class FunctionPod(Pod):
                         warnings.warn(f"Error processing packet {packet}: {e}")
                         continue
 
-                output_packet: Packet = {
-                    k: v for k, v in zip(self.output_keys, values)
-                }
+                output_packet: Packet = {k: v for k, v in zip(self.output_keys, values)}
 
                 if not self.skip_memoization:
                     # output packet may be modified by the memoization process

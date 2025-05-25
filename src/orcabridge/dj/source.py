@@ -9,7 +9,7 @@ import datajoint as dj
 from ..utils.name import pascal_to_snake, snake_to_pascal
 from ..utils.stream_utils import common_elements
 import logging
-from ..hashing import hash_to_uuid
+from orcabridge.hashing import hash_to_uuid
 
 logger = logging.getLogger(__name__)
 
@@ -131,9 +131,7 @@ class TableCachedStreamSource(QuerySource):
                 return snake_to_pascal(self.table_name)
         return self._label
 
-    def compile(
-        self, tag_keys: Collection[str], packet_keys: Collection[str]
-    ) -> None:
+    def compile(self, tag_keys: Collection[str], packet_keys: Collection[str]) -> None:
         # create a table to store the cached packets
 
         key_fields = "\n".join([f"{k}: varchar(255)" for k in tag_keys])
@@ -154,9 +152,7 @@ class TableCachedStreamSource(QuerySource):
 
     def forward(self, *streams: QueryStream) -> QueryStream:
         if len(streams) > 0:
-            raise ValueError(
-                "No streams should be passed to TableCachedStreamSource"
-            )
+            raise ValueError("No streams should be passed to TableCachedStreamSource")
 
         if self.table is None:
             # TODO: consider handling this lazily
@@ -325,9 +321,7 @@ class MergedQuerySource(QuerySource):
 
         # create a table to store the cached packets
         key_fields = "\n".join([f"{k}: varchar(255)" for k in common_tag_keys])
-        output_fields = "\n".join(
-            [f"{k}: varchar(255)" for k in common_packet_keys]
-        )
+        output_fields = "\n".join([f"{k}: varchar(255)" for k in common_packet_keys])
         table_field = f"{self.table_name}_part"
         uuid_field = f"{self.table_name}_uuid" if use_uuid else ""
         table_entry = f"{table_field}: varchar(255)"
@@ -396,17 +390,14 @@ def make_part_table(
     uuid_field,
 ) -> type[dj.Part]:
     upstreams = "\n".join(
-        f"-> self.upstream_tables[{i}]"
-        for i in range(len(stream.upstream_tables))
+        f"-> self.upstream_tables[{i}]" for i in range(len(stream.upstream_tables))
     )
 
     tag_keys, packet_keys = stream.keys()
 
     extra_packet_keys = [k for k in packet_keys if k not in common_packet_keys]
 
-    extra_output_fields = "\n".join(
-        [f"{k}: varchar(255)" for k in extra_packet_keys]
-    )
+    extra_output_fields = "\n".join([f"{k}: varchar(255)" for k in extra_packet_keys])
 
     class PartTable(dj.Part, dj.Computed):
         upstream_tables = stream.upstream_tables

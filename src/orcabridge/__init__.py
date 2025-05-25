@@ -1,15 +1,20 @@
 from .tracker import Tracker
-
-DEFAULT_TRACKER = Tracker()
-DEFAULT_TRACKER.activate()
-
-# make modules and subpackages available
 from . import hashing
 from . import pod
 from . import mapper
 from . import stream
 from . import source
 from . import store
+from .mapper import MapTags, MapPackets, Join, tag, packet
+from .pod import FunctionPod, function_pod
+from .source import GlobSource
+from .store import DirDataStore, SafeDirDataStore
+
+
+
+DEFAULT_TRACKER = Tracker()
+DEFAULT_TRACKER.activate()
+
 
 __all__ = [
     "hashing",
@@ -33,8 +38,3 @@ __all__ = [
     "SyncStreamFromLists",
 ]
 
-from .mapper import MapTags, MapPackets, Join, tag, packet
-from .pod import FunctionPod, function_pod
-from .source import GlobSource
-from .store import DirDataStore, SafeDirDataStore
-from .stream import SyncStreamFromLists as SimpleStream

@@ -45,16 +45,12 @@ def load_hash_samples(file_path=None):
 
 def deserialize_value(serialized_value):
     """Convert serialized values back to their original form."""
-    if isinstance(serialized_value, str) and serialized_value.startswith(
-        "bytes:"
-    ):
+    if isinstance(serialized_value, str) and serialized_value.startswith("bytes:"):
         # Convert hex string back to bytes
         hex_str = serialized_value[len("bytes:") :]
         return bytes.fromhex(hex_str)
 
-    if isinstance(serialized_value, str) and serialized_value.startswith(
-        "set:"
-    ):
+    if isinstance(serialized_value, str) and serialized_value.startswith("set:"):
         # Convert string representation back to set
         # Example: "set:[1, 2, 3]" -> {1, 2, 3}
         set_str = serialized_value[len("set:") :]

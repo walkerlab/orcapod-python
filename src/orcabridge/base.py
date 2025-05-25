@@ -9,7 +9,6 @@ from typing import (
     Callable,
     Iterator,
 )
-from collections.abc import Collection
 import threading
 
 

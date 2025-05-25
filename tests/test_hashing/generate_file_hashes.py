@@ -118,9 +118,7 @@ def create_sample_files():
     # Compute the hash
     json_hash = hash_file(json_filepath)
 
-    files_info.append(
-        {"file": str(rel_filepath), "hash": json_hash, "type": "json"}
-    )
+    files_info.append({"file": str(rel_filepath), "hash": json_hash, "type": "json"})
     print(f"Created JSON file: {json_filename}, Hash: {json_hash}")
 
     return files_info
