@@ -7,7 +7,6 @@ This script creates sample text and binary files with random content,
 then computes and records their hashes in a JSON lookup table file.
 """
 
-import os
 import json
 import random
 import string
