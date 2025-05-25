@@ -1,10 +1,9 @@
 import pytest
-from orcabridge.hashing import (
+from orcabridge.hashing.hashing import (
     hash_to_hex,
     hash_to_int,
     hash_to_uuid,
     HashableMixin,
-    hash_dict,
     stable_hash,
     hash_file,
 )
@@ -134,14 +133,6 @@ def test_hashable_mixin():
     # Test that it returns different UUIDs for different values
     example3 = ExampleHashableMixin("different")
     assert example.content_hash() != example3.content_hash()
-
-
-def test_hash_dict():
-    test_dict = {"a": 1, "b": "test", "c": {"nested": True}}
-
-    # Test that it returns a UUID
-    result = hash_dict(test_dict)
-    assert str(result).count("-") == 4
 
 
 def test_stable_hash():
