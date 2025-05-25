@@ -3,7 +3,7 @@ import contextlib
 import inspect
 import os
 from pathlib import Path
-from typing import Callable, Dict, Optional, Sequence, Tuple, Union
+from typing import Callable, Collection, Dict, Optional, Tuple, Union
 
 from orcabridge.types import Packet, PathSet
 

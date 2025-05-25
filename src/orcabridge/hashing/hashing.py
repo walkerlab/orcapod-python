@@ -310,7 +310,7 @@ def hash_to_hex(obj: Any, char_count: Optional[int] = 32) -> str:
             # Try standard JSON first
             json_str = json.dumps(processed, sort_keys=True).encode("utf-8")
             logger.info(
-                f"Successfully used standard JSON serialization as fallback"
+                "Successfully used standard JSON serialization as fallback"
             )
         except (TypeError, ValueError) as json_err:
             # If JSON also fails, use simple string representation
@@ -495,7 +495,7 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
         else:
             # Get basic repr but remove memory addresses
             logger.debug(
-                f"Object has no __dict__, using repr() with memory address removal"
+                "Object has no __dict__, using repr() with memory address removal"
             )
             obj_repr = repr(obj)
             if len(obj_repr) > 1000:
@@ -512,7 +512,7 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
         logger.warning(f"Failed to process object representation: {e}")
         try:
             return f"Object-{obj.__class__.__module__}.{obj.__class__.__name__}"
-        except:
+        except AttributeError:
             logger.error(
                 "Could not determine object class, using UnknownObject"
             )
@@ -680,14 +680,14 @@ def get_function_components(
 
         components.append(f"source:{source}")
 
-    except (IOError, TypeError) as e:
+    except (IOError, TypeError):
         # If source can't be retrieved, fall back to signature
         components.append(f"name:{func.__name__}")
         try:
             sig = inspect.signature(func)
             components.append(f"signature:{str(sig)}")
         except ValueError:
-            components.append(f"builtin:True")
+            components.append("builtin:True")
 
     # Add function annotations if requested
     if (

@@ -1,11 +1,9 @@
-import pytest
 from orcabridge.hashing.hashing import (
     hash_to_hex,
     hash_to_int,
     hash_to_uuid,
     HashableMixin,
     stable_hash,
-    hash_file,
 )
 
 

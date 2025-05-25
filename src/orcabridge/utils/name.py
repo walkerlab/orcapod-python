@@ -3,10 +3,6 @@ Utility functions for handling names
 """
 
 import re
-import inspect
-import pickle
-import types
-import ast
 
 
 def find_noncolliding_name(name: str, lut: dict) -> str:

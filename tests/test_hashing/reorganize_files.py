@@ -7,7 +7,6 @@ This script moves files from their current locations to the new
 organized directory structure within hash_samples.
 """
 
-import os
 import shutil
 from pathlib import Path
 

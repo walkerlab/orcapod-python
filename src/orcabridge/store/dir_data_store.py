@@ -1,5 +1,5 @@
-from ..types import Tag, Packet
-from typing import Optional, Collection
+from orcabridge.types import Packet
+from typing import Optional
 from pathlib import Path
 from orcabridge.hashing import hash_packet
 import shutil
@@ -156,9 +156,9 @@ class DirDataStore(DataStore):
                     logger.info(
                         f"Supplemented source for packet {packet} at {source_path}"
                     )
-            except:
+            except IOError as e:
                 logger.error(
-                    f"Error loading memoized output for packet {packet} from {info_path}"
+                    f"Error loading memoized output for packet {packet} from {info_path}: {e}"
                 )
                 return None
             return output_packet

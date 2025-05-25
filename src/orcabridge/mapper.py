@@ -7,9 +7,8 @@ from typing import (
     Tuple,
     Iterator,
     Collection,
-    Any,
 )
-from orcabridge.base import Operation, SyncStream, Mapper
+from orcabridge.base import SyncStream, Mapper
 from orcabridge.stream import SyncStreamFromGenerator
 from orcabridge.utils.stream_utils import (
     join_tags,
@@ -17,7 +16,7 @@ from orcabridge.utils.stream_utils import (
     batch_tag,
     batch_packet,
 )
-from orcabridge.hashing import hash_function
+from orcabridge.hashing import hash_function, function_content_hash
 from .types import Tag, Packet
 from itertools import chain
 
@@ -485,7 +484,7 @@ class Batch(Mapper):
         super().__init__()
         self.batch_size = batch_size
         if tag_processor is None:
-            tag_processor = lambda tags: batch_tag(tags)
+            tag_processor = lambda tags: batch_tag(tags)  # noqa: E731
 
         self.tag_processor = tag_processor
         self.drop_last = drop_last
