@@ -73,13 +73,9 @@ def test_hash_file():
 
 def test_structure_equivalence():
     # identical content should yield the same hash
-    assert hash_to_hex(["a", "b", "c"], None) == hash_to_hex(
-        ["a", "b", "c"], None
-    )
+    assert hash_to_hex(["a", "b", "c"], None) == hash_to_hex(["a", "b", "c"], None)
     # list should be order dependent
-    assert hash_to_hex(["a", "b", "c"], None) != hash_to_hex(
-        ["a", "c", "b"], None
-    )
+    assert hash_to_hex(["a", "b", "c"], None) != hash_to_hex(["a", "c", "b"], None)
 
     # dict should be order independent
     assert hash_to_hex({"a": 1, "b": 2, "c": 3}, None) == hash_to_hex(
@@ -87,14 +83,12 @@ def test_structure_equivalence():
     )
 
     # set should be order independent
-    assert hash_to_hex(set([1, 2, 3]), None) == hash_to_hex(
-        set([3, 2, 1]), None
-    )
+    assert hash_to_hex(set([1, 2, 3]), None) == hash_to_hex(set([3, 2, 1]), None)
 
     # equivalence under nested structure
-    assert hash_to_hex(
-        set([("a", "b", "c"), ("d", "e", "f")]), None
-    ) == hash_to_hex(set([("d", "e", "f"), ("a", "b", "c")]), None)
+    assert hash_to_hex(set([("a", "b", "c"), ("d", "e", "f")]), None) == hash_to_hex(
+        set([("d", "e", "f"), ("a", "b", "c")]), None
+    )
 
 
 def test_hash_to_int():
@@ -116,12 +110,30 @@ def test_hash_to_uuid():
     assert str(uuid).count("-") == 4  # Valid UUID format
 
 
-class TestHashableMixin(HashableMixin):
+class ExampleHashableMixin(HashableMixin):
     def __init__(self, value):
         self.value = value
 
     def identity_structure(self):
         return {"value": self.value}
+
+
+def test_hashable_mixin():
+    # Test that it returns a UUID
+    example = ExampleHashableMixin("test")
+    uuid = example.content_hash_uuid()
+    assert str(uuid).count("-") == 4  # Valid UUID format
+
+    value = example.content_hash_int()
+    assert isinstance(value, int)
+
+    # Test that it returns the same UUID for the same value
+    example2 = ExampleHashableMixin("test")
+    assert example.content_hash() == example2.content_hash()
+
+    # Test that it returns different UUIDs for different values
+    example3 = ExampleHashableMixin("different")
+    assert example.content_hash() != example3.content_hash()
 
 
 def test_hash_dict():
