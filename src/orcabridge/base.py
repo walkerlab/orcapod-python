@@ -62,8 +62,7 @@ class Operation(HashableMixin):
         # trigger call on source if passed as stream
 
         streams = [
-            stream() if isinstance(stream, Source) else stream
-            for stream in streams
+            stream() if isinstance(stream, Source) else stream for stream in streams
         ]
         output_stream = self.forward(*streams, **kwargs)
         # create an invocation instance
@@ -225,9 +224,7 @@ class Stream(HashableMixin):
     @invocation.setter
     def invocation(self, value: Invocation) -> None:
         if not isinstance(value, Invocation):
-            raise TypeError(
-                "invocation field must be an instance of Invocation"
-            )
+            raise TypeError("invocation field must be an instance of Invocation")
         self._invocation = value
 
     def keys(self) -> Tuple[Collection[str], Collection[str]]:

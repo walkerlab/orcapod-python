@@ -1,7 +1,7 @@
 from ..types import Tag, Packet
 from typing import Optional, Collection
 from pathlib import Path
-from ..hashing import hash_packet
+from orcabridge.hashing import hash_packet
 import shutil
 import logging
 import json
@@ -75,9 +75,7 @@ class DirDataStore(DataStore):
     ) -> Packet:
 
         packet_hash = hash_packet(packet, algorithm=self.algorithm)
-        output_dir = (
-            self.store_dir / store_name / content_hash / str(packet_hash)
-        )
+        output_dir = self.store_dir / store_name / content_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
         source_path = output_dir / "_source.json"
 
@@ -126,13 +124,9 @@ class DirDataStore(DataStore):
 
             # retrieve back the memoized packet and return
             # TODO: consider if we want to return the original packet or the memoized one
-            output_packet = self.retrieve_memoized(
-                store_name, content_hash, packet
-            )
+            output_packet = self.retrieve_memoized(store_name, content_hash, packet)
             if output_packet is None:
-                raise ValueError(
-                    f"Memoized packet {packet} not found after storing it"
-                )
+                raise ValueError(f"Memoized packet {packet} not found after storing it")
 
             return output_packet
 
@@ -140,9 +134,7 @@ class DirDataStore(DataStore):
         self, store_name: str, content_hash: str, packet: Packet
     ) -> Optional[Packet]:
         packet_hash = hash_packet(packet, algorithm=self.algorithm)
-        output_dir = (
-            self.store_dir / store_name / content_hash / str(packet_hash)
-        )
+        output_dir = self.store_dir / store_name / content_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
         source_path = output_dir / "_source.json"
 
@@ -156,9 +148,7 @@ class DirDataStore(DataStore):
                     # Note: if value is an absolute path, this will not change it as
                     # Pathlib is smart enough to preserve the last occurring absolute path (if present)
                     output_packet[key] = str(output_dir / value)
-                logger.info(
-                    f"Retrieved output for packet {packet} from {info_path}"
-                )
+                logger.info(f"Retrieved output for packet {packet} from {info_path}")
                 # check if source json exists -- if not, supplement it
                 if self.supplement_source and not source_path.exists():
                     with open(source_path, "w") as f:
@@ -180,9 +170,7 @@ class DirDataStore(DataStore):
         # delete the folder self.data_dir and its content
         shutil.rmtree(self.store_dir / store_name)
 
-    def clear_all_stores(
-        self, interactive=True, store_name="", force=False
-    ) -> None:
+    def clear_all_stores(self, interactive=True, store_name="", force=False) -> None:
         """
         Clear all stores in the data directory.
         This is a dangerous operation -- please double- and triple-check before proceeding!
@@ -222,8 +210,6 @@ class DirDataStore(DataStore):
         try:
             shutil.rmtree(self.store_dir)
         except:
-            logger.error(
-                f"Error during the deletion of all stores in {self.store_dir}"
-            )
+            logger.error(f"Error during the deletion of all stores in {self.store_dir}")
             raise
         logger.info(f"Deleted all stores in {self.store_dir}")
