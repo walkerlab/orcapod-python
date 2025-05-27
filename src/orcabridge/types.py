@@ -1,18 +1,18 @@
 from typing import Union, Tuple, Protocol, Mapping, Collection, Optional
-from pathlib import Path
 from typing_extensions import TypeAlias
 import os
 
 # Convenience alias for anything pathlike
 PathLike = Union[str, bytes, os.PathLike]
 
-# arbitrary depth of nested list of strings or None
-L: TypeAlias = Union[str, None, Collection[Optional[str]]]
+# an (optional) string or a collection of (optional) string values
+TagValue: TypeAlias = Union[Optional[str], Collection[Optional[str]]]
 
 
 # the top level tag is a mapping from string keys to values that can be a string or
 # an arbitrary depth of nested list of strings or None
-Tag: TypeAlias = Mapping[str, Union[str, L]]
+Tag: TypeAlias = Mapping[str, Union[str, TagValue]]
+
 
 
 # a pathset is a path or an arbitrary depth of nested list of paths

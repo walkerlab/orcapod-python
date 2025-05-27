@@ -4,12 +4,11 @@ import os
 import time
 import json
 import logging
-import threading
 import fcntl
 import errno
 from pathlib import Path
 from contextlib import contextmanager
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Union
 
 from .file_ops import atomic_write, atomic_copy
 
@@ -237,7 +236,7 @@ class SafeDirDataStore:
                     logger.info(f"Entry already exists for packet {packet}")
                     return self.retrieve_memoized(store_name, content_hash, packet)
         except FileLockError:
-            logger.warning(f"Could not acquire shared lock to check completion status")
+            logger.warning("Could not acquire shared lock to check completion status")
             # Continue to try with exclusive lock
         
         # Now try to acquire an exclusive lock for writing

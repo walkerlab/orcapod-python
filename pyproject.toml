@@ -34,3 +34,6 @@ where = ["src"]
 
 [tool.setuptools_scm]
 version_file = "src/orcabridge/_version.py"
+
+[dependency-groups]
+dev = ["ruff>=0.11.11"]

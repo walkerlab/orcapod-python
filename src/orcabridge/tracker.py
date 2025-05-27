@@ -1,5 +1,4 @@
-import threading
-from typing import Dict, Collection, List
+from typing import Dict, Collection
 import networkx as nx
 from orcabridge.base import Operation, Invocation, Tracker
 import matplotlib.pyplot as plt

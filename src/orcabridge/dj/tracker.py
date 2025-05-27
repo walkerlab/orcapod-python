@@ -1,6 +1,6 @@
 from orcabridge.tracker import GraphTracker
 from datajoint import Schema
-from typing import List, Collection, Tuple, Optional, Any
+from typing import Collection, Tuple, Optional, Any
 from types import ModuleType
 import networkx as nx
 
@@ -13,7 +13,6 @@ from .source import TableCachedSource, MergedQuerySource
 from .operation import QueryOperation
 from .pod import TableCachedPod
 from .mapper import convert_to_query_mapper
-import datajoint as dj
 import sys
 from collections import defaultdict
 

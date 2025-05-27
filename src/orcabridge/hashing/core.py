@@ -7,7 +7,6 @@ suitable for arbitrarily nested data structures and custom objects via HashableM
 """
 
 import hashlib
-import inspect
 import json
 import logging
 from uuid import UUID
@@ -18,10 +17,10 @@ from typing import (
     Union,
     Collection,
     Mapping,
-    Callable,
     TypeVar,
     Set,
-    Literal,
+    Callable,
+    Literal
 )
 from pathlib import Path
 from os import PathLike
@@ -29,6 +28,7 @@ import xxhash
 import zlib
 from orcabridge.types import PathSet, Packet
 from orcabridge.utils.name import find_noncolliding_name
+import inspect
 
 # Configure logging with __name__ for proper hierarchy
 logger = logging.getLogger(__name__)
@@ -310,7 +310,7 @@ def hash_to_hex(obj: Any, char_count: Optional[int] = 32) -> str:
             # Try standard JSON first
             json_str = json.dumps(processed, sort_keys=True).encode("utf-8")
             logger.info(
-                f"Successfully used standard JSON serialization as fallback"
+                "Successfully used standard JSON serialization as fallback"
             )
         except (TypeError, ValueError) as json_err:
             # If JSON also fails, use simple string representation
@@ -495,7 +495,7 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
         else:
             # Get basic repr but remove memory addresses
             logger.debug(
-                f"Object has no __dict__, using repr() with memory address removal"
+                "Object has no __dict__, using repr() with memory address removal"
             )
             obj_repr = repr(obj)
             if len(obj_repr) > 1000:
@@ -512,7 +512,7 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
         logger.warning(f"Failed to process object representation: {e}")
         try:
             return f"Object-{obj.__class__.__module__}.{obj.__class__.__name__}"
-        except:
+        except AttributeError:
             logger.error(
                 "Could not determine object class, using UnknownObject"
             )
@@ -520,281 +520,6 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
 
 
 # Function hashing utilities
-
-
-def get_function_signature(
-    func: Callable, include_defaults: bool = True, include_module: bool = True
-) -> str:
-    """
-    Get a stable string representation of a function's signature.
-
-    Args:
-        func: The function to process
-        include_defaults: Whether to include default values
-        include_module: Whether to include the module name
-
-    Returns:
-        A string representation of the function signature
-    """
-    sig = inspect.signature(func)
-
-    # Build the signature string
-    parts = []
-
-    # Add module if requested
-    if include_module and hasattr(func, "__module__"):
-        parts.append(f"module:{func.__module__}")
-
-    # Add function name
-    parts.append(f"name:{func.__name__}")
-
-    # Add parameters
-    param_strs = []
-    for name, param in sig.parameters.items():
-        param_str = str(param)
-        if not include_defaults and "=" in param_str:
-            param_str = param_str.split("=")[0].strip()
-        param_strs.append(param_str)
-
-    parts.append(f"params:({', '.join(param_strs)})")
-
-    # Add return annotation if present
-    if sig.return_annotation is not inspect.Signature.empty:
-        parts.append(f"returns:{sig.return_annotation}")
-
-    return " ".join(parts)
-
-
-def function_content_hash(
-    func: Callable,
-    include_name: bool = True,
-    include_module: bool = True,
-    include_declaration: bool = True,
-    char_count: Optional[int] = 32,
-) -> str:
-    """
-    Compute a stable hash based on a function's source code and other properties.
-
-    Args:
-        func: The function to hash
-        include_name: Whether to include the function name in the hash
-        include_module: Whether to include the module name in the hash
-        include_declaration: Whether to include the function declaration line
-        char_count: Number of characters to include in the result
-
-    Returns:
-        A hex string hash of the function's content
-    """
-    logger.debug(f"Generating content hash for function '{func.__name__}'")
-    components = get_function_components(
-        func,
-        include_name=include_name,
-        include_module=include_module,
-        include_declaration=include_declaration,
-    )
-
-    # Join all components and compute hash
-    combined = "\n".join(components)
-    logger.debug(
-        f"Function components joined, length: {len(combined)} characters"
-    )
-    return hash_to_hex(combined, char_count=char_count)
-
-
-def get_function_components(
-    func: Callable,
-    include_name: bool = True,
-    include_module: bool = True,
-    include_declaration: bool = True,
-    include_docstring: bool = True,
-    include_comments: bool = True,
-    preserve_whitespace: bool = True,
-    include_annotations: bool = True,
-    include_code_properties: bool = True,
-) -> list:
-    """
-    Extract the components of a function that determine its identity for hashing.
-
-    Args:
-        func: The function to process
-        include_name: Whether to include the function name
-        include_module: Whether to include the module name
-        include_declaration: Whether to include the function declaration line
-        include_docstring: Whether to include the function's docstring
-        include_comments: Whether to include comments in the function body
-        preserve_whitespace: Whether to preserve original whitespace/indentation
-        include_annotations: Whether to include function type annotations
-        include_code_properties: Whether to include code object properties
-
-    Returns:
-        A list of string components
-    """
-    components = []
-
-    # Add function name
-    if include_name:
-        components.append(f"name:{func.__name__}")
-
-    # Add module
-    if include_module and hasattr(func, "__module__"):
-        components.append(f"module:{func.__module__}")
-
-    # Get the function's source code
-    try:
-        source = inspect.getsource(func)
-
-        # Handle whitespace preservation
-        if not preserve_whitespace:
-            source = inspect.cleandoc(source)
-
-        # Process source code components
-        if not include_declaration:
-            # Remove function declaration line
-            lines = source.split("\n")
-            for i, line in enumerate(lines):
-                if line.strip().startswith("def "):
-                    lines.pop(i)
-                    break
-            source = "\n".join(lines)
-
-        # Extract and handle docstring separately if needed
-        if not include_docstring and func.__doc__:
-            # This approach assumes the docstring is properly indented
-            # For multi-line docstrings, we need more sophisticated parsing
-            doc_lines = inspect.getdoc(func).split("\n")
-            doc_pattern = '"""' + "\\n".join(doc_lines) + '"""'
-            # Try different quote styles
-            if doc_pattern not in source:
-                doc_pattern = "'''" + "\\n".join(doc_lines) + "'''"
-            source = source.replace(doc_pattern, "")
-
-        # Handle comments (this is more complex and may need a proper parser)
-        if not include_comments:
-            # This is a simplified approach - would need a proper parser for robust handling
-            lines = source.split("\n")
-            for i, line in enumerate(lines):
-                comment_pos = line.find("#")
-                if comment_pos >= 0 and not _is_in_string(line, comment_pos):
-                    lines[i] = line[:comment_pos].rstrip()
-            source = "\n".join(lines)
-
-        components.append(f"source:{source}")
-
-    except (IOError, TypeError) as e:
-        # If source can't be retrieved, fall back to signature
-        components.append(f"name:{func.__name__}")
-        try:
-            sig = inspect.signature(func)
-            components.append(f"signature:{str(sig)}")
-        except ValueError:
-            components.append(f"builtin:True")
-
-    # Add function annotations if requested
-    if (
-        include_annotations
-        and hasattr(func, "__annotations__")
-        and func.__annotations__
-    ):
-        sorted_annotations = sorted(func.__annotations__.items())
-        annotations_str = ";".join(f"{k}:{v}" for k, v in sorted_annotations)
-        components.append(f"annotations:{annotations_str}")
-
-    # Add code object properties if requested
-    if include_code_properties:
-        code = func.__code__
-        stable_code_props = {
-            "co_argcount": code.co_argcount,
-            "co_kwonlyargcount": getattr(code, "co_kwonlyargcount", 0),
-            "co_nlocals": code.co_nlocals,
-            "co_varnames": code.co_varnames[: code.co_argcount],
-        }
-        components.append(f"code_properties:{stable_code_props}")
-
-    return components
-
-
-def _is_in_string(line, pos):
-    """Helper to check if a position in a line is inside a string literal."""
-    # This is a simplified check - would need proper parsing for robust handling
-    in_single = False
-    in_double = False
-    for i in range(pos):
-        if line[i] == "'" and not in_double and (i == 0 or line[i - 1] != "\\"):
-            in_single = not in_single
-        elif (
-            line[i] == '"' and not in_single and (i == 0 or line[i - 1] != "\\")
-        ):
-            in_double = not in_double
-    return in_single or in_double
-
-
-def hash_function(
-    function: Callable,
-    function_hash_mode: Literal["content", "signature", "name"] = "content",
-    return_type: Literal["hex", "int", "uuid"] = "hex",
-    content_kwargs=None,
-    hash_kwargs=None,
-) -> Union[str, int, UUID]:
-    """
-    Hash a function based on specified mode and return type.
-
-    Args:
-        function: The function to hash
-        function_hash_mode: The mode of hashing ('content', 'signature', or 'name')
-        return_type: The format of the hash to return ('hex', 'int', or 'uuid')
-        content_kwargs: Additional arguments to pass to the mode-specific function content
-            extractors:
-            - "content": arguments for get_function_components
-            - "signature": arguments for get_function_signature
-            - "name": no underlying function used - simply function.__name__
-        hash_kwargs: Additional arguments for the hashing function that depends on the return type
-            - "hex": arguments for hash_to_hex
-            - "int": arguments for hash_to_int
-            - "uuid": arguments for hash_to_uuid
-
-    Returns:
-        A hash of the function in the requested format
-
-    Example:
-        >>> def example(x, y=10): return x + y
-        >>> hash_function(example)  # Returns content hash as string
-        >>> hash_function(example, function_hash_mode="signature")  # Returns signature hash
-        >>> hash_function(example, return_type="int")  # Returns content hash as integer
-    """
-    content_kwargs = content_kwargs or {}
-    hash_kwargs = hash_kwargs or {}
-
-    logger.debug(
-        f"Hashing function '{function.__name__}' using mode '{function_hash_mode}'"
-    )
-
-    if function_hash_mode == "content":
-        hash_content = "\n".join(
-            get_function_components(function, **content_kwargs)
-        )
-    elif function_hash_mode == "signature":
-        hash_content = get_function_signature(function, **content_kwargs)
-    elif function_hash_mode == "name":
-        hash_content = function.__name__
-    else:
-        err_msg = f"Unknown function_hash_mode: {function_hash_mode}"
-        logger.error(err_msg)
-        raise ValueError(err_msg)
-
-    # Convert to the requested return type
-    if return_type == "hex":
-        hash_value = hash_to_hex(hash_content, **hash_kwargs)
-    elif return_type == "int":
-        hash_value = hash_to_int(hash_content, **hash_kwargs)
-    elif return_type == "uuid":
-        hash_value = hash_to_uuid(hash_content, **hash_kwargs)
-    else:
-        err_msg = f"Unknown return_type: {return_type}"
-        logger.error(err_msg)
-        raise ValueError(err_msg)
-
-    logger.debug(f"Generated hash value as {return_type}: {hash_value}")
-    return hash_value
 
 
 # Legacy compatibility functions
@@ -1031,3 +756,280 @@ def hash_file(file_path, algorithm="sha256", buffer_size=65536) -> str:
             hasher.update(data)
 
     return hasher.hexdigest()
+    return hasher.hexdigest()
+
+
+
+def get_function_signature(
+    func: Callable, include_defaults: bool = True, include_module: bool = True
+) -> str:
+    """
+    Get a stable string representation of a function's signature.
+
+    Args:
+        func: The function to process
+        include_defaults: Whether to include default values
+        include_module: Whether to include the module name
+
+    Returns:
+        A string representation of the function signature
+    """
+    sig = inspect.signature(func)
+
+    # Build the signature string
+    parts = []
+
+    # Add module if requested
+    if include_module and hasattr(func, "__module__"):
+        parts.append(f"module:{func.__module__}")
+
+    # Add function name
+    parts.append(f"name:{func.__name__}")
+
+    # Add parameters
+    param_strs = []
+    for name, param in sig.parameters.items():
+        param_str = str(param)
+        if not include_defaults and "=" in param_str:
+            param_str = param_str.split("=")[0].strip()
+        param_strs.append(param_str)
+
+    parts.append(f"params:({', '.join(param_strs)})")
+
+    # Add return annotation if present
+    if sig.return_annotation is not inspect.Signature.empty:
+        parts.append(f"returns:{sig.return_annotation}")
+
+    return " ".join(parts)
+
+
+def _is_in_string(line, pos):
+    """Helper to check if a position in a line is inside a string literal."""
+    # This is a simplified check - would need proper parsing for robust handling
+    in_single = False
+    in_double = False
+    for i in range(pos):
+        if line[i] == "'" and not in_double and (i == 0 or line[i - 1] != "\\"):
+            in_single = not in_single
+        elif (
+            line[i] == '"' and not in_single and (i == 0 or line[i - 1] != "\\")
+        ):
+            in_double = not in_double
+    return in_single or in_double
+
+
+def get_function_components(
+    func: Callable,
+    include_name: bool = True,
+    include_module: bool = True,
+    include_declaration: bool = True,
+    include_docstring: bool = True,
+    include_comments: bool = True,
+    preserve_whitespace: bool = True,
+    include_annotations: bool = True,
+    include_code_properties: bool = True,
+) -> list:
+    """
+    Extract the components of a function that determine its identity for hashing.
+
+    Args:
+        func: The function to process
+        include_name: Whether to include the function name
+        include_module: Whether to include the module name
+        include_declaration: Whether to include the function declaration line
+        include_docstring: Whether to include the function's docstring
+        include_comments: Whether to include comments in the function body
+        preserve_whitespace: Whether to preserve original whitespace/indentation
+        include_annotations: Whether to include function type annotations
+        include_code_properties: Whether to include code object properties
+
+    Returns:
+        A list of string components
+    """
+    components = []
+
+    # Add function name
+    if include_name:
+        components.append(f"name:{func.__name__}")
+
+    # Add module
+    if include_module and hasattr(func, "__module__"):
+        components.append(f"module:{func.__module__}")
+
+    # Get the function's source code
+    try:
+        source = inspect.getsource(func)
+
+        # Handle whitespace preservation
+        if not preserve_whitespace:
+            source = inspect.cleandoc(source)
+
+        # Process source code components
+        if not include_declaration:
+            # Remove function declaration line
+            lines = source.split("\n")
+            for i, line in enumerate(lines):
+                if line.strip().startswith("def "):
+                    lines.pop(i)
+                    break
+            source = "\n".join(lines)
+
+        # Extract and handle docstring separately if needed
+        if not include_docstring and func.__doc__:
+            # This approach assumes the docstring is properly indented
+            # For multi-line docstrings, we need more sophisticated parsing
+            doc_lines = inspect.getdoc(func).split("\n")
+            doc_pattern = '"""' + "\\n".join(doc_lines) + '"""'
+            # Try different quote styles
+            if doc_pattern not in source:
+                doc_pattern = "'''" + "\\n".join(doc_lines) + "'''"
+            source = source.replace(doc_pattern, "")
+
+        # Handle comments (this is more complex and may need a proper parser)
+        if not include_comments:
+            # This is a simplified approach - would need a proper parser for robust handling
+            lines = source.split("\n")
+            for i, line in enumerate(lines):
+                comment_pos = line.find("#")
+                if comment_pos >= 0 and not _is_in_string(line, comment_pos):
+                    lines[i] = line[:comment_pos].rstrip()
+            source = "\n".join(lines)
+
+        components.append(f"source:{source}")
+
+    except (IOError, TypeError):
+        # If source can't be retrieved, fall back to signature
+        components.append(f"name:{func.__name__}")
+        try:
+            sig = inspect.signature(func)
+            components.append(f"signature:{str(sig)}")
+        except ValueError:
+            components.append("builtin:True")
+
+    # Add function annotations if requested
+    if (
+        include_annotations
+        and hasattr(func, "__annotations__")
+        and func.__annotations__
+    ):
+        sorted_annotations = sorted(func.__annotations__.items())
+        annotations_str = ";".join(f"{k}:{v}" for k, v in sorted_annotations)
+        components.append(f"annotations:{annotations_str}")
+
+    # Add code object properties if requested
+    if include_code_properties:
+        code = func.__code__
+        stable_code_props = {
+            "co_argcount": code.co_argcount,
+            "co_kwonlyargcount": getattr(code, "co_kwonlyargcount", 0),
+            "co_nlocals": code.co_nlocals,
+            "co_varnames": code.co_varnames[: code.co_argcount],
+        }
+        components.append(f"code_properties:{stable_code_props}")
+
+    return components
+
+
+def function_content_hash(
+    func: Callable,
+    include_name: bool = True,
+    include_module: bool = True,
+    include_declaration: bool = True,
+    char_count: Optional[int] = 32,
+) -> str:
+    """
+    Compute a stable hash based on a function's source code and other properties.
+
+    Args:
+        func: The function to hash
+        include_name: Whether to include the function name in the hash
+        include_module: Whether to include the module name in the hash
+        include_declaration: Whether to include the function declaration line
+        char_count: Number of characters to include in the result
+
+    Returns:
+        A hex string hash of the function's content
+    """
+    logger.debug(f"Generating content hash for function '{func.__name__}'")
+    components = get_function_components(
+        func,
+        include_name=include_name,
+        include_module=include_module,
+        include_declaration=include_declaration,
+    )
+
+    # Join all components and compute hash
+    combined = "\n".join(components)
+    logger.debug(
+        f"Function components joined, length: {len(combined)} characters"
+    )
+    return hash_to_hex(combined, char_count=char_count)
+
+
+def hash_function(
+    function: Callable,
+    function_hash_mode: Literal["content", "signature", "name"] = "content",
+    return_type: Literal["hex", "int", "uuid"] = "hex",
+    content_kwargs=None,
+    hash_kwargs=None,
+) -> Union[str, int, UUID]:
+    """
+    Hash a function based on specified mode and return type.
+
+    Args:
+        function: The function to hash
+        function_hash_mode: The mode of hashing ('content', 'signature', or 'name')
+        return_type: The format of the hash to return ('hex', 'int', or 'uuid')
+        content_kwargs: Additional arguments to pass to the mode-specific function content
+            extractors:
+            - "content": arguments for get_function_components
+            - "signature": arguments for get_function_signature
+            - "name": no underlying function used - simply function.__name__
+        hash_kwargs: Additional arguments for the hashing function that depends on the return type
+            - "hex": arguments for hash_to_hex
+            - "int": arguments for hash_to_int
+            - "uuid": arguments for hash_to_uuid
+
+    Returns:
+        A hash of the function in the requested format
+
+    Example:
+        >>> def example(x, y=10): return x + y
+        >>> hash_function(example)  # Returns content hash as string
+        >>> hash_function(example, function_hash_mode="signature")  # Returns signature hash
+        >>> hash_function(example, return_type="int")  # Returns content hash as integer
+    """
+    content_kwargs = content_kwargs or {}
+    hash_kwargs = hash_kwargs or {}
+
+    logger.debug(
+        f"Hashing function '{function.__name__}' using mode '{function_hash_mode}'"
+    )
+
+    if function_hash_mode == "content":
+        hash_content = "\n".join(
+            get_function_components(function, **content_kwargs)
+        )
+    elif function_hash_mode == "signature":
+        hash_content = get_function_signature(function, **content_kwargs)
+    elif function_hash_mode == "name":
+        hash_content = function.__name__
+    else:
+        err_msg = f"Unknown function_hash_mode: {function_hash_mode}"
+        logger.error(err_msg)
+        raise ValueError(err_msg)
+
+    # Convert to the requested return type
+    if return_type == "hex":
+        hash_value = hash_to_hex(hash_content, **hash_kwargs)
+    elif return_type == "int":
+        hash_value = hash_to_int(hash_content, **hash_kwargs)
+    elif return_type == "uuid":
+        hash_value = hash_to_uuid(hash_content, **hash_kwargs)
+    else:
+        err_msg = f"Unknown return_type: {return_type}"
+        logger.error(err_msg)
+        raise ValueError(err_msg)
+
+    logger.debug(f"Generated hash value as {return_type}: {hash_value}")
+    return hash_value

@@ -1,4 +1,3 @@
-from .tracker import Tracker
 from . import hashing
 from . import pod
 from . import mapper
@@ -9,10 +8,11 @@ from .mapper import MapTags, MapPackets, Join, tag, packet
 from .pod import FunctionPod, function_pod
 from .source import GlobSource
 from .store import DirDataStore, SafeDirDataStore
+from .tracker import GraphTracker
 
 
 
-DEFAULT_TRACKER = Tracker()
+DEFAULT_TRACKER = GraphTracker()
 DEFAULT_TRACKER.activate()
 
 

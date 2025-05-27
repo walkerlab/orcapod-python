@@ -1,3 +1,6 @@
+# Ignore vscode settings
+.vscode/
+
 # Ignore example dataset storage generated in tutorial
 **/pod_data/
 

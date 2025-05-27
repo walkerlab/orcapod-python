@@ -3,7 +3,6 @@ from .operation import QueryOperation
 from ..mapper import Mapper, Join, MapPackets, MapTags
 from typing import Optional
 import warnings
-from .source import QuerySource
 
 
 class QueryMapper(QueryOperation, Mapper):
