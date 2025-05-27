@@ -1,4 +1,4 @@
-from orcabridge.hashing.hashing import (
+from orcabridge.hashing.core import (
     hash_to_hex,
     hash_to_int,
     hash_to_uuid,

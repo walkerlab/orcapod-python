@@ -36,6 +36,4 @@ where = ["src"]
 version_file = "src/orcabridge/_version.py"
 
 [dependency-groups]
-dev = [
-    "ruff>=0.11.11",
-]
+dev = ["ruff>=0.11.11"]
