@@ -25,9 +25,6 @@ classifiers = [
 [project.urls]
 Homepage = "https://github.com/walkerlab/orcabridge"
 
-[project.optional-dependencies]
-test = ["pytest>=7.4.0", "pytest-cov>=4.1.0"]
-dev = ["black>=23.0.0", "flake8>=6.0.0", "isort>=5.12.0", "orcabridge[test]"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -36,4 +33,9 @@ where = ["src"]
 version_file = "src/orcabridge/_version.py"
 
 [dependency-groups]
-dev = ["ruff>=0.11.11"]
+dev = [
+    "httpie>=3.2.4",
+    "pytest>=8.3.5",
+    "pytest-cov>=6.1.1",
+    "ruff>=0.11.11",
+]
