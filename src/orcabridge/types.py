@@ -14,6 +14,7 @@ TagValue: TypeAlias = Union[Optional[str], Collection[Optional[str]]]
 Tag: TypeAlias = Mapping[str, Union[str, TagValue]]
 
 
+
 # a pathset is a path or an arbitrary depth of nested list of paths
 PathSet: TypeAlias = Union[PathLike, Collection[Optional[PathLike]]]
 

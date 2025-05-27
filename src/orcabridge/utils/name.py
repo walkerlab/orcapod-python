@@ -6,6 +6,24 @@ import re
 
 
 def find_noncolliding_name(name: str, lut: dict) -> str:
+    """
+    Generate a unique name that does not collide with existing keys in a lookup table (lut).
+
+    If the given name already exists in the lookup table, a numeric suffix is appended
+    to the name (e.g., "name_1", "name_2") until a non-colliding name is found.
+
+    Parameters:
+        name (str): The base name to check for collisions.
+        lut (dict): A dictionary representing the lookup table of existing names.
+
+    Returns:
+        str: A unique name that does not collide with any key in the lookup table.
+
+    Example:
+        >>> lut = {"name": 1, "name_1": 2}
+        >>> find_noncolliding_name("name", lut)
+        'name_2'
+    """
     if name not in lut:
         return name
 
