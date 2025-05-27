@@ -156,7 +156,7 @@ class DirDataStore(DataStore):
                     logger.info(
                         f"Supplemented source for packet {packet} at {source_path}"
                     )
-            except IOError as e:
+            except (IOError, json.JSONDecodeError) as e:
                 logger.error(
                     f"Error loading memoized output for packet {packet} from {info_path}: {e}"
                 )
