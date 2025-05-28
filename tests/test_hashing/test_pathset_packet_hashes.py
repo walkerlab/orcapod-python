@@ -183,7 +183,6 @@ def test_packet_hash_algorithm_parameters():
             hash2 = hash_packet(packet, algorithm=algorithm)
             # Extract hash part without algorithm prefix for comparison
             hash1_parts = hash1.split("-", 1)
-            hash2_parts = hash2.split("-", 1)
 
             assert hash1_parts[0] == algorithm, (
                 f"Algorithm prefix mismatch: expected {algorithm}, got {hash1_parts[0]}"

@@ -1,3 +1,4 @@
+from typing import Any
 import uuid
 from collections import namedtuple, OrderedDict
 from pathlib import Path
@@ -253,7 +254,7 @@ def test_nested_structures():
 def test_circular_references():
     """Test handling of circular references."""
     # Create a circular reference with a list
-    circular_list = [1, 2, 3]
+    circular_list: Any = [1, 2, 3]
     circular_list.append([4, 5])  # Add a regular list first
     circular_list[3].append(circular_list)  # Now create a circular reference
 
@@ -265,8 +266,8 @@ def test_circular_references():
     )
 
     # Create a circular reference with a dict
-    circular_dict = {"a": 1, "b": 2}
-    nested_dict = {"c": 3, "d": 4}
+    circular_dict: Any = {"a": 1, "b": 2}
+    nested_dict: Any = {"c": 3, "d": 4}
     circular_dict["nested"] = nested_dict
     nested_dict["parent"] = circular_dict  # Create circular reference
 

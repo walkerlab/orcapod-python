@@ -11,8 +11,11 @@ import os
 import pytest
 import tempfile
 from pathlib import Path
+import logging
 
 from orcabridge.hashing import hash_pathset, hash_packet, hash_file
+
+logger = logging.getLogger(__name__)
 
 
 def test_hash_pathset_single_file():
@@ -153,7 +156,8 @@ def test_hash_pathset_collection():
         for file_path in temp_files:
             try:
                 os.unlink(file_path)
-            except:
+            except Exception as e:
+                logger.error(f"Error cleaning up file {file_path}: {e}")
                 pass
 
 
@@ -224,7 +228,8 @@ def test_hash_packet_basic():
         for file_path in temp_files:
             try:
                 os.unlink(file_path)
-            except:
+            except Exception as e:
+                logger.error(f"Error cleaning up file {file_path}: {e}")
                 pass
 
 
