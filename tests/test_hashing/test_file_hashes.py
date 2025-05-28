@@ -12,7 +12,7 @@ import pytest
 from pathlib import Path
 
 # Add the parent directory to the path to import orcabridge
-from orcabridge.hashing import hash_file, hash_pathset
+from orcabridge.hashing import hash_file
 
 
 def load_hash_lut():

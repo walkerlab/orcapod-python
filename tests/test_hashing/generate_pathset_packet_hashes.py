@@ -10,7 +10,6 @@ hash_samples/file_samples, then computes and records their hashes in JSON lookup
 import json
 import sys
 from pathlib import Path
-from datetime import datetime
 
 # Add the parent directory to the path to import orcabridge
 sys.path.append(str(Path(__file__).parent.parent.parent))
