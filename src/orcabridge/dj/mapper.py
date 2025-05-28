@@ -26,9 +26,7 @@ def convert_to_query_mapper(operation: Mapper) -> QueryMapper:
     elif isinstance(operation, MapTags):
         proj_map = {v: k for k, v in operation.key_map.items()}
         if operation.drop_unmapped:
-            warnings.warn(
-                "Dropping unmapped tags is not supported in DataJoint"
-            )
+            warnings.warn("Dropping unmapped tags is not supported in DataJoint")
         return ProjectQuery(..., **proj_map)
     elif isinstance(operation, QueryOperation):
         # if the operation is already a QueryOperation, just return it
@@ -68,9 +66,7 @@ class ProjectQuery(QueryMapper):
     Project (rename/remove) tag and packet keys
     """
 
-    def __init__(
-        self, *args, _label: Optional[str] = None, **projection_kwargs
-    ):
+    def __init__(self, *args, _label: Optional[str] = None, **projection_kwargs):
         super().__init__(label=_label)
         self.projection_args = args
         self.projection_kwargs = projection_kwargs
