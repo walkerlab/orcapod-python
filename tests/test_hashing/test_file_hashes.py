@@ -56,9 +56,9 @@ def test_file_hash_consistency():
         actual_hash = hash_file(file_path)
 
         # Verify hash consistency
-        assert (
-            actual_hash == expected_hash
-        ), f"Hash mismatch for {filename}: expected {expected_hash}, got {actual_hash}"
+        assert actual_hash == expected_hash, (
+            f"Hash mismatch for {filename}: expected {expected_hash}, got {actual_hash}"
+        )
         print(f"Verified hash for {filename}: {actual_hash}")
 
 

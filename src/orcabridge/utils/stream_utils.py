@@ -2,15 +2,9 @@
 Utility functions for handling tags
 """
 
-from typing import (
-    Optional,
-    TypeVar,
-    Set,
-    Sequence,
-    Mapping,
-    Collection,
-)
-from ..types import Tag, Packet
+from typing import TypeVar
+from collections.abc import Collection, Mapping
+from orcabridge.types import Tag, Packet
 
 K = TypeVar("K")
 V = TypeVar("V")
@@ -31,9 +25,7 @@ def common_elements(*values) -> Collection[str]:
     return common_keys
 
 
-def join_tags(
-    tag1: Mapping[K, V], tag2: Mapping[K, V]
-) -> Optional[Mapping[K, V]]:
+def join_tags(tag1: Mapping[K, V], tag2: Mapping[K, V]) -> Mapping[K, V] | None:
     """
     Joins two tags together. If the tags have the same key, the value must be the same or None will be returned.
     """
@@ -58,16 +50,14 @@ def check_packet_compatibility(packet1: Packet, packet2: Packet) -> bool:
     return True
 
 
-def batch_tag(all_tags: Sequence[Tag]) -> Tag:
+def batch_tag(all_tags: Collection[Tag]) -> Tag:
     """
     Batches the tags together. Grouping values under the same key into a list.
     """
-    all_keys: Set[str] = set()
+    all_keys: set[str] = set()
     for tag in all_tags:
         all_keys.update(tag.keys())
-    batch_tag = {
-        key: [] for key in all_keys
-    }  # Initialize batch_tag with all keys
+    batch_tag = {key: [] for key in all_keys}  # Initialize batch_tag with all keys
     for tag in all_tags:
         for k in all_keys:
             batch_tag[k].append(
@@ -77,13 +67,13 @@ def batch_tag(all_tags: Sequence[Tag]) -> Tag:
 
 
 def batch_packet(
-    all_packets: Sequence[Packet], drop_missing_keys: bool = True
+    all_packets: Collection[Packet], drop_missing_keys: bool = True
 ) -> Packet:
     """
     Batches the packets together. Grouping values under the same key into a list.
     If all packets do not have the same key, raise an error unless drop_missing_keys is True
     """
-    all_keys: Set[str] = set()
+    all_keys: set[str] = set()
     for p in all_packets:
         all_keys.update(p.keys())
     batch_packet = {key: [] for key in all_keys}

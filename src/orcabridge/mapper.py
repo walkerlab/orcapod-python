@@ -1,13 +1,3 @@
-from typing import (
-    Callable,
-    Dict,
-    Optional,
-    List,
-    Sequence,
-    Tuple,
-    Iterator,
-    Collection,
-)
 from orcabridge.base import SyncStream, Mapper
 from orcabridge.stream import SyncStreamFromGenerator
 from orcabridge.utils.stream_utils import (
@@ -19,6 +9,7 @@ from orcabridge.utils.stream_utils import (
 from orcabridge.hashing import hash_function, function_content_hash
 from .types import Tag, Packet
 from itertools import chain
+from collections.abc import Collection, Iterator, Callable
 
 
 class Repeat(Mapper):
@@ -31,11 +22,13 @@ class Repeat(Mapper):
         super().__init__()
         self.repeat_count = repeat_count
 
-    def identity_structure(self, *streams):
+    def identity_structure(self, *streams) -> tuple[str, int, set[SyncStream]]:
         # Join does not depend on the order of the streams -- convert it onto a set
         return (self.__class__.__name__, self.repeat_count, set(streams))
 
-    def keys(self, *streams: SyncStream) -> Tuple[Collection[str], Collection[str]]:
+    def keys(
+        self, *streams: SyncStream
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
         """
         Repeat does not alter the keys of the stream.
         """
@@ -51,7 +44,7 @@ class Repeat(Mapper):
 
         stream = streams[0]
 
-        def generator() -> Iterator[Tuple[Tag, Packet]]:
+        def generator() -> Iterator[tuple[Tag, Packet]]:
             for tag, packet in stream:
                 for _ in range(self.repeat_count):
                     yield tag, packet
@@ -77,7 +70,9 @@ class Merge(Mapper):
         # Merge does not depend on the order of the streams -- convert it onto a set
         return (self.__class__.__name__, set(streams))
 
-    def keys(self, *streams: SyncStream) -> Tuple[Collection[str], Collection[str]]:
+    def keys(
+        self, *streams: SyncStream
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
         """
         Merge does not alter the keys of the stream.
         """
@@ -89,16 +84,17 @@ class Merge(Mapper):
 
         for stream in streams:
             tag_keys, packet_keys = stream.keys()
-            merged_tag_keys.update(tag_keys)
-            merged_packet_keys.update(packet_keys)
+            if tag_keys is not None:
+                merged_tag_keys.update(set(tag_keys))
+            if packet_keys is not None:
+                merged_packet_keys.update(set(packet_keys))
 
         return list(merged_tag_keys), list(merged_packet_keys)
 
     def forward(self, *streams: SyncStream) -> SyncStream:
-
         tag_keys, packet_keys = self.keys(*streams)
 
-        def generator() -> Iterator[Tuple[Tag, Packet]]:
+        def generator() -> Iterator[tuple[Tag, Packet]]:
             for tag, packet in chain(*streams):
                 # fill missing keys with None
                 tag = fill_missing(tag, tag_keys)
@@ -116,7 +112,7 @@ class Join(Mapper):
         # Join does not depend on the order of the streams -- convert it onto a set
         return (self.__class__.__name__, set(streams))
 
-    def keys(self, *streams: SyncStream) -> Tuple[Collection[str], Collection[str]]:
+    def keys(self, *streams: SyncStream) -> tuple[Collection[str], Collection[str]]:
         """
         Returns the keys of the operation.
         The first list contains the keys of the tags, and the second list contains the keys of the packets.
@@ -130,8 +126,10 @@ class Join(Mapper):
         left_tag_keys, left_packet_keys = left_stream.keys()
         right_tag_keys, right_packet_keys = right_stream.keys()
 
-        joined_tag_keys = list(set(left_tag_keys) | set(right_tag_keys))
-        joined_packet_keys = list(set(left_packet_keys) | set(right_packet_keys))
+        joined_tag_keys = list(set(left_tag_keys or []) | set(right_tag_keys or []))
+        joined_packet_keys = list(
+            set(left_packet_keys or []) | set(right_packet_keys or [])
+        )
 
         return joined_tag_keys, joined_packet_keys
 
@@ -162,12 +160,13 @@ class Join(Mapper):
 
 
 class FirstMatch(Mapper):
-
-    def identity_structure(self, *streams):
+    def identity_structure(self, *streams: SyncStream) -> tuple[str, set[SyncStream]]:
         # Join does not depend on the order of the streams -- convert it onto a set
         return (self.__class__.__name__, set(streams))
 
-    def keys(self, *streams: SyncStream) -> Tuple[Collection[str], Collection[str]]:
+    def keys(
+        self, *streams: SyncStream
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
         """
         Returns the keys of the operation.
         The first list contains the keys of the tags, and the second list contains the keys of the packets.
@@ -181,8 +180,10 @@ class FirstMatch(Mapper):
         left_tag_keys, left_packet_keys = left_stream.keys()
         right_tag_keys, right_packet_keys = right_stream.keys()
 
-        joined_tag_keys = list(set(left_tag_keys) | set(right_tag_keys))
-        joined_packet_keys = list(set(left_packet_keys) | set(right_packet_keys))
+        joined_tag_keys = list(set(left_tag_keys or []) | set(right_tag_keys or []))
+        joined_packet_keys = list(
+            set(left_packet_keys or []) | set(right_packet_keys or [])
+        )
 
         return joined_tag_keys, joined_packet_keys
 
@@ -234,12 +235,14 @@ class MapPackets(Mapper):
     drop_unmapped=False, in which case unmapped keys will be retained.
     """
 
-    def __init__(self, key_map: Dict[str, str], drop_unmapped: bool = True) -> None:
+    def __init__(self, key_map: dict[str, str], drop_unmapped: bool = True) -> None:
         super().__init__()
         self.key_map = key_map
         self.drop_unmapped = drop_unmapped
 
-    def keys(self, *streams: SyncStream) -> Tuple[Collection[str], Collection[str]]:
+    def keys(
+        self, *streams: SyncStream
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
         """
         Returns the keys of the operation.
         The first list contains the keys of the tags, and the second list contains the keys of the packets.
@@ -250,6 +253,9 @@ class MapPackets(Mapper):
 
         stream = streams[0]
         tag_keys, packet_keys = stream.keys()
+        if tag_keys is None or packet_keys is None:
+            return None, None
+
         if self.drop_unmapped:
             # If drop_unmapped is True, we only keep the keys that are in the mapping
             mapped_packet_keys = [
@@ -301,7 +307,9 @@ class DefaultTag(Mapper):
         super().__init__()
         self.default_tag = default_tag
 
-    def keys(self, *streams: SyncStream) -> Tuple[Collection[str], Collection[str]]:
+    def keys(
+        self, *streams: SyncStream
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
         """
         Returns the keys of the operation.
         The first list contains the keys of the tags, and the second list contains the keys of the packets.
@@ -312,7 +320,7 @@ class DefaultTag(Mapper):
 
         stream = streams[0]
         tag_keys, packet_keys = stream.keys()
-        tag_keys = list(set(tag_keys) | set(self.default_tag.keys()))
+        tag_keys = list(set(tag_keys or []) | set(self.default_tag.keys()))
         return tag_keys, packet_keys
 
     def forward(self, *streams: SyncStream) -> SyncStream:
@@ -321,7 +329,7 @@ class DefaultTag(Mapper):
 
         stream = streams[0]
 
-        def generator() -> Iterator[Tuple[Tag, Packet]]:
+        def generator() -> Iterator[tuple[Tag, Packet]]:
             for tag, packet in stream:
                 yield {**self.default_tag, **tag}, packet
 
@@ -339,12 +347,14 @@ class MapTags(Mapper):
     drop_unmapped=False, in which case unmapped tags will be retained.
     """
 
-    def __init__(self, key_map: Dict[str, str], drop_unmapped: bool = True) -> None:
+    def __init__(self, key_map: dict[str, str], drop_unmapped: bool = True) -> None:
         super().__init__()
         self.key_map = key_map
         self.drop_unmapped = drop_unmapped
 
-    def keys(self, *streams: SyncStream) -> Tuple[Collection[str], Collection[str]]:
+    def keys(
+        self, *streams: SyncStream
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
         """
         Returns the keys of the operation.
         The first list contains the keys of the tags, and the second list contains the keys of the packets.
@@ -355,6 +365,9 @@ class MapTags(Mapper):
 
         stream = streams[0]
         tag_keys, packet_keys = stream.keys()
+        if tag_keys is None or packet_keys is None:
+            return None, None
+
         if self.drop_unmapped:
             # If drop_unmapped is True, we only keep the keys that are in the mapping
             mapped_tag_keys = [self.key_map[k] for k in tag_keys if k in self.key_map]
@@ -369,7 +382,7 @@ class MapTags(Mapper):
 
         stream = streams[0]
 
-        def generator() -> Iterator[Tuple[Tag, Packet]]:
+        def generator() -> Iterator[tuple[Tag, Packet]]:
             for tag, packet in stream:
                 if self.drop_unmapped:
                     tag = {v: tag[k] for k, v in self.key_map.items() if k in tag}
@@ -402,7 +415,9 @@ class Filter(Mapper):
         super().__init__()
         self.predicate = predicate
 
-    def keys(self, *streams: SyncStream) -> Tuple[Collection[str], Collection[str]]:
+    def keys(
+        self, *streams: SyncStream
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
         """
         Filter does not alter the keys of the stream.
         """
@@ -418,7 +433,7 @@ class Filter(Mapper):
 
         stream = streams[0]
 
-        def generator() -> Iterator[Tuple[Tag, Packet]]:
+        def generator() -> Iterator[tuple[Tag, Packet]]:
             for tag, packet in stream:
                 if self.predicate(tag, packet):
                     yield tag, packet
@@ -442,7 +457,7 @@ class Transform(Mapper):
     The transformation function should return a tuple of (new_tag, new_packet).
     """
 
-    def __init__(self, transform: Callable[[Tag, Packet], Tuple[Tag, Packet]]):
+    def __init__(self, transform: Callable[[Tag, Packet], tuple[Tag, Packet]]):
         super().__init__()
         self.transform = transform
 
@@ -452,7 +467,7 @@ class Transform(Mapper):
 
         stream = streams[0]
 
-        def generator() -> Iterator[Tuple[Tag, Packet]]:
+        def generator() -> Iterator[tuple[Tag, Packet]]:
             for tag, packet in stream:
                 yield self.transform(tag, packet)
 
@@ -478,7 +493,7 @@ class Batch(Mapper):
     def __init__(
         self,
         batch_size: int,
-        tag_processor: Optional[Callable[[Sequence[Tag]], Tag]] = None,
+        tag_processor: None | Callable[[Collection[Tag]], Tag] = None,
         drop_last: bool = True,
     ):
         super().__init__()
@@ -489,7 +504,9 @@ class Batch(Mapper):
         self.tag_processor = tag_processor
         self.drop_last = drop_last
 
-    def keys(self, *streams: SyncStream) -> Tuple[Collection[str], Collection[str]]:
+    def keys(
+        self, *streams: SyncStream
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
         """
         Batch does not alter the keys of the stream.
         """
@@ -505,9 +522,9 @@ class Batch(Mapper):
 
         stream = streams[0]
 
-        def generator() -> Iterator[Tuple[Tag, Packet]]:
-            batch_tags: List[Tag] = []
-            batch_packets: List[Packet] = []
+        def generator() -> Iterator[tuple[Tag, Packet]]:
+            batch_tags: list[Tag] = []
+            batch_packets: list[Packet] = []
             for tag, packet in stream:
                 batch_tags.append(tag)
                 batch_packets.append(packet)
@@ -545,14 +562,14 @@ class CacheStream(Mapper):
 
     def __init__(self) -> None:
         super().__init__()
-        self.cache: List[Tuple[Tag, Packet]] = []
+        self.cache: list[tuple[Tag, Packet]] = []
         self.is_cached = False
 
     def forward(self, *streams: SyncStream) -> SyncStream:
         if not self.is_cached and len(streams) != 1:
             raise ValueError("CacheStream operation requires exactly one stream")
 
-        def generator() -> Iterator[Tuple[Tag, Packet]]:
+        def generator() -> Iterator[tuple[Tag, Packet]]:
             if not self.is_cached:
                 for tag, packet in streams[0]:
                     self.cache.append((tag, packet))
@@ -580,7 +597,7 @@ class CacheStream(Mapper):
 
 
 def tag(
-    mapping: Dict[str, str], drop_unmapped: bool = True
+    mapping: dict[str, str], drop_unmapped: bool = True
 ) -> Callable[[SyncStream], SyncStream]:
     def transformer(stream: SyncStream) -> SyncStream:
         """
@@ -593,7 +610,7 @@ def tag(
 
 
 def packet(
-    mapping: Dict[str, str], drop_unmapped: bool = True
+    mapping: dict[str, str], drop_unmapped: bool = True
 ) -> Callable[[SyncStream], SyncStream]:
     def transformer(stream: SyncStream) -> SyncStream:
         """

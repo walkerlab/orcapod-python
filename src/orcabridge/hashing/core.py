@@ -20,7 +20,7 @@ from typing import (
     TypeVar,
     Set,
     Callable,
-    Literal
+    Literal,
 )
 from pathlib import Path
 from os import PathLike
@@ -309,9 +309,7 @@ def hash_to_hex(obj: Any, char_count: Optional[int] = 32) -> str:
         try:
             # Try standard JSON first
             json_str = json.dumps(processed, sort_keys=True).encode("utf-8")
-            logger.info(
-                "Successfully used standard JSON serialization as fallback"
-            )
+            logger.info("Successfully used standard JSON serialization as fallback")
         except (TypeError, ValueError) as json_err:
             # If JSON also fails, use simple string representation
             logger.warning(
@@ -396,9 +394,7 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
 
     # If the object is a HashableMixin, use its content_hash
     if isinstance(obj, HashableMixin):
-        logger.debug(
-            f"Processing HashableMixin instance of type {type(obj).__name__}"
-        )
+        logger.debug(f"Processing HashableMixin instance of type {type(obj).__name__}")
         return obj.content_hash()
 
     # Handle basic types
@@ -426,7 +422,7 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
     if hasattr(obj, "_fields") and isinstance(obj, tuple):
         logger.debug(f"Processing named tuple of type {type(obj).__name__}")
         # For namedtuples, convert to dict and then process
-        d = {field: getattr(obj, field) for field in obj._fields}
+        d = {field: getattr(obj, field) for field in obj._fields}  # type: ignore
         return _process_structure(d, visited)
 
     # Handle mappings (dict-like objects)
@@ -474,9 +470,7 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
         class_name = obj.__class__.__name__
         module_name = obj.__class__.__module__
 
-        logger.debug(
-            f"Processing generic object of type {module_name}.{class_name}"
-        )
+        logger.debug(f"Processing generic object of type {module_name}.{class_name}")
 
         # Try to get a stable dict representation if possible
         if hasattr(obj, "__dict__"):
@@ -513,9 +507,7 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
         try:
             return f"Object-{obj.__class__.__module__}.{obj.__class__.__name__}"
         except AttributeError:
-            logger.error(
-                "Could not determine object class, using UnknownObject"
-            )
+            logger.error("Could not determine object class, using UnknownObject")
             return "UnknownObject"
 
 
@@ -577,6 +569,11 @@ class PathSetHasher:
         if isinstance(pathset, Collection):
             hash_dict = {}
             for path in pathset:
+                # TODO: consider handling of None value
+                if path is None:
+                    raise NotImplementedError(
+                        "Case of PathSet containing None is not supported yet"
+                    )
                 file_name = find_noncolliding_name(Path(path).name, hash_dict)
                 hash_dict[file_name] = self.hash_pathset(path)
             return hash_to_hex(hash_dict, char_count=self.char_count)
@@ -677,13 +674,15 @@ def hash_pathset(
             return hash_to_hex(hash_dict, char_count=char_count)
         else:
             # it's a file, hash it directly
-            return hash_file(
-                pathset, algorithm=algorithm, buffer_size=buffer_size
-            )
+            return hash_file(pathset, algorithm=algorithm, buffer_size=buffer_size)
 
     if isinstance(pathset, Collection):
         hash_dict = {}
         for path in pathset:
+            if path is None:
+                raise NotImplementedError(
+                    "Case of PathSet containing None is not supported yet"
+                )
             file_name = find_noncolliding_name(Path(path).name, hash_dict)
             hash_dict[file_name] = hash_pathset(
                 path,
@@ -759,7 +758,6 @@ def hash_file(file_path, algorithm="sha256", buffer_size=65536) -> str:
     return hasher.hexdigest()
 
 
-
 def get_function_signature(
     func: Callable, include_defaults: bool = True, include_module: bool = True
 ) -> str:
@@ -811,9 +809,7 @@ def _is_in_string(line, pos):
     for i in range(pos):
         if line[i] == "'" and not in_double and (i == 0 or line[i - 1] != "\\"):
             in_single = not in_single
-        elif (
-            line[i] == '"' and not in_single and (i == 0 or line[i - 1] != "\\")
-        ):
+        elif line[i] == '"' and not in_single and (i == 0 or line[i - 1] != "\\"):
             in_double = not in_double
     return in_single or in_double
 
@@ -865,7 +861,7 @@ def get_function_components(
             source = inspect.cleandoc(source)
 
         # Process source code components
-        if not include_declaration:
+        if include_declaration:
             # Remove function declaration line
             lines = source.split("\n")
             for i, line in enumerate(lines):
@@ -875,10 +871,14 @@ def get_function_components(
             source = "\n".join(lines)
 
         # Extract and handle docstring separately if needed
-        if not include_docstring and func.__doc__:
+        if include_docstring and func.__doc__:
             # This approach assumes the docstring is properly indented
             # For multi-line docstrings, we need more sophisticated parsing
-            doc_lines = inspect.getdoc(func).split("\n")
+            doc_str = inspect.getdoc(func)
+            if doc_str:
+                doc_lines = doc_str.split("\n")
+            else:
+                doc_lines = []
             doc_pattern = '"""' + "\\n".join(doc_lines) + '"""'
             # Try different quote styles
             if doc_pattern not in source:
@@ -886,7 +886,7 @@ def get_function_components(
             source = source.replace(doc_pattern, "")
 
         # Handle comments (this is more complex and may need a proper parser)
-        if not include_comments:
+        if include_comments:
             # This is a simplified approach - would need a proper parser for robust handling
             lines = source.split("\n")
             for i, line in enumerate(lines):
@@ -960,9 +960,7 @@ def function_content_hash(
 
     # Join all components and compute hash
     combined = "\n".join(components)
-    logger.debug(
-        f"Function components joined, length: {len(combined)} characters"
-    )
+    logger.debug(f"Function components joined, length: {len(combined)} characters")
     return hash_to_hex(combined, char_count=char_count)
 
 
@@ -1007,9 +1005,7 @@ def hash_function(
     )
 
     if function_hash_mode == "content":
-        hash_content = "\n".join(
-            get_function_components(function, **content_kwargs)
-        )
+        hash_content = "\n".join(get_function_components(function, **content_kwargs))
     elif function_hash_mode == "signature":
         hash_content = get_function_signature(function, **content_kwargs)
     elif function_hash_mode == "name":

@@ -104,9 +104,9 @@ def test_hash_to_hex_consistency():
         actual_hash = hash_to_hex(value)
 
         # Verify the hash matches the stored value
-        assert (
-            actual_hash == expected_hash
-        ), f"Hash mismatch for {sample['value']}: expected {expected_hash}, got {actual_hash}"
+        assert actual_hash == expected_hash, (
+            f"Hash mismatch for {sample['value']}: expected {expected_hash}, got {actual_hash}"
+        )
 
 
 def test_hash_to_int_consistency():
@@ -121,9 +121,9 @@ def test_hash_to_int_consistency():
         actual_hash = hash_to_int(value)
 
         # Verify the hash matches the stored value
-        assert (
-            actual_hash == expected_hash
-        ), f"Hash mismatch for {sample['value']}: expected {expected_hash}, got {actual_hash}"
+        assert actual_hash == expected_hash, (
+            f"Hash mismatch for {sample['value']}: expected {expected_hash}, got {actual_hash}"
+        )
 
 
 def test_hash_to_uuid_consistency():
@@ -138,9 +138,9 @@ def test_hash_to_uuid_consistency():
         actual_hash = str(hash_to_uuid(value))
 
         # Verify the hash matches the stored value
-        assert (
-            actual_hash == expected_hash
-        ), f"Hash mismatch for {sample['value']}: expected {expected_hash}, got {actual_hash}"
+        assert actual_hash == expected_hash, (
+            f"Hash mismatch for {sample['value']}: expected {expected_hash}, got {actual_hash}"
+        )
 
 
 if __name__ == "__main__":

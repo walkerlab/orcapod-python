@@ -1,13 +1,9 @@
 from typing import (
-    Optional,
-    Tuple,
-    Iterator,
-    Iterable,
-    Collection,
     Literal,
     Any,
 )
-from orcabridge.types import Tag, Packet, PodFunction
+from collections.abc import Collection, Iterator
+from orcabridge.types import Tag, Packet, PodFunction, PathSet
 from orcabridge.hashing import hash_function, get_function_signature
 from orcabridge.base import Operation
 from orcabridge.stream import SyncStream, SyncStreamFromGenerator
@@ -21,11 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 def function_pod(
-    output_keys: Optional[Collection[str]] = None,
-    store_name: Optional[str] = None,
-    data_store: Optional[DataStore] = None,
+    output_keys: Collection[str] | None = None,
+    store_name: str | None = None,
+    data_store: DataStore | None = None,
     function_hash_mode: Literal["signature", "content", "name", "custom"] = "name",
-    custom_hash: Optional[int] = None,
+    custom_hash: int | None = None,
     force_computation: bool = False,
     skip_memoization: bool = False,
     error_handling: Literal["raise", "ignore", "warn"] = "raise",
@@ -74,23 +70,24 @@ class Pod(Operation):
     the pods act as pure functions which is a necessary condition to guarantee reproducibility.
     """
 
-    def process_stream(self, *streams: SyncStream) -> SyncStream:
+    def process_stream(self, *streams: SyncStream) -> list[SyncStream]:
         """
         Prepare the incoming streams for execution in the pod. This default implementation
         joins all the streams together and raises and error if no streams are provided.
         """
         # if multiple streams are provided, join them
         # otherwise, return as is
+        combined_streams = list(streams)
         if len(streams) > 1:
             stream = streams[0]
             for next_stream in streams[1:]:
                 stream = Join()(stream, next_stream)
-            streams = [stream]
-        return streams
+            combined_streams = [stream]
+        return combined_streams
 
-    def __call__(self, *streams: SyncStream) -> SyncStream:
+    def __call__(self, *streams: SyncStream, **kwargs) -> SyncStream:
         stream = self.process_stream(*streams)
-        return super().__call__(*stream)
+        return super().__call__(*stream, **kwargs)
 
     def forward(self, *streams: SyncStream) -> SyncStream: ...
 
@@ -104,17 +101,17 @@ class FunctionPod(Pod):
     def __init__(
         self,
         function: PodFunction,
-        output_keys: Optional[Collection[str]] = None,
+        output_keys: Collection[str] | None = None,
         store_name=None,
-        data_store: Optional[DataStore] = None,
+        data_store: DataStore | None = None,
         function_hash_mode: Literal["signature", "content", "name", "custom"] = "name",
-        custom_hash: Optional[int] = None,
-        label: Optional[str] = None,
+        custom_hash: int | None = None,
+        label: str | None = None,
         force_computation: bool = False,
         skip_cache_lookup: bool = False,
         skip_memoization: bool = False,
         error_handling: Literal["raise", "ignore", "warn"] = "raise",
-        _hash_function_kwargs: Optional[dict] = None,
+        _hash_function_kwargs: dict | None = None,
         **kwargs,
     ) -> None:
         super().__init__(label=label, **kwargs)
@@ -122,7 +119,15 @@ class FunctionPod(Pod):
         if output_keys is None:
             output_keys = []
         self.output_keys = output_keys
-        self.store_name = self.function.__name__ if store_name is None else store_name
+        if store_name is None:
+            if hasattr(self.function, "__name__"):
+                store_name = getattr(self.function, "__name__")
+            else:
+                raise ValueError(
+                    "store_name must be provided if function has no __name__ attribute"
+                )
+
+        self.store_name = store_name
         self.data_store = data_store if data_store is not None else NoOpDataStore()
         self.function_hash_mode = function_hash_mode
         self.custom_hash = custom_hash
@@ -136,7 +141,9 @@ class FunctionPod(Pod):
         func_sig = get_function_signature(self.function)
         return f"FunctionPod:{func_sig} ⇒ {self.output_keys}"
 
-    def keys(self, *streams: SyncStream) -> Tuple[Collection[str], Collection[str]]:
+    def keys(
+        self, *streams: SyncStream
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
         stream = self.process_stream(*streams)
         tag_keys, _ = stream[0].keys()
         return tag_keys, tuple(self.output_keys)
@@ -149,9 +156,10 @@ class FunctionPod(Pod):
             raise ValueError("No streams provided to forward")
         stream = streams[0]
 
-        def generator() -> Iterator[Tuple[Tag, Packet]]:
+        def generator() -> Iterator[tuple[Tag, Packet]]:
             n_computed = 0
             for tag, packet in stream:
+                output_values: list["PathSet"] = []
                 try:
                     if not self.skip_cache_lookup:
                         memoized_packet = self.data_store.retrieve_memoized(
@@ -166,18 +174,23 @@ class FunctionPod(Pod):
                         yield tag, memoized_packet
                         continue
                     values = self.function(**packet)
+
                     if len(self.output_keys) == 0:
-                        values = []
-                    elif len(self.output_keys) == 1:
-                        values = [values]
-                    elif isinstance(values, Iterable):
-                        values = list(values)
+                        output_values: list["PathSet"] = []
+                    elif (
+                        len(self.output_keys) == 1
+                        and values is not None
+                        and not isinstance(values, Collection)
+                    ):
+                        output_values = [values]
+                    elif isinstance(values, Collection):
+                        output_values = list(values)  # type: ignore
                     elif len(self.output_keys) > 1:
                         raise ValueError(
                             "Values returned by function must be a pathlike or a sequence of pathlikes"
                         )
 
-                    if len(values) != len(self.output_keys):
+                    if len(output_values) != len(self.output_keys):
                         raise ValueError(
                             "Number of output keys does not match number of values returned by function"
                         )
@@ -191,7 +204,9 @@ class FunctionPod(Pod):
                         warnings.warn(f"Error processing packet {packet}: {e}")
                         continue
 
-                output_packet: Packet = {k: v for k, v in zip(self.output_keys, values)}
+                output_packet: Packet = {
+                    k: v for k, v in zip(self.output_keys, output_values)
+                }
 
                 if not self.skip_memoization:
                     # output packet may be modified by the memoization process

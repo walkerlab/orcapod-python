@@ -2,18 +2,10 @@ from orcabridge.types import Tag, Packet
 from orcabridge.hashing import hash_function
 from orcabridge.base import Source
 from orcabridge.stream import SyncStream, SyncStreamFromGenerator
-from typing import (
-    Iterator,
-    Tuple,
-    Optional,
-    Callable,
-    Any,
-    Collection,
-    Literal,
-    Union,
-)
+from typing import Any, Literal
 from os import PathLike
 from pathlib import Path
+from collections.abc import Collection, Iterator, Callable
 
 
 class LoadFromSource(Source):
@@ -51,7 +43,6 @@ class GlobSource(Source):
     ...                     lambda f: {'date': Path(f).stem[:8]})
     """
 
-    
     default_tag_function = lambda f: {"file_name": Path(f).stem}  # noqa: E731
 
     def __init__(
@@ -59,10 +50,10 @@ class GlobSource(Source):
         name: str,
         file_path: PathLike,
         pattern: str = "*",
-        label: Optional[str] = None,
-        tag_function: Optional[Union[str, Callable[[PathLike], Tag]]] = None,
+        label: str | None = None,
+        tag_function: str | Callable[[PathLike], Tag] | None = None,
         tag_function_hash_mode: Literal["content", "signature", "name"] = "name",
-        expected_tag_keys: Optional[Collection[str]] = None,
+        expected_tag_keys: Collection[str] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(label=label, **kwargs)
@@ -77,21 +68,35 @@ class GlobSource(Source):
         elif isinstance(tag_function, str):
             tag_key = tag_function
             tag_function = lambda f: {tag_key: Path(f).stem}  # noqa: E731
-        self.tag_function = tag_function
+        self.tag_function: Callable[[PathLike], Tag] = tag_function
         self.tag_function_hash_mode = tag_function_hash_mode
 
-    def keys(self) -> Tuple[Collection[str], Collection[str]]:
+    def keys(
+        self, *streams: SyncStream
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
         """
         Returns the keys of the stream. The keys are the names of the packets
         in the stream. The keys are used to identify the packets in the stream.
         If expected_keys are provided, they will be used instead of the default keys.
         """
+        if len(streams) != 0:
+            raise ValueError(
+                "GlobSource does not support forwarding streams. "
+                "It generates its own stream from the file system."
+            )
+
         if self.expected_tag_keys is not None:
             return tuple(self.expected_tag_keys), (self.name,)
         return super().keys()
 
-    def forward(self) -> SyncStream:
-        def generator() -> Iterator[Tuple[Tag, Packet]]:
+    def forward(self, *streams: SyncStream) -> SyncStream:
+        if len(streams) != 0:
+            raise ValueError(
+                "GlobSource does not support forwarding streams. "
+                "It generates its own stream from the file system."
+            )
+
+        def generator() -> Iterator[tuple[Tag, Packet]]:
             for file in Path(self.file_path).glob(self.pattern):
                 yield self.tag_function(file), {self.name: str(file)}
 
@@ -112,7 +117,7 @@ class GlobSource(Source):
 
         tag_function_hash = hash_function(
             self.tag_function,
-            function_hash_mode=self.tag_function_hash_mode,
+            function_hash_mode=self.tag_function_hash_mode,  # type: ignore
             hash_kwargs=hash_function_kwargs,
         )
         return (
