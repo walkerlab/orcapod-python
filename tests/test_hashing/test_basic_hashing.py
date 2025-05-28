@@ -56,18 +56,6 @@ def test_hash_to_hex():
     assert len(hash_to_hex("test", char_count=0)) == 0
 
 
-def test_hash_file():
-    # Test with a file that exists
-    test_file = "test_file.txt"
-    with open(test_file, "w") as f:
-        f.write("This is a test file.")
-
-    # Clean up
-    import os
-
-    os.remove(test_file)
-
-
 def test_structure_equivalence():
     # identical content should yield the same hash
     assert hash_to_hex(["a", "b", "c"], None) == hash_to_hex(["a", "b", "c"], None)

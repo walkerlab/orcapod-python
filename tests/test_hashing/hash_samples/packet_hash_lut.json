@@ -1,0 +1,37 @@
+{
+  "simple_packet": {
+    "structure": {
+      "data": "hash_samples/file_samples/sample_text_1kb.txt"
+    },
+    "hash": "sha256-97c051e3a06f19514d5ea086d2282e51"
+  },
+  "multi_key_packet": {
+    "structure": {
+      "text": "hash_samples/file_samples/sample_text_1kb.txt",
+      "more_text": "hash_samples/file_samples/sample_text_50kb.txt",
+      "binary": "hash_samples/file_samples/sample_binary_50kb.bin"
+    },
+    "hash": "sha256-53d7708b9cee9a277096400ac2e0bd42"
+  },
+  "collection_packet": {
+    "structure": {
+      "texts": [
+        "hash_samples/file_samples/sample_text_1kb.txt",
+        "hash_samples/file_samples/sample_text_50kb.txt",
+        "hash_samples/file_samples/sample_text_10kb.txt"
+      ],
+      "binaries": [
+        "hash_samples/file_samples/sample_binary_50kb.bin",
+        "hash_samples/file_samples/sample_binary_1kb.bin"
+      ]
+    },
+    "hash": "sha256-9db44bdea02c897c1401d3d043b81b3d"
+  },
+  "hierarchical_packet": {
+    "structure": {
+      "directory": "hash_samples/file_samples",
+      "specific_file": "hash_samples/file_samples/sample_text_1kb.txt"
+    },
+    "hash": "sha256-c715014bdd49da60b40c7d93ff483915"
+  }
+}
