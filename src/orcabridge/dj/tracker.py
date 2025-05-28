@@ -87,7 +87,6 @@ class QueryTracker(GraphTracker):
     def generate_tables(
         self, schema: Schema, module_name="pipeline"
     ) -> Tuple[Any, ModuleType, ModuleType]:
-
         G = self.generate_graph()
 
         # create a new module and add the tables to it
@@ -100,9 +99,7 @@ class QueryTracker(GraphTracker):
         node_lut = {}
         edge_lut = {}
         for invocation in nx.topological_sort(G):
-            streams = [
-                edge_lut.get(stream, stream) for stream in invocation.streams
-            ]
+            streams = [edge_lut.get(stream, stream) for stream in invocation.streams]
             new_node, converted = convert_to_query_operation(
                 invocation.operation,
                 schema,

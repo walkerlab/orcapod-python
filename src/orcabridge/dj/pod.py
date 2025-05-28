@@ -51,7 +51,7 @@ class TableCachedPod(QueryPod, QuerySource):
             self.__class__.__name__,
             str(self.schema),
             self.table_name,
-            self.fp
+            self.fp,
         ) + tuple(self.streams)
 
     @property

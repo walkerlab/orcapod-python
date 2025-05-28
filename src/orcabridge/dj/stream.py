@@ -143,9 +143,7 @@ class TableCachedStream(TableStream):
             # if batch_size is <= 0, will accumulate all packets into the batch
             # and insert at the very end
             if self.batch_size > 0 and batch_count >= self.batch_size:
-                self.table.insert(
-                    batch, skip_duplicates=self.use_skip_duplicates
-                )
+                self.table.insert(batch, skip_duplicates=self.use_skip_duplicates)
                 logger.debug(
                     f"Inserted batch of size {len(batch)} into table {self.table.table_name}"
                 )

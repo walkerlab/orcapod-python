@@ -94,8 +94,8 @@ class TableCachedStreamSource(QuerySource):
         self,
         stream: SyncStream,
         schema: Schema,
-        table_name: str = None,
-        label: Optional[str] = None,
+        table_name: str | None = None,
+        label: str | None = None,
     ):
         super().__init__(label=label)
         self.stream = stream
@@ -301,7 +301,6 @@ class MergedQuerySource(QuerySource):
         return TableStream(self.table)
 
     def compile(self) -> None:
-
         part_tag_keys = []
         part_packet_keys = []
         for stream in self.streams:
