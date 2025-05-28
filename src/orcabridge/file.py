@@ -35,15 +35,17 @@ def redirect_open(
         places_to_patch.append((__builtins__, "open", __builtins__["open"]))
 
     # 3. Current module's globals (for the calling namespace)
-    caller_globals = inspect.currentframe().f_back.f_globals
-    if "open" in caller_globals:
-        places_to_patch.append((caller_globals, "open", caller_globals["open"]))
+    current_frame = inspect.currentframe()
+    if current_frame is not None:
+        caller_globals = current_frame.f_back.f_globals if current_frame.f_back else {}
+        if "open" in caller_globals:
+            places_to_patch.append((caller_globals, "open", caller_globals["open"]))
 
     # 4. Check for IPython user namespace
     try:
         import IPython
 
-        ip = IPython.get_ipython()
+        ip = IPython.get_ipython()  # type: ignore
         if ip and "open" in ip.user_ns:
             places_to_patch.append((ip.user_ns, "open", ip.user_ns["open"]))
     except (ImportError, AttributeError):
@@ -71,9 +73,7 @@ def redirect_open(
                 print(f"Redirecting '{file_path}' to '{redirected_path}'")
                 return original_builtin_open(redirected_path, *args, **kwargs)
             else:
-                raise FileNotFoundError(
-                    f"Path '{file_path}' could not be redirected"
-                )
+                raise FileNotFoundError(f"Path '{file_path}' could not be redirected")
 
     # Apply the patch to all places
     for obj, attr, _ in places_to_patch:
@@ -114,6 +114,7 @@ def virtual_mount(
     return new_packet, forward_lut, reverse_lut
 
 
+# TODO: re-assess the structure of PathSet and consider making it recursive
 def convert_pathset(pathset: PathSet, forward_lut, reverse_lut) -> PathSet:
     """
     Convert a pathset to a new pathset. forward_lut and reverse_lut are updated
@@ -134,7 +135,7 @@ def convert_pathset(pathset: PathSet, forward_lut, reverse_lut) -> PathSet:
         reverse_lut[new_name] = pathset
         return new_name
     elif isinstance(pathset, Collection):
-        return [convert_pathset(p, forward_lut, reverse_lut) for p in pathset]
+        return [convert_pathset(p, forward_lut, reverse_lut) for p in pathset]  # type: ignore
     else:
         raise ValueError(
             f"Unsupported pathset type: {type(pathset)}. Expected str, bytes, or Collection."
@@ -142,7 +143,6 @@ def convert_pathset(pathset: PathSet, forward_lut, reverse_lut) -> PathSet:
 
 
 class WrappedPath:
-
     def __init__(self, path, name=None):
         self.path = Path(path)
         if name is None:

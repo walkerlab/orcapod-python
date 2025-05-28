@@ -1,28 +1,28 @@
-from typing import Union, Tuple, Protocol, Mapping, Collection, Optional
+from typing import Protocol
+from collections.abc import Collection, Mapping
 from typing_extensions import TypeAlias
 import os
 
 # Convenience alias for anything pathlike
-PathLike = Union[str, bytes, os.PathLike]
+PathLike = str | os.PathLike
 
 # an (optional) string or a collection of (optional) string values
-TagValue: TypeAlias = Union[Optional[str], Collection[Optional[str]]]
+TagValue: TypeAlias = str | None | Collection[str | None]
 
 
 # the top level tag is a mapping from string keys to values that can be a string or
 # an arbitrary depth of nested list of strings or None
-Tag: TypeAlias = Mapping[str, Union[str, TagValue]]
-
+Tag: TypeAlias = Mapping[str, TagValue]
 
 
 # a pathset is a path or an arbitrary depth of nested list of paths
-PathSet: TypeAlias = Union[PathLike, Collection[Optional[PathLike]]]
+PathSet: TypeAlias = PathLike | Collection[PathLike | None]
 
 # a packet is a mapping from string keys to pathsets
 Packet: TypeAlias = Mapping[str, PathSet]
 
 # a batch is a tuple of a tag and a list of packets
-Batch: TypeAlias = Tuple[Tag, Collection[Packet]]
+Batch: TypeAlias = tuple[Tag, Collection[Packet]]
 
 
 class PodFunction(Protocol):
@@ -32,4 +32,4 @@ class PodFunction(Protocol):
     and returns a path or a list of paths
     """
 
-    def __call__(self, **kwargs: PathSet) -> PathSet: ...
+    def __call__(self, **kwargs: PathSet) -> None | PathSet | list[PathSet]: ...

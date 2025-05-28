@@ -1,23 +1,16 @@
-from typing import (
-    Tuple,
-    Callable,
-    Iterator,
-    Optional,
-    List,
-    Collection,
-)
 from orcabridge.types import Tag, Packet
 from orcabridge.base import SyncStream
+from collections.abc import Collection, Iterator, Callable
 
 
 class SyncStreamFromLists(SyncStream):
     def __init__(
         self,
-        tags: Optional[Collection[Tag]] = None,
-        packets: Optional[Collection[Packet]] = None,
-        paired: Optional[Collection[Tuple[Tag, Packet]]] = None,
-        tag_keys: Optional[List[str]] = None,
-        packet_keys: Optional[List[str]] = None,
+        tags: Collection[Tag] | None = None,
+        packets: Collection[Packet] | None = None,
+        paired: Collection[tuple[Tag, Packet]] | None = None,
+        tag_keys: list[str] | None = None,
+        packet_keys: list[str] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -36,13 +29,13 @@ class SyncStreamFromLists(SyncStream):
                 "Either tags and packets or paired must be provided to SyncStreamFromLists"
             )
 
-    def keys(self) -> Tuple[List[str], List[str]]:
+    def keys(self) -> tuple[Collection[str] | None, Collection[str] | None]:
         if self.tag_keys is None or self.packet_keys is None:
             return super().keys()
         # If the keys are already set, return them
         return self.tag_keys.copy(), self.packet_keys.copy()
 
-    def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
+    def __iter__(self) -> Iterator[tuple[Tag, Packet]]:
         yield from self.paired
 
 
@@ -53,9 +46,9 @@ class SyncStreamFromGenerator(SyncStream):
 
     def __init__(
         self,
-        generator_factory: Callable[[], Iterator[Tuple[Tag, Packet]]],
-        tag_keys: Optional[List[str]] = None,
-        packet_keys: Optional[List[str]] = None,
+        generator_factory: Callable[[], Iterator[tuple[Tag, Packet]]],
+        tag_keys: list[str] | None = None,
+        packet_keys: list[str] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -63,11 +56,11 @@ class SyncStreamFromGenerator(SyncStream):
         self.packet_keys = packet_keys
         self.generator_factory = generator_factory
 
-    def keys(self) -> Tuple[List[str], List[str]]:
+    def keys(self) -> tuple[Collection[str] | None, Collection[str] | None]:
         if self.tag_keys is None or self.packet_keys is None:
             return super().keys()
         # If the keys are already set, return them
         return self.tag_keys.copy(), self.packet_keys.copy()
 
-    def __iter__(self) -> Iterator[Tuple[Tag, Packet]]:
+    def __iter__(self) -> Iterator[tuple[Tag, Packet]]:
         yield from self.generator_factory()

@@ -17,7 +17,6 @@ class DataStore:
         content_hash: str,
         packet: Packet,
         output_packet: Packet,
-        overwrite: bool = False,
     ) -> Packet: ...
 
     def retrieve_memoized(
@@ -73,7 +72,6 @@ class DirDataStore(DataStore):
         packet: Packet,
         output_packet: Packet,
     ) -> Packet:
-
         packet_hash = hash_packet(packet, algorithm=self.algorithm)
         output_dir = self.store_dir / store_name / content_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
@@ -89,6 +87,10 @@ class DirDataStore(DataStore):
                 new_output_packet = {}
                 # copy the files to the output directory
                 for key, value in output_packet.items():
+                    if not isinstance(value, (str, PathLike)):
+                        raise NotImplementedError(
+                            f"Pathset that is not a simple path is not yet supported: {value} was given"
+                        )
                     if self.preserve_filename:
                         relative_output_path = Path(value).name
                     else:
@@ -124,15 +126,16 @@ class DirDataStore(DataStore):
 
             # retrieve back the memoized packet and return
             # TODO: consider if we want to return the original packet or the memoized one
-            output_packet = self.retrieve_memoized(store_name, content_hash, packet)
-            if output_packet is None:
+            retrieved_output_packet = self.retrieve_memoized(
+                store_name, content_hash, packet
+            )
+            if retrieved_output_packet is None:
                 raise ValueError(f"Memoized packet {packet} not found after storing it")
-
-            return output_packet
+            return retrieved_output_packet
 
     def retrieve_memoized(
         self, store_name: str, content_hash: str, packet: Packet
-    ) -> Optional[Packet]:
+    ) -> Packet | None:
         packet_hash = hash_packet(packet, algorithm=self.algorithm)
         output_dir = self.store_dir / store_name / content_hash / str(packet_hash)
         info_path = output_dir / "_info.json"

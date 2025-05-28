@@ -8,7 +8,7 @@ from .core import (
     HashableMixin,
     function_content_hash,
     get_function_signature,
-    hash_function
+    hash_function,
 )
 
 __all__ = [

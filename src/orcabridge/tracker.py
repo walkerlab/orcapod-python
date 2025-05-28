@@ -1,4 +1,3 @@
-from typing import Dict, Collection
 import networkx as nx
 from orcabridge.base import Operation, Invocation, Tracker
 import matplotlib.pyplot as plt
@@ -14,16 +13,14 @@ class GraphTracker(Tracker):
 
     def __init__(self) -> None:
         super().__init__()
-        self.invocation_lut: Dict[Operation, Collection[Invocation]] = {}
+        self.invocation_lut: dict[Operation, list[Invocation]] = {}
 
     def record(self, invocation: Invocation) -> None:
-        invocation_list = self.invocation_lut.setdefault(
-            invocation.operation, []
-        )
+        invocation_list = self.invocation_lut.setdefault(invocation.operation, [])
         if invocation not in invocation_list:
             invocation_list.append(invocation)
 
-    def reset(self) -> Dict[Operation, Collection[Invocation]]:
+    def reset(self) -> dict[Operation, list[Invocation]]:
         """
         Reset the tracker and return the recorded invocations.
         """
@@ -31,7 +28,7 @@ class GraphTracker(Tracker):
         self.invocation_lut = {}
         return recorded_invocations
 
-    def generate_namemap(self) -> Dict[Invocation, str]:
+    def generate_namemap(self) -> dict[Invocation, str]:
         namemap = {}
         for operation, invocations in self.invocation_lut.items():
             # if only one entry present, use the operation name alone

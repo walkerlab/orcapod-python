@@ -11,7 +11,6 @@ from .store import DirDataStore, SafeDirDataStore
 from .tracker import GraphTracker
 
 
-
 DEFAULT_TRACKER = GraphTracker()
 DEFAULT_TRACKER.activate()
 
@@ -37,4 +36,3 @@ __all__ = [
     "DEFAULT_TRACKER",
     "SyncStreamFromLists",
 ]
-
