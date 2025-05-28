@@ -10,11 +10,9 @@ hash values for the sample files created by generate_file_hashes.py.
 import json
 import pytest
 from pathlib import Path
-import sys
 
 # Add the parent directory to the path to import orcabridge
-sys.path.append(str(Path(__file__).parent.parent.parent))
-from orcabridge.hashing import hash_file
+from orcabridge.hashing import hash_file, hash_pathset
 
 
 def load_hash_lut():

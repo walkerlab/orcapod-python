@@ -75,7 +75,7 @@ def configure_logging(level=logging.INFO, enable_console=True, log_file=None):
     return lib_logger
 
 
-def _serialize_for_hashing(processed_obj):
+def serialize_for_hashing(processed_obj):
     """
     Create a deterministic string representation of a processed object structure.
 
@@ -103,14 +103,14 @@ def _serialize_for_hashing(processed_obj):
         return f'"{escaped}"'.encode("utf-8")
 
     if isinstance(processed_obj, list):
-        items = [_serialize_for_hashing(item) for item in processed_obj]
+        items = [serialize_for_hashing(item) for item in processed_obj]
         return b"[" + b",".join(items) + b"]"
 
     if isinstance(processed_obj, dict):
         # Sort keys for deterministic order
         sorted_items = sorted(processed_obj.items(), key=lambda x: str(x[0]))
         serialized_items = [
-            _serialize_for_hashing(k) + b":" + _serialize_for_hashing(v)
+            serialize_for_hashing(k) + b":" + serialize_for_hashing(v)
             for k, v in sorted_items
         ]
         return b"{" + b",".join(serialized_items) + b"}"
@@ -278,7 +278,7 @@ class HashableMixin:
 # Core hashing functions that serve as the unified interface
 
 
-def hash_to_hex(obj: Any, char_count: Optional[int] = 32) -> str:
+def hash_to_hex(obj: Any, char_count: int | None = 32) -> str:
     """
     Create a stable hex hash of any object that remains consistent across Python sessions.
 
@@ -291,12 +291,12 @@ def hash_to_hex(obj: Any, char_count: Optional[int] = 32) -> str:
         A hex string hash
     """
     # Process the object to handle nested structures and HashableMixin instances
-    processed = _process_structure(obj)
+    processed = process_structure(obj)
 
     # Serialize the processed structure
     try:
         # Use custom serialization for maximum stability
-        json_str = _serialize_for_hashing(processed)
+        json_str = serialize_for_hashing(processed)
         logger.debug(
             f"Successfully serialized {type(obj).__name__} using custom serializer"
         )
@@ -323,6 +323,7 @@ def hash_to_hex(obj: Any, char_count: Optional[int] = 32) -> str:
 
     # Return the requested number of characters
     if char_count is not None:
+        print("Using char_count ", char_count)
         return hash_hex[:char_count]
     return hash_hex
 
@@ -357,7 +358,7 @@ def hash_to_uuid(obj: Any) -> UUID:
 
 
 # Helper function for processing nested structures
-def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
+def process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
     """
     Recursively process a structure to prepare it for hashing.
 
@@ -423,13 +424,13 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
         logger.debug(f"Processing named tuple of type {type(obj).__name__}")
         # For namedtuples, convert to dict and then process
         d = {field: getattr(obj, field) for field in obj._fields}  # type: ignore
-        return _process_structure(d, visited)
+        return process_structure(d, visited)
 
     # Handle mappings (dict-like objects)
     if isinstance(obj, Mapping):
         # Process both keys and values
         processed_items = [
-            (_process_structure(k, visited), _process_structure(v, visited))
+            (process_structure(k, visited), process_structure(v, visited))
             for k, v in obj.items()
         ]
 
@@ -448,7 +449,7 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
             f"Processing set/frozenset of type {type(obj).__name__} with {len(obj)} items"
         )
         # Process each item first, then sort the processed results
-        processed_items = [_process_structure(item, visited) for item in obj]
+        processed_items = [process_structure(item, visited) for item in obj]
         return sorted(processed_items, key=str)
 
     # Handle collections (list-like objects)
@@ -456,7 +457,7 @@ def _process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
         logger.debug(
             f"Processing collection of type {type(obj).__name__} with {len(obj)} items"
         )
-        return [_process_structure(item, visited) for item in obj]
+        return [process_structure(item, visited) for item in obj]
 
     # For functions, use the function_content_hash
     if callable(obj) and hasattr(obj, "__code__"):
@@ -647,7 +648,7 @@ def hash_pathset(
     pathset: PathSet,
     algorithm="sha256",
     buffer_size=65536,
-    char_count: Optional[int] = 32,
+    char_count: int | None = 32,
 ) -> str:
     """
     Generate hash of the pathset based primarily on the content of the files.
@@ -754,7 +755,6 @@ def hash_file(file_path, algorithm="sha256", buffer_size=65536) -> str:
                 break
             hasher.update(data)
 
-    return hasher.hexdigest()
     return hasher.hexdigest()
 
 

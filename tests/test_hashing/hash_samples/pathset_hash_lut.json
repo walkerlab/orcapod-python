@@ -1,0 +1,35 @@
+{
+  "single_file": {
+    "paths": [
+      "hash_samples/file_samples/sample_text_1kb.txt"
+    ],
+    "type": "single_file",
+    "hash": "bfc8f41f1ec9764618411c70f59d2fa772a28ff746dd6331994949567f49cfa5"
+  },
+  "multiple_text_files": {
+    "paths": [
+      "hash_samples/file_samples/sample_text_1kb.txt",
+      "hash_samples/file_samples/sample_text_50kb.txt",
+      "hash_samples/file_samples/sample_text_10kb.txt"
+    ],
+    "type": "collection",
+    "hash": "d896615f35fcc3907b23dc9af92557c9"
+  },
+  "mixed_files": {
+    "paths": [
+      "hash_samples/file_samples/sample_text_1kb.txt",
+      "hash_samples/file_samples/sample_text_50kb.txt",
+      "hash_samples/file_samples/sample_binary_50kb.bin",
+      "hash_samples/file_samples/sample_binary_1kb.bin"
+    ],
+    "type": "collection",
+    "hash": "fcb903e0ec11ff459cdedb8b32a66966"
+  },
+  "directory": {
+    "paths": [
+      "hash_samples/file_samples"
+    ],
+    "type": "directory",
+    "hash": "30b951717a36402cda22e52a01694df4"
+  }
+}
