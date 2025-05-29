@@ -8,11 +8,52 @@ import shutil
 from pathlib import Path
 
 from orcabridge.store.dir_data_store import DirDataStore
-from orcabridge.hashing import FileHasher
+from orcabridge.hashing.types import (
+    FileHasher,
+    PathSetHasher,
+    PacketHasher,
+    CompositeFileHasher,
+)
 
 
 class MockFileHasher(FileHasher):
     """Mock FileHasher for testing."""
+
+    def __init__(self, hash_value="mock_hash"):
+        self.hash_value = hash_value
+        self.file_hash_calls = []
+
+    def hash_file(self, file_path):
+        self.file_hash_calls.append(file_path)
+        return f"{self.hash_value}_file"
+
+
+class MockPathSetHasher(PathSetHasher):
+    """Mock PathSetHasher for testing."""
+
+    def __init__(self, hash_value="mock_hash"):
+        self.hash_value = hash_value
+        self.pathset_hash_calls = []
+
+    def hash_pathset(self, pathset):
+        self.pathset_hash_calls.append(pathset)
+        return f"{self.hash_value}_pathset"
+
+
+class MockPacketHasher(PacketHasher):
+    """Mock PacketHasher for testing."""
+
+    def __init__(self, hash_value="mock_hash"):
+        self.hash_value = hash_value
+        self.packet_hash_calls = []
+
+    def hash_packet(self, packet):
+        self.packet_hash_calls.append(packet)
+        return f"{self.hash_value}_packet"
+
+
+class MockCompositeHasher(CompositeFileHasher):
+    """Mock CompositeHasher that implements all three hash protocols."""
 
     def __init__(self, hash_value="mock_hash"):
         self.hash_value = hash_value
@@ -34,7 +75,7 @@ class MockFileHasher(FileHasher):
 
 
 def test_dir_data_store_init_default_hasher(temp_dir):
-    """Test DirDataStore initialization with default FileHasher."""
+    """Test DirDataStore initialization with default PacketHasher."""
     store_dir = Path(temp_dir) / "test_store"
 
     # Create store with default hasher
@@ -44,8 +85,8 @@ def test_dir_data_store_init_default_hasher(temp_dir):
     assert store_dir.exists()
     assert store_dir.is_dir()
 
-    # Verify the default FileHasher is used
-    assert isinstance(store.file_hasher, FileHasher)
+    # Verify the default PacketHasher is used
+    assert isinstance(store.packet_hasher, PacketHasher)
 
     # Check default parameters
     assert store.copy_files is True
@@ -56,14 +97,14 @@ def test_dir_data_store_init_default_hasher(temp_dir):
 
 
 def test_dir_data_store_init_custom_hasher(temp_dir):
-    """Test DirDataStore initialization with custom FileHasher."""
+    """Test DirDataStore initialization with custom PacketHasher."""
     store_dir = Path(temp_dir) / "test_store"
-    file_hasher = MockFileHasher()
+    packet_hasher = MockPacketHasher()
 
     # Create store with custom hasher and parameters
     store = DirDataStore(
         store_dir=store_dir,
-        file_hasher=file_hasher,
+        packet_hasher=packet_hasher,
         copy_files=False,
         preserve_filename=False,
         overwrite=True,
@@ -74,8 +115,8 @@ def test_dir_data_store_init_custom_hasher(temp_dir):
     assert store_dir.exists()
     assert store_dir.is_dir()
 
-    # Verify our custom FileHasher is used
-    assert store.file_hasher is file_hasher
+    # Verify our custom PacketHasher is used
+    assert store.packet_hasher is packet_hasher
 
     # Check custom parameters
     assert store.copy_files is False
@@ -88,11 +129,11 @@ def test_dir_data_store_init_custom_hasher(temp_dir):
 def test_dir_data_store_memoize_with_file_copy(temp_dir, sample_files):
     """Test DirDataStore memoize with file copying enabled."""
     store_dir = Path(temp_dir) / "test_store"
-    file_hasher = MockFileHasher(hash_value="fixed_hash")
+    packet_hasher = MockPacketHasher(hash_value="fixed_hash")
 
     store = DirDataStore(
         store_dir=store_dir,
-        file_hasher=file_hasher,
+        packet_hasher=packet_hasher,
         copy_files=True,
         preserve_filename=True,
     )
@@ -134,9 +175,11 @@ def test_dir_data_store_memoize_with_file_copy(temp_dir, sample_files):
 def test_dir_data_store_memoize_without_file_copy(temp_dir, sample_files):
     """Test DirDataStore memoize without file copying."""
     store_dir = Path(temp_dir) / "test_store"
-    file_hasher = MockFileHasher(hash_value="fixed_hash")
+    packet_hasher = MockPacketHasher(hash_value="fixed_hash")
 
-    store = DirDataStore(store_dir=store_dir, file_hasher=file_hasher, copy_files=False)
+    store = DirDataStore(
+        store_dir=store_dir, packet_hasher=packet_hasher, copy_files=False
+    )
 
     # Create simple packet and output packet
     packet = {"input_file": sample_files["input"]["file1"]}
@@ -173,11 +216,11 @@ def test_dir_data_store_memoize_without_file_copy(temp_dir, sample_files):
 def test_dir_data_store_memoize_without_filename_preservation(temp_dir, sample_files):
     """Test DirDataStore memoize without filename preservation."""
     store_dir = Path(temp_dir) / "test_store"
-    file_hasher = MockFileHasher(hash_value="fixed_hash")
+    packet_hasher = MockPacketHasher(hash_value="fixed_hash")
 
     store = DirDataStore(
         store_dir=store_dir,
-        file_hasher=file_hasher,
+        packet_hasher=packet_hasher,
         copy_files=True,
         preserve_filename=False,
     )
@@ -212,9 +255,11 @@ def test_dir_data_store_memoize_without_filename_preservation(temp_dir, sample_f
 def test_dir_data_store_retrieve_memoized(temp_dir, sample_files):
     """Test DirDataStore retrieve_memoized functionality."""
     store_dir = Path(temp_dir) / "test_store"
-    file_hasher = MockFileHasher(hash_value="fixed_hash")
+    packet_hasher = MockPacketHasher(hash_value="fixed_hash")
 
-    store = DirDataStore(store_dir=store_dir, file_hasher=file_hasher, copy_files=True)
+    store = DirDataStore(
+        store_dir=store_dir, packet_hasher=packet_hasher, copy_files=True
+    )
 
     # Create and memoize a packet
     packet = {"input_file": sample_files["input"]["file1"]}
@@ -239,9 +284,9 @@ def test_dir_data_store_retrieve_memoized(temp_dir, sample_files):
 def test_dir_data_store_retrieve_memoized_nonexistent(temp_dir):
     """Test DirDataStore retrieve_memoized with non-existent data."""
     store_dir = Path(temp_dir) / "test_store"
-    file_hasher = MockFileHasher(hash_value="fixed_hash")
+    packet_hasher = MockPacketHasher(hash_value="fixed_hash")
 
-    store = DirDataStore(store_dir=store_dir, file_hasher=file_hasher)
+    store = DirDataStore(store_dir=store_dir, packet_hasher=packet_hasher)
 
     # Try to retrieve a non-existent packet
     packet = {"input_file": "nonexistent.txt"}
@@ -254,12 +299,12 @@ def test_dir_data_store_retrieve_memoized_nonexistent(temp_dir):
 def test_dir_data_store_retrieve_memoized_with_supplement(temp_dir, sample_files):
     """Test DirDataStore retrieve_memoized with source supplementation."""
     store_dir = Path(temp_dir) / "test_store"
-    file_hasher = MockFileHasher(hash_value="fixed_hash")
+    packet_hasher = MockPacketHasher(hash_value="fixed_hash")
 
     # Create store without source supplementation
     store_without_supplement = DirDataStore(
         store_dir=store_dir,
-        file_hasher=file_hasher,
+        packet_hasher=packet_hasher,
         copy_files=True,
         supplement_source=False,
     )
@@ -289,7 +334,7 @@ def test_dir_data_store_retrieve_memoized_with_supplement(temp_dir, sample_files
     # Now with supplement enabled
     store_with_supplement = DirDataStore(
         store_dir=store_dir,
-        file_hasher=file_hasher,
+        packet_hasher=packet_hasher,
         copy_files=True,
         supplement_source=True,
     )
@@ -309,11 +354,11 @@ def test_dir_data_store_retrieve_memoized_with_supplement(temp_dir, sample_files
 def test_dir_data_store_memoize_with_overwrite(temp_dir, sample_files):
     """Test DirDataStore memoize with overwrite enabled."""
     store_dir = Path(temp_dir) / "test_store"
-    file_hasher = MockFileHasher(hash_value="fixed_hash")
+    packet_hasher = MockPacketHasher(hash_value="fixed_hash")
 
     # Create store with overwrite disabled (default)
     store_no_overwrite = DirDataStore(
-        store_dir=store_dir, file_hasher=file_hasher, copy_files=True
+        store_dir=store_dir, packet_hasher=packet_hasher, copy_files=True
     )
 
     # Create initial packet and output
@@ -334,7 +379,10 @@ def test_dir_data_store_memoize_with_overwrite(temp_dir, sample_files):
 
     # Create store with overwrite enabled
     store_with_overwrite = DirDataStore(
-        store_dir=store_dir, file_hasher=file_hasher, copy_files=True, overwrite=True
+        store_dir=store_dir,
+        packet_hasher=packet_hasher,
+        copy_files=True,
+        overwrite=True,
     )
 
     # This should work now with overwrite
@@ -357,9 +405,9 @@ def test_dir_data_store_memoize_with_overwrite(temp_dir, sample_files):
 def test_dir_data_store_clear_store(temp_dir, sample_files):
     """Test DirDataStore clear_store functionality."""
     store_dir = Path(temp_dir) / "test_store"
-    file_hasher = MockFileHasher()
+    packet_hasher = MockPacketHasher()
 
-    store = DirDataStore(store_dir=store_dir, file_hasher=file_hasher)
+    store = DirDataStore(store_dir=store_dir, packet_hasher=packet_hasher)
 
     # Create and memoize packets in different stores
     packet = {"input_file": sample_files["input"]["file1"]}
@@ -383,9 +431,9 @@ def test_dir_data_store_clear_store(temp_dir, sample_files):
 def test_dir_data_store_clear_all_stores(temp_dir, sample_files):
     """Test DirDataStore clear_all_stores functionality with force."""
     store_dir = Path(temp_dir) / "test_store"
-    file_hasher = MockFileHasher()
+    packet_hasher = MockPacketHasher()
 
-    store = DirDataStore(store_dir=store_dir, file_hasher=file_hasher)
+    store = DirDataStore(store_dir=store_dir, packet_hasher=packet_hasher)
 
     # Create and memoize packets in different stores
     packet = {"input_file": sample_files["input"]["file1"]}
@@ -405,15 +453,15 @@ def test_dir_data_store_clear_all_stores(temp_dir, sample_files):
     assert not store_dir.exists()
 
 
-def test_dir_data_store_with_default_file_hasher(temp_dir, sample_files):
-    """Test DirDataStore using the default FileHasher."""
+def test_dir_data_store_with_default_packet_hasher(temp_dir, sample_files):
+    """Test DirDataStore using the default CompositeHasher."""
     store_dir = Path(temp_dir) / "test_store"
 
     # Create store with default FileHasher
     store = DirDataStore(store_dir=store_dir)
 
-    # Verify that default FileHasher was created
-    assert isinstance(store.file_hasher, FileHasher)
+    # Verify that default PacketHasher was created
+    assert isinstance(store.packet_hasher, PacketHasher)
 
     # Test memoization and retrieval
     packet = {"input_file": sample_files["input"]["file1"]}
@@ -434,7 +482,7 @@ def test_dir_data_store_legacy_mode_compatibility(temp_dir, sample_files):
     store_dir_legacy = Path(temp_dir) / "test_store_legacy"
     store_dir_default = Path(temp_dir) / "test_store_default"
 
-    # Create two stores: one with legacy_mode=True, one with the default FileHasher
+    # Create two stores: one with legacy_mode=True, one with the default PacketHasher
     store_legacy = DirDataStore(
         store_dir=store_dir_legacy,
         legacy_mode=True,
@@ -454,7 +502,7 @@ def test_dir_data_store_legacy_mode_compatibility(temp_dir, sample_files):
     from orcabridge.hashing import hash_packet
 
     legacy_hash = hash_packet(packet, algorithm="sha256")
-    default_hash = store_default.file_hasher.hash_packet(packet)
+    default_hash = store_default.packet_hasher.hash_packet(packet)
 
     # The hashes should be identical since both implementations should produce the same result
     assert legacy_hash == default_hash
@@ -550,7 +598,7 @@ def test_dir_data_store_legacy_mode_fallback(temp_dir, sample_files):
 
 
 def test_dir_data_store_hash_equivalence(temp_dir, sample_files):
-    """Test that hash_packet and file_hasher.hash_packet produce identical directory structures."""
+    """Test that hash_packet and packet_hasher.hash_packet produce identical directory structures."""
     # Create a store directory
     store_dir = Path(temp_dir) / "test_store"
 
@@ -560,10 +608,10 @@ def test_dir_data_store_hash_equivalence(temp_dir, sample_files):
 
     # First compute hashes directly
     from orcabridge.hashing import hash_packet
-    from orcabridge.hashing import get_default_file_hasher
+    from orcabridge.hashing.defaults import get_default_composite_hasher
 
     legacy_hash = hash_packet(packet, algorithm="sha256")
-    default_hasher = get_default_file_hasher(
+    default_hasher = get_default_composite_hasher(
         with_cache=False
     )  # No caching for direct comparison
     default_hash = default_hasher.hash_packet(packet)
@@ -579,7 +627,7 @@ def test_dir_data_store_hash_equivalence(temp_dir, sample_files):
     )
 
     default_store = DirDataStore(
-        store_dir=store_dir, legacy_mode=False, file_hasher=default_hasher
+        store_dir=store_dir, legacy_mode=False, packet_hasher=default_hasher
     )
 
     # Store data using legacy mode
