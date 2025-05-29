@@ -1,7 +1,9 @@
 from orcabridge.types import Packet
 from typing import Optional
 from pathlib import Path
-from orcabridge.hashing import FileHasher, get_default_file_hasher, hash_packet
+from orcabridge.hashing import hash_packet
+from orcabridge.hashing.defaults import get_default_composite_hasher
+from orcabridge.hashing.types import PacketHasher
 import shutil
 import logging
 import json
@@ -50,7 +52,7 @@ class DirDataStore(DataStore):
     def __init__(
         self,
         store_dir: str | PathLike = "./pod_data",
-        file_hasher: FileHasher | None = None,
+        packet_hasher: PacketHasher | None = None,
         copy_files=True,
         preserve_filename=True,
         overwrite=False,
@@ -65,9 +67,9 @@ class DirDataStore(DataStore):
         self.preserve_filename = preserve_filename
         self.overwrite = overwrite
         self.supplement_source = supplement_source
-        if file_hasher is None:
-            file_hasher = get_default_file_hasher(with_cache=True)
-        self.file_hasher = file_hasher
+        if packet_hasher is None:
+            packet_hasher = get_default_composite_hasher(with_cache=True)
+        self.packet_hasher = packet_hasher
         self.legacy_mode = legacy_mode
         self.legacy_algorithm = legacy_algorithm
 
@@ -81,7 +83,7 @@ class DirDataStore(DataStore):
         if self.legacy_mode:
             packet_hash = hash_packet(packet, algorithm=self.legacy_algorithm)
         else:
-            packet_hash = self.file_hasher.hash_packet(packet)
+            packet_hash = self.packet_hasher.hash_packet(packet)
         output_dir = self.store_dir / store_name / content_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
         source_path = output_dir / "_source.json"
@@ -148,7 +150,7 @@ class DirDataStore(DataStore):
         if self.legacy_mode:
             packet_hash = hash_packet(packet, algorithm=self.legacy_algorithm)
         else:
-            packet_hash = self.file_hasher.hash_packet(packet)
+            packet_hash = self.packet_hasher.hash_packet(packet)
         output_dir = self.store_dir / store_name / content_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
         source_path = output_dir / "_source.json"
