@@ -72,7 +72,7 @@ class DirDataStore(DataStore):
         packet: Packet,
         output_packet: Packet,
     ) -> Packet:
-        packet_hash = hash_packet(packet, algorithm=self.algorithm)
+        packet_hash = self.file_hasher.hash_packet(packet)
         output_dir = self.store_dir / store_name / content_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
         source_path = output_dir / "_source.json"

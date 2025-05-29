@@ -6,6 +6,7 @@ A library for creating stable, content-based hashes that remain consistent acros
 suitable for arbitrarily nested data structures and custom objects via HashableMixin.
 """
 
+from functools import partial
 import hashlib
 import json
 import logging
@@ -619,6 +620,7 @@ def hash_packet(
     buffer_size: int = 65536,
     char_count: Optional[int] = 32,
     prefix_algorithm: bool = True,
+    pathset_hasher: Callable[..., str] | None = None,
 ) -> str:
     """
     Generate a hash for a packet based on its content.
@@ -629,11 +631,17 @@ def hash_packet(
     Returns:
         A hexadecimal digest of the packet's content
     """
+    if pathset_hasher is None:
+        pathset_hasher = partial(
+            hash_pathset,
+            algorithm=algorithm,
+            buffer_size=buffer_size,
+            char_count=char_count,
+        )
+
     hash_results = {}
     for key, pathset in packet.items():
-        hash_results[key] = hash_pathset(
-            pathset, algorithm=algorithm, buffer_size=buffer_size
-        )
+        hash_results[key] = pathset_hasher(pathset)
 
     packet_hash = hash_to_hex(hash_results, char_count=char_count)
 
@@ -649,6 +657,7 @@ def hash_pathset(
     algorithm="sha256",
     buffer_size=65536,
     char_count: int | None = 32,
+    file_hasher: Callable[..., str] | None = None,
 ) -> str:
     """
     Generate hash of the pathset based primarily on the content of the files.
@@ -657,6 +666,9 @@ def hash_pathset(
 
     Currently only support hashing of Pathset if Pathset points to a single file.
     """
+    if file_hasher is None:
+        file_hasher = partial(hash_file, algorithm=algorithm, buffer_size=buffer_size)
+
     if isinstance(pathset, str) or isinstance(pathset, PathLike):
         pathset = Path(pathset)
         if not pathset.exists():
@@ -671,11 +683,12 @@ def hash_pathset(
                     algorithm=algorithm,
                     buffer_size=buffer_size,
                     char_count=char_count,
+                    file_hasher=file_hasher,
                 )
             return hash_to_hex(hash_dict, char_count=char_count)
         else:
             # it's a file, hash it directly
-            return hash_file(pathset, algorithm=algorithm, buffer_size=buffer_size)
+            return file_hasher(pathset)
 
     if isinstance(pathset, Collection):
         hash_dict = {}
@@ -690,6 +703,7 @@ def hash_pathset(
                 algorithm=algorithm,
                 buffer_size=buffer_size,
                 char_count=char_count,
+                file_hasher=file_hasher,
             )
         return hash_to_hex(hash_dict, char_count=char_count)
 
