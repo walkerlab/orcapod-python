@@ -1,3 +1,5 @@
+from .protocols import FileHasher, StringCacher, ObjectHasher
+
 from .core import (
     hash_file,
     hash_pathset,
@@ -11,7 +13,12 @@ from .core import (
     hash_function,
 )
 
+from .defaults import get_default_file_hasher
+
 __all__ = [
+    "FileHasher",
+    "StringCacher",
+    "ObjectHasher",
     "hash_file",
     "hash_pathset",
     "hash_packet",
@@ -22,4 +29,5 @@ __all__ = [
     "get_function_signature",
     "function_content_hash",
     "HashableMixin",
+    "get_default_file_hasher",
 ]
