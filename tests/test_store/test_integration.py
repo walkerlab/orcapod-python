@@ -7,26 +7,31 @@ import os
 from pathlib import Path
 
 from orcabridge.store.dir_data_store import DirDataStore, NoOpDataStore
-from orcabridge.hashing.file_hashers import DefaultFileHasher, CachedFileHasher
+from orcabridge.hashing.file_hashers import (
+    BasicFileHasher,
+    CachedFileHasher,
+    CompositeHasher,
+)
 from orcabridge.hashing.string_cachers import InMemoryCacher
 
 
 def test_integration_with_cached_file_hasher(temp_dir, sample_files):
-    """Test integration of DirDataStore with CachedFileHasher."""
+    """Test integration of DirDataStore with CompositeHasher using CachedFileHasher."""
     store_dir = Path(temp_dir) / "test_store"
 
     # Create a CachedFileHasher with InMemoryCacher
-    base_hasher = DefaultFileHasher()
+    base_hasher = BasicFileHasher()
     string_cacher = InMemoryCacher(max_size=100)
     file_hasher = CachedFileHasher(
         file_hasher=base_hasher,
         string_cacher=string_cacher,
-        cache_file=True,
-        cache_packet=True,
     )
 
-    # Create the store with CachedFileHasher
-    store = DirDataStore(store_dir=store_dir, file_hasher=file_hasher)
+    # Create a CompositeHasher that will use the CachedFileHasher
+    composite_hasher = CompositeHasher(file_hasher)
+
+    # Create the store with CompositeHasher
+    store = DirDataStore(store_dir=store_dir, packet_hasher=composite_hasher)
 
     # Create simple packet and output packet
     packet = {"input_file": sample_files["input"]["file1"]}
@@ -44,9 +49,12 @@ def test_integration_with_cached_file_hasher(temp_dir, sample_files):
     assert result1 == result2
 
     # Check that the cached hasher is working (by checking the cache)
-    packet_key = f"packet:{packet}"
-    cached_hash = string_cacher.get_cached(packet_key)
-    assert cached_hash is not None
+    # In the new design, CachedFileHasher only handles file hashing, not packet hashing
+    # The packet hash is handled by a PacketHasher instance inside CompositeHasher
+    file_path = sample_files["input"]["file1"]
+    file_key = f"file:{file_path}"
+    cached_file_hash = string_cacher.get_cached(file_key)
+    assert cached_file_hash is not None
 
 
 def test_integration_data_store_chain(temp_dir, sample_files):
