@@ -1,7 +1,7 @@
 from orcabridge.types import Packet
 from typing import Optional
 from pathlib import Path
-from orcabridge.hashing import hash_packet
+from orcabridge.hashing import FileHasher, get_default_file_hasher, hash_packet
 import shutil
 import logging
 import json
@@ -50,11 +50,13 @@ class DirDataStore(DataStore):
     def __init__(
         self,
         store_dir: str | PathLike = "./pod_data",
+        file_hasher: FileHasher | None = None,
         copy_files=True,
         preserve_filename=True,
-        algorithm="sha256",
         overwrite=False,
         supplement_source=False,
+        legacy_mode=False,
+        legacy_algorithm="sha256",
     ) -> None:
         self.store_dir = Path(store_dir)
         # Create the data directory if it doesn't exist
@@ -62,8 +64,12 @@ class DirDataStore(DataStore):
         self.copy_files = copy_files
         self.preserve_filename = preserve_filename
         self.overwrite = overwrite
-        self.algorithm = algorithm
         self.supplement_source = supplement_source
+        if file_hasher is None:
+            file_hasher = get_default_file_hasher(with_cache=True)
+        self.file_hasher = file_hasher
+        self.legacy_mode = legacy_mode
+        self.legacy_algorithm = legacy_algorithm
 
     def memoize(
         self,
@@ -72,7 +78,10 @@ class DirDataStore(DataStore):
         packet: Packet,
         output_packet: Packet,
     ) -> Packet:
-        packet_hash = self.file_hasher.hash_packet(packet)
+        if self.legacy_mode:
+            packet_hash = hash_packet(packet, algorithm=self.legacy_algorithm)
+        else:
+            packet_hash = self.file_hasher.hash_packet(packet)
         output_dir = self.store_dir / store_name / content_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
         source_path = output_dir / "_source.json"
@@ -136,7 +145,10 @@ class DirDataStore(DataStore):
     def retrieve_memoized(
         self, store_name: str, content_hash: str, packet: Packet
     ) -> Packet | None:
-        packet_hash = hash_packet(packet, algorithm=self.algorithm)
+        if self.legacy_mode:
+            packet_hash = hash_packet(packet, algorithm=self.legacy_algorithm)
+        else:
+            packet_hash = self.file_hasher.hash_packet(packet)
         output_dir = self.store_dir / store_name / content_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
         source_path = output_dir / "_source.json"
