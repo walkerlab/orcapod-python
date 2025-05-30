@@ -41,7 +41,7 @@ def test_database_initialization():
     """Test that database schema is created correctly."""
     with tempfile.TemporaryDirectory() as temp_dir:
         db_file = Path(temp_dir) / "schema_test.db"
-        cacher = SQLiteCacher(db_file)
+        cacher = SQLiteCacher(db_file)  # noqa: F841
 
         # Check that table exists with correct schema
         with sqlite3.connect(db_file) as conn:
