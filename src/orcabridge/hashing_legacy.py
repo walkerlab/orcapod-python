@@ -42,11 +42,11 @@
 # def hash_function(function, function_hash_mode: str = "content", hasher_kwargs=None) -> str:
 #     """
 #     Hash a function based on its content, signature, or name.
-
+#
 #     Args:
 #         function: The function to hash
 #         function_hash_mode: The mode of hashing ('content', 'signature', 'name')
-#         store_name: Optional name for the store
+#         function_name: Optional name for the function (if not provided, uses function's __name__)
 
 #     Returns:
 #         A string representing the hash of the function

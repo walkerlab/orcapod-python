@@ -12,12 +12,12 @@ class DataStore(Protocol):
     def __init__(self, *args, **kwargs) -> None: ...
     def memoize(
         self,
-        store_name: str,
-        content_hash: str,
+        function_name: str,
+        function_hash: str,
         packet: Packet,
         output_packet: Packet,
     ) -> Packet: ...
 
     def retrieve_memoized(
-        self, store_name: str, content_hash: str, packet: Packet
+        self, function_name: str, function_hash: str, packet: Packet
     ) -> Packet | None: ...

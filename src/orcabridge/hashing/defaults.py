@@ -10,3 +10,9 @@ def get_default_composite_hasher(with_cache=True) -> CompositeHasher:
         string_cacher = InMemoryCacher(max_size=None)
         return HasherFactory.create_cached_composite(string_cacher)
     return HasherFactory.create_basic_composite()
+
+
+def get_default_composite_hasher_with_cacher(cacher=None) -> CompositeHasher:
+    if cacher is None:
+        cacher = InMemoryCacher(max_size=None)
+    return HasherFactory.create_cached_composite(cacher)

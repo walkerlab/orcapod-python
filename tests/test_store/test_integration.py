@@ -82,10 +82,10 @@ def test_integration_data_store_chain(temp_dir, sample_files):
     store2.memoize("test_chain", "content_hash_456", packet2, output_packet2)
 
     # Create a function that tries each store in sequence
-    def retrieve_from_stores(store_name, content_hash, packet):
+    def retrieve_from_stores(function_name, content_hash, packet):
         for store in [store1, store2, store3]:
             try:
-                result = store.retrieve_memoized(store_name, content_hash, packet)
+                result = store.retrieve_memoized(function_name, content_hash, packet)
                 if result is not None:
                     return result
             except FileNotFoundError:
@@ -113,11 +113,11 @@ def test_integration_data_store_chain(temp_dir, sample_files):
     # without actually trying to hash nonexistent files
     original_retrieve = store1.retrieve_memoized
 
-    def mocked_retrieve(store_name, content_hash, packet):
+    def mocked_retrieve(function_name, content_hash, packet):
         # Only return None for our specific test case
-        if store_name == "test_chain" and content_hash == "content_hash_789":
+        if function_name == "test_chain" and content_hash == "content_hash_789":
             return None
-        return original_retrieve(store_name, content_hash, packet)
+        return original_retrieve(function_name, content_hash, packet)
 
     # Apply the mock to all stores
     store1.retrieve_memoized = mocked_retrieve

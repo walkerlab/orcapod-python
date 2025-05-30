@@ -28,8 +28,8 @@ class NoOpDataStore(DataStore):
 
     def memoize(
         self,
-        store_name: str,
-        content_hash: str,
+        function_name: str,
+        function_hash: str,
         packet: Packet,
         output_packet: Packet,
         overwrite: bool = False,
@@ -37,8 +37,8 @@ class NoOpDataStore(DataStore):
         return output_packet
 
     def retrieve_memoized(
-        self, store_name: str, content_hash: str, packet: Packet
-    ) -> Optional[Packet]:
+        self, function_name: str, function_hash: str, packet: Packet
+    ) -> Packet | None:
         return None
 
 
@@ -69,8 +69,8 @@ class DirDataStore(DataStore):
 
     def memoize(
         self,
-        store_name: str,
-        content_hash: str,
+        function_name: str,
+        function_hash: str,
         packet: Packet,
         output_packet: Packet,
     ) -> Packet:
@@ -78,7 +78,7 @@ class DirDataStore(DataStore):
             packet_hash = hash_packet(packet, algorithm=self.legacy_algorithm)
         else:
             packet_hash = self.packet_hasher.hash_packet(packet)
-        output_dir = self.store_dir / store_name / content_hash / str(packet_hash)
+        output_dir = self.store_dir / function_name / function_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
         source_path = output_dir / "_source.json"
 
@@ -132,20 +132,20 @@ class DirDataStore(DataStore):
             # retrieve back the memoized packet and return
             # TODO: consider if we want to return the original packet or the memoized one
             retrieved_output_packet = self.retrieve_memoized(
-                store_name, content_hash, packet
+                function_name, function_hash, packet
             )
             if retrieved_output_packet is None:
                 raise ValueError(f"Memoized packet {packet} not found after storing it")
             return retrieved_output_packet
 
     def retrieve_memoized(
-        self, store_name: str, content_hash: str, packet: Packet
+        self, function_name: str, function_hash: str, packet: Packet
     ) -> Packet | None:
         if self.legacy_mode:
             packet_hash = hash_packet(packet, algorithm=self.legacy_algorithm)
         else:
             packet_hash = self.packet_hasher.hash_packet(packet)
-        output_dir = self.store_dir / store_name / content_hash / str(packet_hash)
+        output_dir = self.store_dir / function_name / function_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
         source_path = output_dir / "_source.json"
 
@@ -177,11 +177,11 @@ class DirDataStore(DataStore):
             logger.info(f"No memoized output found for packet {packet}")
             return None
 
-    def clear_store(self, store_name: str) -> None:
+    def clear_store(self, function_name: str) -> None:
         # delete the folder self.data_dir and its content
-        shutil.rmtree(self.store_dir / store_name)
+        shutil.rmtree(self.store_dir / function_name)
 
-    def clear_all_stores(self, interactive=True, store_name="", force=False) -> None:
+    def clear_all_stores(self, interactive=True, function_name="", force=False) -> None:
         """
         Clear all stores in the data directory.
         This is a dangerous operation -- please double- and triple-check before proceeding!
@@ -191,10 +191,10 @@ class DirDataStore(DataStore):
                 If False, it will delete only if `force=True`. The user will be prompted
                 to type in the full name of the storage (as shown in the prompt)
                 to confirm deletion.
-            store_name (str): The name of the store to delete. If not using interactive mode,
+            function_name (str): The name of the function to delete. If not using interactive mode,
                 this must be set to the store_dir path in order to proceed with the deletion.
             force (bool): If True, delete the store without prompting the user for confirmation.
-                If False and interactive is False, the `store_name` must match the store_dir
+                If False and interactive is False, the `function_name` must match the store_dir
                 for the deletion to proceed.
         """
         # delete the folder self.data_dir and its content
@@ -206,14 +206,14 @@ class DirDataStore(DataStore):
             if confirm.lower() != "y":
                 logger.info("Aborting deletion of all stores")
                 return
-            store_name = input(
-                f"Type in the store name {self.store_dir} to confirm the deletion: "
+            function_name = input(
+                f"Type in the function name {self.store_dir} to confirm the deletion: "
             )
-            if store_name != str(self.store_dir):
+            if function_name != str(self.store_dir):
                 logger.info("Aborting deletion of all stores")
                 return
 
-        if not force and store_name != str(self.store_dir):
+        if not force and function_name != str(self.store_dir):
             logger.info(f"Aborting deletion of all stores in {self.store_dir}")
             return
 

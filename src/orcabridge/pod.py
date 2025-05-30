@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 def function_pod(
     output_keys: Collection[str] | None = None,
-    store_name: str | None = None,
+    function_name: str | None = None,
     data_store: DataStore | None = None,
     function_hash_mode: Literal["signature", "content", "name", "custom"] = "name",
     custom_hash: int | None = None,
@@ -44,7 +44,7 @@ def function_pod(
         pod = FunctionPod(
             function=func,
             output_keys=output_keys,
-            store_name=store_name,
+            function_name=function_name,
             data_store=data_store,
             function_hash_mode=function_hash_mode,
             custom_hash=custom_hash,
@@ -102,7 +102,7 @@ class FunctionPod(Pod):
         self,
         function: PodFunction,
         output_keys: Collection[str] | None = None,
-        store_name=None,
+        function_name=None,
         data_store: DataStore | None = None,
         function_hash_mode: Literal["signature", "content", "name", "custom"] = "name",
         custom_hash: int | None = None,
@@ -119,15 +119,15 @@ class FunctionPod(Pod):
         if output_keys is None:
             output_keys = []
         self.output_keys = output_keys
-        if store_name is None:
+        if function_name is None:
             if hasattr(self.function, "__name__"):
-                store_name = getattr(self.function, "__name__")
+                function_name = getattr(self.function, "__name__")
             else:
                 raise ValueError(
-                    "store_name must be provided if function has no __name__ attribute"
+                    "function_name must be provided if function has no __name__ attribute"
                 )
 
-        self.store_name = store_name
+        self.function_name = function_name
         self.data_store = data_store if data_store is not None else NoOpDataStore()
         self.function_hash_mode = function_hash_mode
         self.custom_hash = custom_hash
@@ -163,7 +163,7 @@ class FunctionPod(Pod):
                 try:
                     if not self.skip_cache_lookup:
                         memoized_packet = self.data_store.retrieve_memoized(
-                            self.store_name,
+                            self.function_name,
                             self.content_hash(char_count=16),
                             packet,
                         )
@@ -212,7 +212,7 @@ class FunctionPod(Pod):
                     # output packet may be modified by the memoization process
                     # e.g. if the output is a file, the path may be changed
                     output_packet = self.data_store.memoize(
-                        self.store_name,
+                        self.function_name,
                         self.content_hash(),  # identity of this function pod
                         packet,
                         output_packet,

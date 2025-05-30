@@ -203,16 +203,16 @@ class SafeDirDataStore:
         # Create the data directory if it doesn't exist
         self.store_dir.mkdir(parents=True, exist_ok=True)
 
-    def _get_output_dir(self, store_name, content_hash, packet):
+    def _get_output_dir(self, function_name, content_hash, packet):
         """Get the output directory for a specific packet"""
         from orcabridge.hashing.core import hash_dict
 
         packet_hash = hash_dict(packet)
-        return self.store_dir / store_name / content_hash / str(packet_hash)
+        return self.store_dir / function_name / content_hash / str(packet_hash)
 
     def memoize(
         self,
-        store_name: str,
+        function_name: str,
         content_hash: str,
         packet: dict,
         output_packet: dict,
@@ -222,7 +222,7 @@ class SafeDirDataStore:
         Uses file locking to ensure thread safety and process safety.
 
         Args:
-            store_name: Name of the store
+            function_name: Name of the function
             content_hash: Hash of the function/operation
             packet: Input packet
             output_packet: Output packet to memoize
@@ -234,7 +234,7 @@ class SafeDirDataStore:
             FileLockError: If the lock cannot be acquired
             ValueError: If the entry already exists and overwrite is False
         """
-        output_dir = self._get_output_dir(store_name, content_hash, packet)
+        output_dir = self._get_output_dir(function_name, content_hash, packet)
         info_path = output_dir / "_info.json"
         lock_path = output_dir / "_lock"
         completion_marker = output_dir / "_complete"
@@ -247,7 +247,7 @@ class SafeDirDataStore:
             with file_lock(lock_path, shared=True, timeout=self.lock_timeout):
                 if completion_marker.exists() and not self.overwrite:
                     logger.info(f"Entry already exists for packet {packet}")
-                    return self.retrieve_memoized(store_name, content_hash, packet)
+                    return self.retrieve_memoized(function_name, content_hash, packet)
         except FileLockError:
             logger.warning("Could not acquire shared lock to check completion status")
             # Continue to try with exclusive lock
@@ -264,7 +264,7 @@ class SafeDirDataStore:
                 logger.info(
                     f"Entry already exists for packet {packet} (verified with exclusive lock)"
                 )
-                return self.retrieve_memoized(store_name, content_hash, packet)
+                return self.retrieve_memoized(function_name, content_hash, packet)
 
             # Check for partial results and clean up if necessary
             partial_marker = output_dir / "_partial"
@@ -320,7 +320,7 @@ class SafeDirDataStore:
                 # Retrieve the memoized packet to ensure consistency
                 # We don't need to acquire a new lock since we already have an exclusive lock
                 return self._retrieve_without_lock(
-                    store_name, content_hash, packet, output_dir
+                    function_name, content_hash, packet, output_dir
                 )
 
             finally:
@@ -329,7 +329,7 @@ class SafeDirDataStore:
                     partial_marker.unlink(missing_ok=True)
 
     def retrieve_memoized(
-        self, store_name: str, content_hash: str, packet: dict
+        self, function_name: str, content_hash: str, packet: dict
     ) -> Optional[dict]:
         """
         Retrieve a memoized output packet.
@@ -337,7 +337,7 @@ class SafeDirDataStore:
         Uses a shared lock to allow concurrent reads while preventing writes during reads.
 
         Args:
-            store_name: Name of the store
+            function_name: Name of the function
             content_hash: Hash of the function/operation
             packet: Input packet
 
@@ -345,21 +345,21 @@ class SafeDirDataStore:
             The memoized output packet with paths adjusted to absolute paths,
             or None if the packet is not found
         """
-        output_dir = self._get_output_dir(store_name, content_hash, packet)
+        output_dir = self._get_output_dir(function_name, content_hash, packet)
         lock_path = output_dir / "_lock"
 
         # Use a shared lock for reading to allow concurrent reads
         try:
             with file_lock(lock_path, shared=True, timeout=self.lock_timeout):
                 return self._retrieve_without_lock(
-                    store_name, content_hash, packet, output_dir
+                    function_name, content_hash, packet, output_dir
                 )
         except FileLockError:
             logger.warning(f"Could not acquire shared lock to read {output_dir}")
             return None
 
     def _retrieve_without_lock(
-        self, store_name: str, content_hash: str, packet: dict, output_dir: Path
+        self, function_name: str, content_hash: str, packet: dict, output_dir: Path
     ) -> Optional[dict]:
         """
         Helper to retrieve a memoized packet without acquiring a lock.
@@ -367,7 +367,7 @@ class SafeDirDataStore:
         This is used internally when we already have a lock.
 
         Args:
-            store_name: Name of the store
+            function_name: Name of the function
             content_hash: Hash of the function/operation
             packet: Input packet
             output_dir: Directory containing the output
@@ -412,16 +412,16 @@ class SafeDirDataStore:
             logger.error(f"Error loading memoized output for packet {packet}: {e}")
             return None
 
-    def clear_store(self, store_name: str) -> None:
+    def clear_store(self, function_name: str) -> None:
         """
         Clear a specific store.
 
         Args:
-            store_name: Name of the store to clear
+            function_name: Name of the function to clear
         """
         import shutil
 
-        store_path = self.store_dir / store_name
+        store_path = self.store_dir / function_name
         if store_path.exists():
             shutil.rmtree(store_path)
 
@@ -433,24 +433,24 @@ class SafeDirDataStore:
             shutil.rmtree(self.store_dir)
             self.store_dir.mkdir(parents=True, exist_ok=True)
 
-    def clean_stale_data(self, store_name=None, max_age=86400):
+    def clean_stale_data(self, function_name=None, max_age=86400):
         """
         Clean up stale data in the store.
 
         Args:
-            store_name: Optional name of the store to clean, or None for all stores
+            function_name: Optional name of the function to clean, or None for all functions
             max_age: Maximum age of data in seconds before it's considered stale
         """
         import shutil
 
-        if store_name is None:
+        if function_name is None:
             # Clean all stores
             for store_dir in self.store_dir.iterdir():
                 if store_dir.is_dir():
                     self.clean_stale_data(store_dir.name, max_age)
             return
 
-        store_path = self.store_dir / store_name
+        store_path = self.store_dir / function_name
         if not store_path.is_dir():
             return
 

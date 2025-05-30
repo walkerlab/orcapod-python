@@ -447,7 +447,7 @@ def test_dir_data_store_clear_all_stores(temp_dir, sample_files):
     assert (store_dir / "store2").exists()
 
     # Clear all stores with force and non-interactive mode
-    store.clear_all_stores(interactive=False, store_name=str(store_dir), force=True)
+    store.clear_all_stores(interactive=False, function_name=str(store_dir), force=True)
 
     # Check that the entire store directory was deleted
     assert not store_dir.exists()
