@@ -10,18 +10,23 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+
 # Mock Redis exceptions
 class MockRedisError(Exception):
     """Mock for redis.RedisError"""
+
     pass
+
 
 class MockConnectionError(Exception):
     """Mock for redis.ConnectionError"""
+
     pass
+
 
 class MockRedis:
     """Mock Redis client for testing."""
-    
+
     def __init__(self, fail_connection=False, fail_operations=False):
         self.data = {}
         self.fail_connection = fail_connection
@@ -66,47 +71,53 @@ class MockRedis:
 
 def demonstrate_redis_mocking():
     """Demonstrate that RedisCacher works with mocked Redis."""
-    
+
     # Patch the Redis availability and exceptions
-    with patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True), \
-         patch("orcabridge.hashing.string_cachers.redis.RedisError", MockRedisError), \
-         patch("orcabridge.hashing.string_cachers.redis.ConnectionError", MockConnectionError):
-        
+    with (
+        patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True),
+        patch("orcabridge.hashing.string_cachers.redis.RedisError", MockRedisError),
+        patch(
+            "orcabridge.hashing.string_cachers.redis.ConnectionError",
+            MockConnectionError,
+        ),
+    ):
         from orcabridge.hashing.string_cachers import RedisCacher
-        
+
         # Create a mock Redis instance
         mock_redis = MockRedis()
-        
+
         print("🎭 Creating RedisCacher with mocked Redis...")
         cacher = RedisCacher(connection=mock_redis, key_prefix="demo:")
-        
+
         print("✅ RedisCacher created successfully (no real Redis server needed!)")
         print(f"🔗 Connection status: {cacher.is_connected()}")
-        
+
         # Test basic operations
         print("\n📝 Testing basic operations...")
         cacher.set_cached("test_key", "test_value")
         result = cacher.get_cached("test_key")
         print(f"   Set and retrieved: test_key -> {result}")
-        
+
         # Show the mock Redis data
         print(f"   Mock Redis data: {dict(mock_redis.data)}")
-        
+
         # Test failure simulation
         print("\n💥 Testing failure simulation...")
         mock_redis.fail_operations = True
         result = cacher.get_cached("test_key")
         print(f"   After simulated failure: {result}")
         print(f"🔗 Connection status after failure: {cacher.is_connected()}")
-        
+
         # Test recovery
         print("\n🔄 Testing connection recovery...")
         mock_redis.fail_operations = False
         success = cacher.reset_connection()
         print(f"   Reset successful: {success}")
         print(f"🔗 Connection status after reset: {cacher.is_connected()}")
-        
-        print("\n🎉 All operations completed successfully without requiring a Redis server!")
+
+        print(
+            "\n🎉 All operations completed successfully without requiring a Redis server!"
+        )
 
 
 if __name__ == "__main__":

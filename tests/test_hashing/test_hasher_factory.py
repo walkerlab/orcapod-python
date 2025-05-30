@@ -19,11 +19,11 @@ class TestHasherFactoryCreateFileHasher:
     def test_create_file_hasher_without_cacher(self):
         """Test creating a file hasher without string cacher (returns BasicFileHasher)."""
         hasher = HasherFactory.create_file_hasher()
-        
+
         # Should return BasicFileHasher
         assert isinstance(hasher, BasicFileHasher)
         assert not isinstance(hasher, CachedFileHasher)
-        
+
         # Check default parameters
         assert hasher.algorithm == "sha256"
         assert hasher.buffer_size == 65536
@@ -32,11 +32,11 @@ class TestHasherFactoryCreateFileHasher:
         """Test creating a file hasher with string cacher (returns CachedFileHasher)."""
         cacher = InMemoryCacher()
         hasher = HasherFactory.create_file_hasher(string_cacher=cacher)
-        
+
         # Should return CachedFileHasher
         assert isinstance(hasher, CachedFileHasher)
         assert hasher.string_cacher is cacher
-        
+
         # The underlying file hasher should be BasicFileHasher with defaults
         assert isinstance(hasher.file_hasher, BasicFileHasher)
         assert hasher.file_hasher.algorithm == "sha256"
@@ -52,7 +52,9 @@ class TestHasherFactoryCreateFileHasher:
 
         # With cacher
         cacher = InMemoryCacher()
-        hasher = HasherFactory.create_file_hasher(string_cacher=cacher, algorithm="sha512")
+        hasher = HasherFactory.create_file_hasher(
+            string_cacher=cacher, algorithm="sha512"
+        )
         assert isinstance(hasher, CachedFileHasher)
         assert hasher.file_hasher.algorithm == "sha512"
         assert hasher.file_hasher.buffer_size == 65536
@@ -67,7 +69,9 @@ class TestHasherFactoryCreateFileHasher:
 
         # With cacher
         cacher = InMemoryCacher()
-        hasher = HasherFactory.create_file_hasher(string_cacher=cacher, buffer_size=8192)
+        hasher = HasherFactory.create_file_hasher(
+            string_cacher=cacher, buffer_size=8192
+        )
         assert isinstance(hasher, CachedFileHasher)
         assert hasher.file_hasher.algorithm == "sha256"
         assert hasher.file_hasher.buffer_size == 8192
@@ -76,11 +80,9 @@ class TestHasherFactoryCreateFileHasher:
         """Test creating file hasher with all custom parameters."""
         cacher = InMemoryCacher(max_size=500)
         hasher = HasherFactory.create_file_hasher(
-            string_cacher=cacher,
-            algorithm="blake2b", 
-            buffer_size=16384
+            string_cacher=cacher, algorithm="blake2b", buffer_size=16384
         )
-        
+
         assert isinstance(hasher, CachedFileHasher)
         assert hasher.string_cacher is cacher
         assert hasher.file_hasher.algorithm == "blake2b"
@@ -100,28 +102,28 @@ class TestHasherFactoryCreateFileHasher:
             hasher2 = HasherFactory.create_file_hasher(string_cacher=file_cacher)
             assert isinstance(hasher2, CachedFileHasher)
             assert hasher2.string_cacher is file_cacher
-            
+
             # Clean up
             Path(tmp_file.name).unlink(missing_ok=True)
 
     def test_create_file_hasher_functional_without_cache(self):
         """Test that created file hasher actually works for hashing files."""
         hasher = HasherFactory.create_file_hasher(algorithm="sha256", buffer_size=1024)
-        
+
         # Create a temporary file to hash
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp_file:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as tmp_file:
             tmp_file.write("Hello, World!")
             tmp_path = Path(tmp_file.name)
-        
+
         try:
             # Hash the file
             hash_result = hasher.hash_file(tmp_path)
-            
+
             # Verify it's a valid hash string
             assert isinstance(hash_result, str)
             assert len(hash_result) == 64  # SHA256 hex length
-            assert all(c in '0123456789abcdef' for c in hash_result)
-            
+            assert all(c in "0123456789abcdef" for c in hash_result)
+
             # Hash the same file again - should get same result
             hash_result2 = hasher.hash_file(tmp_path)
             assert hash_result == hash_result2
@@ -131,24 +133,26 @@ class TestHasherFactoryCreateFileHasher:
     def test_create_file_hasher_functional_with_cache(self):
         """Test that created cached file hasher works and caches results."""
         cacher = InMemoryCacher()
-        hasher = HasherFactory.create_file_hasher(string_cacher=cacher, algorithm="sha256")
-        
+        hasher = HasherFactory.create_file_hasher(
+            string_cacher=cacher, algorithm="sha256"
+        )
+
         # Create a temporary file to hash
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp_file:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False) as tmp_file:
             tmp_file.write("Test content for caching")
             tmp_path = Path(tmp_file.name)
-        
+
         try:
             # First hash - should compute and cache
             hash_result1 = hasher.hash_file(tmp_path)
             assert isinstance(hash_result1, str)
             assert len(hash_result1) == 64
-            
+
             # Verify it was cached
             cache_key = f"file:{tmp_path}"
             cached_value = cacher.get_cached(cache_key)
             assert cached_value == hash_result1
-            
+
             # Second hash - should return cached value
             hash_result2 = hasher.hash_file(tmp_path)
             assert hash_result2 == hash_result1
@@ -158,11 +162,9 @@ class TestHasherFactoryCreateFileHasher:
     def test_create_file_hasher_none_cacher_explicit(self):
         """Test explicitly passing None for string_cacher."""
         hasher = HasherFactory.create_file_hasher(
-            string_cacher=None,
-            algorithm="sha1",
-            buffer_size=4096
+            string_cacher=None, algorithm="sha1", buffer_size=4096
         )
-        
+
         assert isinstance(hasher, BasicFileHasher)
         assert not isinstance(hasher, CachedFileHasher)
         assert hasher.algorithm == "sha1"
@@ -173,11 +175,11 @@ class TestHasherFactoryCreateFileHasher:
         # Very small buffer size
         hasher1 = HasherFactory.create_file_hasher(buffer_size=1)
         assert hasher1.buffer_size == 1
-        
+
         # Large buffer size
-        hasher2 = HasherFactory.create_file_hasher(buffer_size=1024*1024)
-        assert hasher2.buffer_size == 1024*1024
-        
+        hasher2 = HasherFactory.create_file_hasher(buffer_size=1024 * 1024)
+        assert hasher2.buffer_size == 1024 * 1024
+
         # Different algorithms
         for algorithm in ["md5", "sha1", "sha224", "sha256", "sha384", "sha512"]:
             hasher = HasherFactory.create_file_hasher(algorithm=algorithm)
@@ -186,10 +188,14 @@ class TestHasherFactoryCreateFileHasher:
     def test_create_file_hasher_cache_independence(self):
         """Test that different cached hashers with same cacher are independent."""
         cacher = InMemoryCacher()
-        
-        hasher1 = HasherFactory.create_file_hasher(string_cacher=cacher, algorithm="sha256")
-        hasher2 = HasherFactory.create_file_hasher(string_cacher=cacher, algorithm="md5")
-        
+
+        hasher1 = HasherFactory.create_file_hasher(
+            string_cacher=cacher, algorithm="sha256"
+        )
+        hasher2 = HasherFactory.create_file_hasher(
+            string_cacher=cacher, algorithm="md5"
+        )
+
         # Both should use the same cacher but be different instances
         assert hasher1.string_cacher is cacher
         assert hasher2.string_cacher is cacher
