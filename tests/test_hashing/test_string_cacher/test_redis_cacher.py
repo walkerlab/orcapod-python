@@ -4,6 +4,15 @@ import pytest
 from unittest.mock import Mock, MagicMock, patch
 from orcabridge.hashing.string_cachers import RedisCacher
 
+# Mock Redis exceptions
+class MockRedisError(Exception):
+    """Mock for redis.RedisError"""
+    pass
+
+class MockConnectionError(Exception):
+    """Mock for redis.ConnectionError"""
+    pass
+
 
 class MockRedis:
     """Mock Redis client for testing."""
@@ -17,23 +26,23 @@ class MockRedis:
     def ping(self):
         self.ping_called = True
         if self.fail_connection:
-            raise Exception("Connection failed")
+            raise MockConnectionError("Connection failed")
         return True
 
     def set(self, key, value, ex=None):
         if self.fail_operations:
-            raise Exception("Operation failed")
+            raise MockRedisError("Operation failed")
         self.data[key] = value
         return True
 
     def get(self, key):
         if self.fail_operations:
-            raise Exception("Operation failed")
+            raise MockRedisError("Operation failed")
         return self.data.get(key)
 
     def delete(self, *keys):
         if self.fail_operations:
-            raise Exception("Operation failed")
+            raise MockRedisError("Operation failed")
         deleted = 0
         for key in keys:
             if key in self.data:
@@ -43,7 +52,7 @@ class MockRedis:
 
     def keys(self, pattern):
         if self.fail_operations:
-            raise Exception("Operation failed")
+            raise MockRedisError("Operation failed")
         if pattern.endswith("*"):
             prefix = pattern[:-1]
             return [key for key in self.data.keys() if key.startswith(prefix)]
@@ -53,7 +62,9 @@ class MockRedis:
 class TestRedisCacher:
     """Test cases for RedisCacher with mocked Redis."""
 
-    @patch("orcabridge.hashing.implementations.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.redis.RedisError", MockRedisError)
+    @patch("orcabridge.hashing.string_cachers.redis.ConnectionError", MockConnectionError)
     def test_basic_operations(self):
         """Test basic get/set/clear operations."""
         mock_redis = MockRedis()
@@ -80,7 +91,7 @@ class TestRedisCacher:
         assert cacher.get_cached("key1") is None
         assert cacher.get_cached("key2") is None
 
-    @patch("orcabridge.hashing.implementations.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True)
     def test_key_prefixing(self):
         """Test that keys are properly prefixed."""
         mock_redis = MockRedis()
@@ -95,7 +106,7 @@ class TestRedisCacher:
         # But retrieval should work without prefix
         assert cacher.get_cached("key1") == "value1"
 
-    @patch("orcabridge.hashing.implementations.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True)
     def test_connection_initialization_success(self):
         """Test successful connection initialization."""
         mock_redis = MockRedis()
@@ -110,7 +121,9 @@ class TestRedisCacher:
         assert mock_redis.ping_called
         assert cacher.is_connected()
 
-    @patch("orcabridge.hashing.implementations.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.redis.RedisError", MockRedisError)
+    @patch("orcabridge.hashing.string_cachers.redis.ConnectionError", MockConnectionError)
     def test_connection_initialization_failure(self):
         """Test connection initialization failure."""
         mock_redis = MockRedis(fail_connection=True)
@@ -118,8 +131,8 @@ class TestRedisCacher:
         with pytest.raises(RuntimeError, match="Redis connection test failed"):
             RedisCacher(connection=mock_redis, key_prefix="test:")
 
-    @patch("orcabridge.hashing.implementations.REDIS_AVAILABLE", True)
-    @patch("orcabridge.hashing.implementations.redis.Redis")
+    @patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.redis.Redis")
     def test_new_connection_creation(self, mock_redis_class):
         """Test creation of new Redis connection when none provided."""
         mock_instance = MockRedis()
@@ -140,7 +153,9 @@ class TestRedisCacher:
 
         assert cacher.is_connected()
 
-    @patch("orcabridge.hashing.implementations.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.redis.RedisError", MockRedisError)
+    @patch("orcabridge.hashing.string_cachers.redis.ConnectionError", MockConnectionError)
     def test_graceful_failure_on_operations(self):
         """Test graceful failure when Redis operations fail during use."""
         mock_redis = MockRedis()
@@ -162,7 +177,9 @@ class TestRedisCacher:
             mock_log.assert_called_once()
             assert "Redis get failed" in str(mock_log.call_args)
 
-    @patch("orcabridge.hashing.implementations.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.redis.RedisError", MockRedisError)
+    @patch("orcabridge.hashing.string_cachers.redis.ConnectionError", MockConnectionError)
     def test_set_failure_handling(self):
         """Test handling of set operation failures."""
         mock_redis = MockRedis()
@@ -177,7 +194,9 @@ class TestRedisCacher:
             assert "Redis set failed" in str(mock_log.call_args)
             assert not cacher.is_connected()
 
-    @patch("orcabridge.hashing.implementations.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.redis.RedisError", MockRedisError)
+    @patch("orcabridge.hashing.string_cachers.redis.ConnectionError", MockConnectionError)
     def test_clear_cache_failure_handling(self):
         """Test handling of clear cache operation failures."""
         mock_redis = MockRedis()
@@ -195,7 +214,7 @@ class TestRedisCacher:
             assert "Redis clear failed" in str(mock_log.call_args)
             assert not cacher.is_connected()
 
-    @patch("orcabridge.hashing.implementations.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True)
     def test_clear_cache_with_pattern_matching(self):
         """Test that clear_cache only removes keys with the correct prefix."""
         mock_redis = MockRedis()
@@ -213,7 +232,9 @@ class TestRedisCacher:
         assert "test:key2" not in mock_redis.data
         assert "other:key1" in mock_redis.data  # Should remain
 
-    @patch("orcabridge.hashing.implementations.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.redis.RedisError", MockRedisError)
+    @patch("orcabridge.hashing.string_cachers.redis.ConnectionError", MockConnectionError)
     def test_connection_reset(self):
         """Test connection reset functionality."""
         mock_redis = MockRedis()
@@ -231,10 +252,12 @@ class TestRedisCacher:
             success = cacher.reset_connection()
             assert success
             assert cacher.is_connected()
-            mock_log.assert_called_once()
-            assert "Redis connection successfully reset" in str(mock_log.call_args)
+            # Check that the reset message was logged (it should be the last call)
+            mock_log.assert_called_with("Redis connection successfully reset")
 
-    @patch("orcabridge.hashing.implementations.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.redis.RedisError", MockRedisError)
+    @patch("orcabridge.hashing.string_cachers.redis.ConnectionError", MockConnectionError)
     def test_connection_reset_failure(self):
         """Test connection reset failure handling."""
         mock_redis = MockRedis()
@@ -251,10 +274,12 @@ class TestRedisCacher:
             success = cacher.reset_connection()
             assert not success
             assert not cacher.is_connected()
-            mock_log.assert_called_once()
-            assert "Failed to reset Redis connection" in str(mock_log.call_args)
+            # Check that the reset failure message was logged (should be the last call)
+            mock_log.assert_called_with("Failed to reset Redis connection: Redis connection test failed: Connection failed")
 
-    @patch("orcabridge.hashing.implementations.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.redis.RedisError", MockRedisError)
+    @patch("orcabridge.hashing.string_cachers.redis.ConnectionError", MockConnectionError)
     def test_error_logging_only_once(self):
         """Test that errors are only logged once per failure."""
         mock_redis = MockRedis()
@@ -272,7 +297,7 @@ class TestRedisCacher:
             # Should only log the first error
             assert mock_log.call_count == 1
 
-    @patch("orcabridge.hashing.implementations.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True)
     def test_default_key_prefix(self):
         """Test default key prefix behavior."""
         mock_redis = MockRedis()
@@ -287,21 +312,28 @@ class TestRedisCacher:
 
     def test_redis_not_available(self):
         """Test behavior when redis package is not available."""
-        with patch("orcabridge.hashing.implementations.REDIS_AVAILABLE", False):
+        with patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", False):
             with pytest.raises(ImportError, match="redis package is required"):
                 RedisCacher()
 
-    @patch("orcabridge.hashing.implementations.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.redis.RedisError", MockRedisError)
+    @patch("orcabridge.hashing.string_cachers.redis.ConnectionError", MockConnectionError)
     def test_connection_test_key_access_failure(self):
         """Test failure when connection test can't create/access test key."""
-        mock_redis = Mock()
-        mock_redis.ping.return_value = True  # Ping succeeds
-        mock_redis.get.return_value = "wrong_value"  # But key access fails
+        # Create a MockRedis that allows ping but fails key verification
+        class FailingKeyMockRedis(MockRedis):
+            def get(self, key):
+                if key.endswith("__connection_test__"):
+                    return "wrong_value"  # Return wrong value for test key
+                return super().get(key)
+        
+        mock_redis = FailingKeyMockRedis()
 
         with pytest.raises(RuntimeError, match="Redis connection test failed"):
             RedisCacher(connection=mock_redis, key_prefix="test:")
 
-    @patch("orcabridge.hashing.implementations.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True)
     def test_thread_safety(self):
         """Test thread safety of Redis operations."""
         import threading
@@ -359,7 +391,9 @@ class TestRedisCacher:
                 expected = f"thread{thread_id}_value{i}"
                 assert result == expected
 
-    @patch("orcabridge.hashing.implementations.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True)
+    @patch("orcabridge.hashing.string_cachers.redis.RedisError", MockRedisError)
+    @patch("orcabridge.hashing.string_cachers.redis.ConnectionError", MockConnectionError)
     def test_operations_after_connection_failure(self):
         """Test that operations return None/do nothing after connection failure."""
         mock_redis = MockRedis()
