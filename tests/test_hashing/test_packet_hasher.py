@@ -5,7 +5,6 @@
 import pytest
 
 from orcabridge.hashing.file_hashers import DefaultPacketHasher
-from orcabridge.types import Packet
 from orcabridge.hashing.types import PathSetHasher
 
 

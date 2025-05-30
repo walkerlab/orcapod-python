@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 """Tests for HasherFactory methods."""
 
-import pytest
 import tempfile
 from pathlib import Path
 

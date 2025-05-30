@@ -324,7 +324,7 @@ def hash_to_hex(obj: Any, char_count: int | None = 32) -> str:
 
     # Return the requested number of characters
     if char_count is not None:
-        print("Using char_count ", char_count)
+        logger.debug("Using char_count ", char_count)
         return hash_hex[:char_count]
     return hash_hex
 

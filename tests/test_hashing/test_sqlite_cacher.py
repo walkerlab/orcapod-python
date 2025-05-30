@@ -1,6 +1,5 @@
 """Tests for SQLiteCacher."""
 
-import pytest
 import sqlite3
 import tempfile
 import threading
