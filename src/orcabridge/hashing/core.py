@@ -324,7 +324,7 @@ def hash_to_hex(obj: Any, char_count: int | None = 32) -> str:
 
     # Return the requested number of characters
     if char_count is not None:
-        logger.debug("Using char_count ", char_count)
+        logger.debug(f"Using char_count: {char_count}")
         return hash_hex[:char_count]
     return hash_hex
 
@@ -875,7 +875,7 @@ def get_function_components(
             source = inspect.cleandoc(source)
 
         # Process source code components
-        if include_declaration:
+        if not include_declaration:
             # Remove function declaration line
             lines = source.split("\n")
             for i, line in enumerate(lines):
@@ -885,7 +885,7 @@ def get_function_components(
             source = "\n".join(lines)
 
         # Extract and handle docstring separately if needed
-        if include_docstring and func.__doc__:
+        if not include_docstring and func.__doc__:
             # This approach assumes the docstring is properly indented
             # For multi-line docstrings, we need more sophisticated parsing
             doc_str = inspect.getdoc(func)
@@ -900,7 +900,7 @@ def get_function_components(
             source = source.replace(doc_pattern, "")
 
         # Handle comments (this is more complex and may need a proper parser)
-        if include_comments:
+        if not include_comments:
             # This is a simplified approach - would need a proper parser for robust handling
             lines = source.split("\n")
             for i, line in enumerate(lines):
