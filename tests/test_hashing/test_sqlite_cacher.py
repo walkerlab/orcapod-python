@@ -54,7 +54,7 @@ def test_database_initialization():
 
             assert "key TEXT PRIMARY KEY" in schema
             assert "value TEXT NOT NULL" in schema
-            assert "last_accessed TIMESTAMP" in schema
+            assert "last_accessed REAL" in schema
 
             # Check that index exists
             cursor = conn.execute("""
