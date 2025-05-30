@@ -1,7 +1,8 @@
+from abc import abstractmethod
 import functools
 import logging
 import warnings
-from collections.abc import Collection, Iterator
+from collections.abc import Callable, Collection, Iterator
 from typing import (
     Any,
     Literal,
@@ -27,7 +28,7 @@ def function_pod(
     skip_memoization: bool = False,
     error_handling: Literal["raise", "ignore", "warn"] = "raise",
     **kwargs,
-):
+) -> Callable[..., "FunctionPod"]:
     """
     Decorator that wraps a function in a FunctionPod instance.
 
@@ -40,7 +41,7 @@ def function_pod(
         FunctionPod instance wrapping the decorated function
     """
 
-    def decorator(func):
+    def decorator(func) -> FunctionPod:
         # Create a FunctionPod instance with the function and parameters
         pod = FunctionPod(
             function=func,
@@ -65,7 +66,7 @@ def function_pod(
 
 class Pod(Operation):
     """
-    A base class for all pods. A pod can be seen as a special type of operation that
+    An (abstract) base class for all pods. A pod can be seen as a special type of operation that
     only operates on the packet content without reading tags. Consequently, no operation
     of Pod can dependent on the tags of the packets. This is a design choice to ensure that
     the pods act as pure functions which is a necessary condition to guarantee reproducibility.
@@ -90,15 +91,18 @@ class Pod(Operation):
         stream = self.process_stream(*streams)
         return super().__call__(*stream, **kwargs)
 
-    def forward(self, *streams: SyncStream) -> SyncStream: ...
-
-    def process(self, packet: Packet) -> Packet: ...
-
 
 # TODO: reimplement the memoization as dependency injection
 
 
 class FunctionPod(Pod):
+    """
+    A pod that wraps a function and allows it to be used as an operation in a stream.
+    This pod can be used to apply a function to the packets in a stream, with optional memoization
+    and caching of results. It can also handle multiple output keys and error handling.
+    The function should accept keyword arguments that correspond to the keys in the packets.
+    The output of the function should be a path or a collection of paths that correspond to the output keys."""
+
     def __init__(
         self,
         function: PodFunction,

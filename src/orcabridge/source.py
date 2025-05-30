@@ -9,10 +9,6 @@ from orcabridge.stream import SyncStream, SyncStreamFromGenerator
 from orcabridge.types import Packet, Tag
 
 
-class LoadFromSource(Source):
-    pass
-
-
 class GlobSource(Source):
     """
     A stream source that sources files from a directory matching a glob pattern.
