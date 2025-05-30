@@ -7,13 +7,14 @@ This module contains tests to verify the correct behavior of hash_pathset and ha
 functions with various input types and configurations.
 """
 
+import logging
 import os
-import pytest
 import tempfile
 from pathlib import Path
-import logging
 
-from orcabridge.hashing import hash_pathset, hash_packet, hash_file
+import pytest
+
+from orcabridge.hashing import hash_file, hash_packet, hash_pathset
 
 logger = logging.getLogger(__name__)
 

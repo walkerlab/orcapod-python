@@ -2,10 +2,11 @@
 # filepath: /home/eywalker/workspace/orcabridge/tests/test_store/conftest.py
 """Common test fixtures for store tests."""
 
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
+
+import pytest
 
 
 @pytest.fixture

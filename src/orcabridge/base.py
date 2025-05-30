@@ -1,8 +1,9 @@
-from orcabridge.hashing import HashableMixin
-from orcabridge.types import Tag, Packet
-from typing import Any
 import threading
-from collections.abc import Collection, Callable, Iterator
+from collections.abc import Callable, Collection, Iterator
+from typing import Any
+
+from orcabridge.hashing import HashableMixin
+from orcabridge.types import Packet, Tag
 
 
 class Operation(HashableMixin):

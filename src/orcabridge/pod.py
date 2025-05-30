@@ -1,17 +1,18 @@
-from typing import (
-    Literal,
-    Any,
-)
+import functools
+import logging
+import warnings
 from collections.abc import Collection, Iterator
-from orcabridge.types import Tag, Packet, PodFunction, PathSet
-from orcabridge.hashing import hash_function, get_function_signature
+from typing import (
+    Any,
+    Literal,
+)
+
 from orcabridge.base import Operation
-from orcabridge.stream import SyncStream, SyncStreamFromGenerator
+from orcabridge.hashing import get_function_signature, hash_function
 from orcabridge.mapper import Join
 from orcabridge.store import DataStore, NoOpDataStore
-import functools
-import warnings
-import logging
+from orcabridge.stream import SyncStream, SyncStreamFromGenerator
+from orcabridge.types import Packet, PathSet, PodFunction, Tag
 
 logger = logging.getLogger(__name__)
 

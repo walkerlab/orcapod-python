@@ -8,8 +8,9 @@ hash values for the sample files created by generate_file_hashes.py.
 """
 
 import json
-import pytest
 from pathlib import Path
+
+import pytest
 
 # Add the parent directory to the path to import orcabridge
 from orcabridge.hashing import hash_file

@@ -1,7 +1,8 @@
-from typing import Protocol
-from collections.abc import Collection, Mapping
-from typing_extensions import TypeAlias
 import os
+from collections.abc import Collection, Mapping
+from typing import Protocol
+
+from typing_extensions import TypeAlias
 
 # Convenience alias for anything pathlike
 PathLike = str | os.PathLike

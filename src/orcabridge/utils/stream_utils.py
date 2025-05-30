@@ -2,9 +2,10 @@
 Utility functions for handling tags
 """
 
-from typing import TypeVar
 from collections.abc import Collection, Mapping
-from orcabridge.types import Tag, Packet
+from typing import TypeVar
+
+from orcabridge.types import Packet, Tag
 
 K = TypeVar("K")
 V = TypeVar("V")

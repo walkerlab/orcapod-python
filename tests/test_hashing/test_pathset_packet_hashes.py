@@ -8,11 +8,12 @@ hash values for the sample pathsets and packets created by generate_pathset_pack
 """
 
 import json
-import pytest
 from pathlib import Path
 
+import pytest
+
 # Add the parent directory to the path to import orcabridge
-from orcabridge.hashing import hash_pathset, hash_packet
+from orcabridge.hashing import hash_packet, hash_pathset
 
 
 def load_pathset_hash_lut():

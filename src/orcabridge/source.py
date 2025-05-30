@@ -1,11 +1,12 @@
-from orcabridge.types import Tag, Packet
-from orcabridge.hashing import hash_function
-from orcabridge.base import Source
-from orcabridge.stream import SyncStream, SyncStreamFromGenerator
-from typing import Any, Literal
+from collections.abc import Callable, Collection, Iterator
 from os import PathLike
 from pathlib import Path
-from collections.abc import Collection, Iterator, Callable
+from typing import Any, Literal
+
+from orcabridge.base import Source
+from orcabridge.hashing import hash_function
+from orcabridge.stream import SyncStream, SyncStreamFromGenerator
+from orcabridge.types import Packet, Tag
 
 
 class LoadFromSource(Source):

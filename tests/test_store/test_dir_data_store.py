@@ -2,18 +2,19 @@
 # filepath: /home/eywalker/workspace/orcabridge/tests/test_store/test_dir_data_store.py
 """Tests for DirDataStore."""
 
-import pytest
 import json
 import shutil
 from pathlib import Path
 
-from orcabridge.store.core import DirDataStore
+import pytest
+
 from orcabridge.hashing.types import (
-    FileHasher,
-    PathSetHasher,
-    PacketHasher,
     CompositeFileHasher,
+    FileHasher,
+    PacketHasher,
+    PathSetHasher,
 )
+from orcabridge.store.core import DirDataStore
 
 
 class MockFileHasher(FileHasher):

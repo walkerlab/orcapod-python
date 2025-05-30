@@ -1,8 +1,9 @@
-from .stream import QueryStream
-from .operation import QueryOperation
-from ..mapper import Mapper, Join, MapPackets, MapTags
-from typing import Optional
 import warnings
+from typing import Optional
+
+from ..mapper import Join, MapPackets, Mapper, MapTags
+from .operation import QueryOperation
+from .stream import QueryStream
 
 
 class QueryMapper(QueryOperation, Mapper):

@@ -3,11 +3,12 @@
 """Tests for CachedFileHasher implementation."""
 
 import json
-import pytest
-from pathlib import Path
-import tempfile
 import os
+import tempfile
+from pathlib import Path
 from unittest.mock import MagicMock
+
+import pytest
 
 from orcabridge.hashing.file_hashers import (
     BasicFileHasher,

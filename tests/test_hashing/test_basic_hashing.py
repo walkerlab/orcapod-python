@@ -1,8 +1,8 @@
 from orcabridge.hashing.core import (
+    HashableMixin,
     hash_to_hex,
     hash_to_int,
     hash_to_uuid,
-    HashableMixin,
     stable_hash,
 )
 

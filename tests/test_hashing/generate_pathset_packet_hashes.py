@@ -13,7 +13,7 @@ from pathlib import Path
 
 # Add the parent directory to the path to import orcabridge
 sys.path.append(str(Path(__file__).parent.parent.parent))
-from orcabridge.hashing import hash_pathset, hash_packet
+from orcabridge.hashing import hash_packet, hash_pathset
 
 # Create directories if they don't exist
 HASH_SAMPLES_DIR = Path(__file__).parent / "hash_samples"

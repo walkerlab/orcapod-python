@@ -3,6 +3,7 @@
 """Tests for NoOpDataStore."""
 
 import pytest
+
 from orcabridge.store.core import NoOpDataStore
 
 

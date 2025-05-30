@@ -2,12 +2,13 @@
 # filepath: /home/eywalker/workspace/orcabridge/tests/test_hashing/test_composite_hasher.py
 """Tests for the CompositeHasher implementation."""
 
-import pytest
 from unittest.mock import patch
 
-from orcabridge.hashing.file_hashers import CompositeHasher, BasicFileHasher
-from orcabridge.hashing.types import FileHasher, PathSetHasher, PacketHasher
+import pytest
+
 from orcabridge.hashing.core import hash_to_hex
+from orcabridge.hashing.file_hashers import BasicFileHasher, CompositeHasher
+from orcabridge.hashing.types import FileHasher, PacketHasher, PathSetHasher
 
 
 # Custom implementation of hash_file for tests that doesn't check for file existence
@@ -22,9 +23,9 @@ def mock_hash_pathset(
     pathset, algorithm="sha256", buffer_size=65536, char_count=32, file_hasher=None
 ):
     """Mock implementation of hash_pathset that doesn't check for file existence."""
+    from collections.abc import Collection
     from os import PathLike
     from pathlib import Path
-    from collections.abc import Collection
 
     # If file_hasher is None, we'll need to handle it differently
     if file_hasher is None:

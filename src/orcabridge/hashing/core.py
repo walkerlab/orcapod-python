@@ -6,30 +6,32 @@ A library for creating stable, content-based hashes that remain consistent acros
 suitable for arbitrarily nested data structures and custom objects via HashableMixin.
 """
 
-from functools import partial
 import hashlib
+import inspect
 import json
 import logging
-from uuid import UUID
+import zlib
+from functools import partial
+from os import PathLike
+from pathlib import Path
 from typing import (
     Any,
-    Dict,
-    Optional,
-    Union,
-    Collection,
-    Mapping,
-    TypeVar,
-    Set,
     Callable,
+    Collection,
+    Dict,
     Literal,
+    Mapping,
+    Optional,
+    Set,
+    TypeVar,
+    Union,
 )
-from pathlib import Path
-from os import PathLike
+from uuid import UUID
+
 import xxhash
-import zlib
-from orcabridge.types import PathSet, Packet
+
+from orcabridge.types import Packet, PathSet
 from orcabridge.utils.name import find_noncolliding_name
-import inspect
 
 # Configure logging with __name__ for proper hierarchy
 logger = logging.getLogger(__name__)

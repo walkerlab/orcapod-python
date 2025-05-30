@@ -11,8 +11,8 @@ import json
 import random
 import string
 import sys
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
 
 # Add the parent directory to the path to import orcabridge
 sys.path.append(str(Path(__file__).parent.parent.parent))

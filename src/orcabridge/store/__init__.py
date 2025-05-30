@@ -1,4 +1,4 @@
-from .core import DirDataStore, NoOpDataStore, DataStore
+from .core import DataStore, DirDataStore, NoOpDataStore
 from .safe_dir_data_store import SafeDirDataStore
 
 __all__ = [

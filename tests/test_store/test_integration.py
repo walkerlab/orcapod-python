@@ -2,17 +2,18 @@
 # filepath: /home/eywalker/workspace/orcabridge/tests/test_store/test_integration.py
 """Integration tests for the store module."""
 
-import pytest
 import os
 from pathlib import Path
 
-from orcabridge.store.core import DirDataStore, NoOpDataStore
+import pytest
+
 from orcabridge.hashing.file_hashers import (
     BasicFileHasher,
     CachedFileHasher,
     CompositeHasher,
 )
 from orcabridge.hashing.string_cachers import InMemoryCacher
+from orcabridge.store.core import DirDataStore, NoOpDataStore
 
 
 def test_integration_with_cached_file_hasher(temp_dir, sample_files):

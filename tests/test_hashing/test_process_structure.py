@@ -1,9 +1,9 @@
-from typing import Any
 import uuid
-from collections import namedtuple, OrderedDict
+from collections import OrderedDict, namedtuple
 from pathlib import Path
+from typing import Any
 
-from orcabridge.hashing.core import HashableMixin, process_structure, hash_to_hex
+from orcabridge.hashing.core import HashableMixin, hash_to_hex, process_structure
 
 
 # Define a simple HashableMixin class for testing

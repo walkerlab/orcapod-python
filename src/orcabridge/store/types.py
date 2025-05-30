@@ -1,5 +1,6 @@
-from orcabridge.types import Packet
 from typing import Protocol, runtime_checkable
+
+from orcabridge.types import Packet
 
 
 @runtime_checkable

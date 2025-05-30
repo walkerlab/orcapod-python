@@ -1,8 +1,9 @@
-from orcabridge.types import PathLike, PathSet, Packet
-from typing import Optional
-from orcabridge.hashing.core import hash_file, hash_pathset, hash_packet
-from orcabridge.hashing.types import FileHasher, StringCacher
 import threading
+from typing import Optional
+
+from orcabridge.hashing.core import hash_file, hash_packet, hash_pathset
+from orcabridge.hashing.types import FileHasher, StringCacher
+from orcabridge.types import Packet, PathLike, PathSet
 
 
 # Completely unnecessary to inherit from FileHasher, but this

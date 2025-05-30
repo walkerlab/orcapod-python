@@ -1,12 +1,11 @@
-from ..stream import SyncStream
 import copy
-
+import logging
+from typing import Any, Collection, Union
 
 from datajoint.expression import QueryExpression
 from datajoint.table import Table
-from typing import Collection, Any, Union
-import logging
 
+from ..stream import SyncStream
 
 logger = logging.getLogger(__name__)
 
@@ -57,10 +56,9 @@ class QueryStream(SyncStream):
         """
         Restrict the query stream by `other` and return a new query stream
         """
-        from .mapper import RestrictQuery
-
         # lazy load to avoid circular import
         from ..source import TableSource
+        from .mapper import RestrictQuery
 
         if isinstance(other, TableSource):
             other = other.table

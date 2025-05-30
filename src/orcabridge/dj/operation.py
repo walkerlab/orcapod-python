@@ -1,5 +1,5 @@
-from .stream import QueryStream
 from ..base import Operation
+from .stream import QueryStream
 
 
 class QueryOperation(Operation):

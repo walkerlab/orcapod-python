@@ -1,20 +1,21 @@
-from orcabridge.tracker import GraphTracker
-from datajoint import Schema
-from typing import Collection, Tuple, Optional, Any
+import sys
+from collections import defaultdict
 from types import ModuleType
-import networkx as nx
+from typing import Any, Collection, Optional, Tuple
 
+import networkx as nx
+from datajoint import Schema
 
 from orcabridge.base import Operation, Source
 from orcabridge.mapper import Mapper, Merge
 from orcabridge.pod import FunctionPod
-from .stream import QueryStream
-from .source import TableCachedSource, MergedQuerySource
+from orcabridge.tracker import GraphTracker
+
+from .mapper import convert_to_query_mapper
 from .operation import QueryOperation
 from .pod import TableCachedPod
-from .mapper import convert_to_query_mapper
-import sys
-from collections import defaultdict
+from .source import MergedQuerySource, TableCachedSource
+from .stream import QueryStream
 
 
 def convert_to_query_operation(

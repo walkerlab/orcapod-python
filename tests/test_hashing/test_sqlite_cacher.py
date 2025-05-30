@@ -5,7 +5,8 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from orcabridge.hashing.string_cachers import SQLiteCacher
 
 

@@ -6,10 +6,12 @@ the same inputs as recorded in the samples files. This helps ensure that
 the hashing implementation remains stable over time.
 """
 
-import os
 import json
-import pytest
+import os
 from pathlib import Path
+
+import pytest
+
 from orcabridge.hashing import hash_to_hex, hash_to_int, hash_to_uuid
 
 

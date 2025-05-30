@@ -1,15 +1,17 @@
-from orcabridge.base import SyncStream, Mapper
+from collections.abc import Callable, Collection, Iterator
+from itertools import chain
+
+from orcabridge.base import Mapper, SyncStream
+from orcabridge.hashing import function_content_hash, hash_function
 from orcabridge.stream import SyncStreamFromGenerator
 from orcabridge.utils.stream_utils import (
-    join_tags,
-    check_packet_compatibility,
-    batch_tag,
     batch_packet,
+    batch_tag,
+    check_packet_compatibility,
+    join_tags,
 )
-from orcabridge.hashing import hash_function, function_content_hash
-from .types import Tag, Packet
-from itertools import chain
-from collections.abc import Collection, Iterator, Callable
+
+from .types import Packet, Tag
 
 
 class Repeat(Mapper):

@@ -2,13 +2,14 @@
 # filepath: /home/eywalker/workspace/orcabridge/tests/test_store/test_transfer_data_store.py
 """Tests for TransferDataStore."""
 
-import pytest
 import json
 from pathlib import Path
 
+import pytest
+
+from orcabridge.hashing.types import PacketHasher
 from orcabridge.store.core import DirDataStore, NoOpDataStore
 from orcabridge.store.transfer import TransferDataStore
-from orcabridge.hashing.types import PacketHasher
 
 
 class MockPacketHasher(PacketHasher):

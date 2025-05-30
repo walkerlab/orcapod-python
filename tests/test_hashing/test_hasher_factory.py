@@ -9,7 +9,7 @@ from orcabridge.hashing.file_hashers import (
     CachedFileHasher,
     HasherFactory,
 )
-from orcabridge.hashing.string_cachers import InMemoryCacher, FileCacher
+from orcabridge.hashing.string_cachers import FileCacher, InMemoryCacher
 
 
 class TestHasherFactoryCreateFileHasher:

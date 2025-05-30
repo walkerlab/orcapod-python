@@ -1,15 +1,16 @@
-from .stream import QueryStream, TableStream, TableCachedStream
-from ..utils.name import pascal_to_snake, snake_to_pascal
-from .operation import QueryOperation
-from ..pod import Pod, FunctionPod
-from .source import QuerySource
-from .mapper import JoinQuery
+import logging
+from typing import Collection, Optional, Tuple
+
 import datajoint as dj
 from datajoint import Schema
-from typing import Collection, Tuple, Optional
 from datajoint.table import Table
 
-import logging
+from ..pod import FunctionPod, Pod
+from ..utils.name import pascal_to_snake, snake_to_pascal
+from .mapper import JoinQuery
+from .operation import QueryOperation
+from .source import QuerySource
+from .stream import QueryStream, TableCachedStream, TableStream
 
 logger = logging.getLogger(__name__)
 

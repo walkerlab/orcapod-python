@@ -9,12 +9,13 @@ they produce identical results.
 """
 
 import json
-import pytest
-from pathlib import Path
 import random
+from pathlib import Path
 
+import pytest
+
+from orcabridge.hashing.core import hash_file, hash_packet, hash_pathset
 from orcabridge.hashing.file_hashers import HasherFactory
-from orcabridge.hashing.core import hash_file, hash_pathset, hash_packet
 
 
 def load_hash_lut():

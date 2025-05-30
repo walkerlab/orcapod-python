@@ -1,16 +1,16 @@
 # safedirstore.py - SafeDirDataStore implementation
 
-import os
-import time
+import errno
+import fcntl
 import json
 import logging
-import fcntl
-import errno
-from pathlib import Path
+import os
+import time
 from contextlib import contextmanager
+from pathlib import Path
 from typing import Optional, Union
 
-from .file_ops import atomic_write, atomic_copy
+from .file_ops import atomic_copy, atomic_write
 
 logger = logging.getLogger(__name__)
 

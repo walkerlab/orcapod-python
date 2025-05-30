@@ -1,14 +1,14 @@
-from orcabridge.types import Packet
-from typing import Optional
+import json
+import logging
+import shutil
+from os import PathLike
 from pathlib import Path
-from orcabridge.store.types import DataStore
+
 from orcabridge.hashing import hash_packet
 from orcabridge.hashing.defaults import get_default_composite_hasher
 from orcabridge.hashing.types import PacketHasher
-import shutil
-import logging
-import json
-from os import PathLike
+from orcabridge.store.types import DataStore
+from orcabridge.types import Packet
 
 logger = logging.getLogger(__name__)
 

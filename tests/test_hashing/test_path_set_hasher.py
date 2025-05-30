@@ -2,15 +2,16 @@
 # filepath: /home/eywalker/workspace/orcabridge/tests/test_hashing/test_path_set_hasher.py
 """Tests for the PathSetHasher protocol implementation."""
 
-import pytest
 import os
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
+import orcabridge.hashing.core
 from orcabridge.hashing.file_hashers import DefaultPathsetHasher
 from orcabridge.hashing.types import FileHasher
-import orcabridge.hashing.core
 
 
 class MockFileHasher(FileHasher):
@@ -43,9 +44,10 @@ def mock_hash_pathset(
     pathset, algorithm="sha256", buffer_size=65536, char_count=32, file_hasher=None
 ):
     """Mock implementation of hash_pathset that doesn't check for file existence."""
-    from orcabridge.hashing.core import hash_to_hex
-    from os import PathLike
     from collections.abc import Collection
+    from os import PathLike
+
+    from orcabridge.hashing.core import hash_to_hex
     from orcabridge.utils.name import find_noncolliding_name
 
     # If file_hasher is None, we'll need to handle it differently

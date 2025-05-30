@@ -4,9 +4,10 @@
 # and revision of the codebase.
 
 import json
-from pathlib import Path
 from collections import OrderedDict
 from datetime import datetime
+from pathlib import Path
+
 from orcabridge.hashing import hash_to_hex, hash_to_int, hash_to_uuid
 
 # Create the hash_samples directory if it doesn't exist

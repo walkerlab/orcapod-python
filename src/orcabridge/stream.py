@@ -1,6 +1,7 @@
-from orcabridge.types import Tag, Packet
+from collections.abc import Callable, Collection, Iterator
+
 from orcabridge.base import SyncStream
-from collections.abc import Collection, Iterator, Callable
+from orcabridge.types import Packet, Tag
 
 
 class SyncStreamFromLists(SyncStream):

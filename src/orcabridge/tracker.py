@@ -1,6 +1,7 @@
-import networkx as nx
-from orcabridge.base import Operation, Invocation, Tracker
 import matplotlib.pyplot as plt
+import networkx as nx
+
+from orcabridge.base import Invocation, Operation, Tracker
 
 
 class GraphTracker(Tracker):

@@ -4,7 +4,7 @@ import random
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from orcabridge.hashing.types import StringCacher
 
