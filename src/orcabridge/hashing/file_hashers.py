@@ -8,7 +8,7 @@ from orcabridge.hashing.types import (
 
 
 # Completely unnecessary to inherit from FileHasher, but this
-# allows for type checking based on ininstance
+# allows for type checking based on isinstance
 class BasicFileHasher:
     """Basic implementation for file hashing."""
 
