@@ -4,4 +4,3 @@ from typing import Callable, Literal
 from uuid import UUID
 
 from .core import hash_to_hex, hash_to_int, hash_to_uuid, logger
-
