@@ -6,7 +6,7 @@ import pytest
 import os
 from pathlib import Path
 
-from orcabridge.store.dir_data_store import DirDataStore, NoOpDataStore
+from orcabridge.store.core import DirDataStore, NoOpDataStore
 from orcabridge.hashing.file_hashers import (
     BasicFileHasher,
     CachedFileHasher,

@@ -7,7 +7,7 @@ import json
 import shutil
 from pathlib import Path
 
-from orcabridge.store.dir_data_store import DirDataStore
+from orcabridge.store.core import DirDataStore
 from orcabridge.hashing.types import (
     FileHasher,
     PathSetHasher,
