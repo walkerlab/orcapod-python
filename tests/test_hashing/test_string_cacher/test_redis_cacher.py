@@ -1,7 +1,7 @@
 """Tests for RedisCacher using mocked Redis."""
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import patch
 from orcabridge.hashing.string_cachers import RedisCacher
 
 

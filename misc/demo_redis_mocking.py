@@ -6,8 +6,6 @@ This script shows how the mock Redis setup allows testing of Redis functionality
 without requiring an actual Redis installation or server.
 """
 
-import tempfile
-from pathlib import Path
 from unittest.mock import patch
 
 

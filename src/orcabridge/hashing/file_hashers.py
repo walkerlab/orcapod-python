@@ -1,5 +1,4 @@
 from orcabridge.types import PathLike, PathSet, Packet
-from typing import Any, Callable, Optional, Union
 from orcabridge.hashing.core import hash_file, hash_pathset, hash_packet
 from orcabridge.hashing.types import (
     FileHasher,

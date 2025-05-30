@@ -1,8 +1,7 @@
 """Hash strategy protocols for dependency injection."""
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable
-from typing import Protocol, Any, Literal, runtime_checkable
+from typing import Protocol, Any, runtime_checkable
 from uuid import UUID
 from orcabridge.types import Packet, PathLike, PathSet
 

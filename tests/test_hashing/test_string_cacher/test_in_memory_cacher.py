@@ -1,9 +1,7 @@
 """Tests for InMemoryCacher."""
 
-import pytest
 import threading
 import time
-from unittest.mock import patch
 from orcabridge.hashing.string_cachers import InMemoryCacher
 
 
