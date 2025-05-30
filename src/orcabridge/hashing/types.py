@@ -19,7 +19,7 @@ class Identifiable(Protocol):
                  Should be deterministic and include all identity-relevant data.
                  Return None to indicate no custom identity is available.
         """
-        ...
+        pass  # pragma: no cover
 
 
 class ObjectHasher(ABC):

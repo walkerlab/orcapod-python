@@ -1,6 +1,7 @@
 from orcabridge.types import Packet
 from typing import Optional
 from pathlib import Path
+from orcabridge.store.types import DataStore
 from orcabridge.hashing import hash_packet
 from orcabridge.hashing.defaults import get_default_composite_hasher
 from orcabridge.hashing.types import PacketHasher
@@ -12,25 +13,18 @@ from os import PathLike
 logger = logging.getLogger(__name__)
 
 
-class DataStore:
-    def memoize(
-        self,
-        store_name: str,
-        content_hash: str,
-        packet: Packet,
-        output_packet: Packet,
-    ) -> Packet: ...
-
-    def retrieve_memoized(
-        self, store_name: str, content_hash: str, packet: Packet
-    ) -> Optional[Packet]: ...
-
-
 class NoOpDataStore(DataStore):
     """
     An empty data store that does not store anything.
     This is useful for testing purposes or when no memoization is needed.
     """
+
+    def __init__(self):
+        """
+        Initialize the NoOpDataStore.
+        This does not require any parameters.
+        """
+        pass
 
     def memoize(
         self,
