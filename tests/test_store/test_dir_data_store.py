@@ -186,7 +186,7 @@ def test_dir_data_store_memoize_without_file_copy(temp_dir, sample_files):
     output_packet = {"output_file": sample_files["output"]["output1"]}
 
     # Memoize the packet and output
-    result = store.memoize(
+    result = store.memoize(  # noqa: F841
         "test_memoization", "content_hash_123", packet, output_packet
     )
 
@@ -230,7 +230,7 @@ def test_dir_data_store_memoize_without_filename_preservation(temp_dir, sample_f
     output_packet = {"output_file": sample_files["output"]["output1"]}
 
     # Memoize the packet and output
-    result = store.memoize(
+    result = store.memoize(  # noqa: F841
         "test_memoization", "content_hash_123", packet, output_packet
     )
 
@@ -311,7 +311,7 @@ def test_dir_data_store_retrieve_memoized_with_supplement(temp_dir, sample_files
 
     # Create the directory structure and info file, but no source file
     packet = {"input_file": sample_files["input"]["file1"]}
-    output_packet = {"output_file": sample_files["output"]["output1"]}
+    output_packet = {"output_file": sample_files["output"]["output1"]}  # noqa: F841
 
     storage_path = (
         store_dir / "test_memoization" / "content_hash_123" / "fixed_hash_packet"
