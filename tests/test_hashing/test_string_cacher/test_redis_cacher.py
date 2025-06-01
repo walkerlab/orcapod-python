@@ -1,5 +1,6 @@
 """Tests for RedisCacher using mocked Redis."""
 
+from typing import cast
 from unittest.mock import patch
 
 import pytest

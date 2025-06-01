@@ -51,7 +51,7 @@ def check_packet_compatibility(packet1: Packet, packet2: Packet) -> bool:
     return True
 
 
-def batch_tag(all_tags: Collection[Tag]) -> Tag:
+def batch_tags(all_tags: Collection[Tag]) -> Tag:
     """
     Batches the tags together. Grouping values under the same key into a list.
     """
@@ -87,3 +87,13 @@ def batch_packet(
                     raise KeyError(f"Packet {p} does not have key {k}")
             batch_packet[k].append(p[k])
     return batch_packet
+
+
+def fill_missing(dict, keys, default=None):
+    """
+    Fill the missing keys in the dictionary with the specified default value.
+    """
+    for key in keys:
+        if key not in dict:
+            dict[key] = default
+    return dict

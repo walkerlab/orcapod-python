@@ -22,6 +22,60 @@ else:
         redis = None
 
 
+class TransferCacher(StringCacher):
+    """
+    Takes two string cachers as source and destination. Everytime a cached value is retrieved from source,
+    the value is also set in the destination cacher.
+    This is useful for transferring cached values between different caching mechanisms.
+    """
+
+    def __init__(self, source: StringCacher, destination: StringCacher):
+        """
+        Initialize the TransferCacher.
+
+        Args:
+            source: The source cacher to read from
+            destination: The destination cacher to write to
+        """
+        self.source = source
+        self.destination = destination
+
+    def transfer(self, cache_key: str) -> str | None:
+        """
+        Transfer a cached value from source to destination.
+
+        Args:
+            cache_key: The key to transfer
+
+        Returns:
+            The cached value if found, otherwise None
+        """
+        # Try to get the cached value from the source
+        value = self.source.get_cached(cache_key)
+        if value is not None:
+            # Set it in the destination cacher
+            self.destination.set_cached(cache_key, value)
+        return value
+
+    def get_cached(self, cache_key: str) -> str | None:
+        # try to get the cached value from the destination first
+        value = self.destination.get_cached(cache_key)
+        if value is not None:
+            return value
+        # if not found in destination, get it from source
+        value = self.source.get_cached(cache_key)
+        if value is not None:
+            self.destination.set_cached(cache_key, value)
+        return value
+
+    def set_cached(self, cache_key: str, value: str) -> None:
+        # Only set the value in the destination cacher
+        self.destination.set_cached(cache_key, value)
+
+    def clear_cache(self) -> None:
+        self.destination.clear_cache()
+
+
 class InMemoryCacher(StringCacher):
     """Thread-safe in-memory LRU cache."""
 
@@ -628,7 +682,8 @@ class RedisCacher(StringCacher):
                 result = self.redis.get(self._get_prefixed_key(cache_key))
                 if result is None:
                     return None
-
+                logger.info(f"Retrieved cached value from Redis for key {cache_key}")
+                # Decode bytes to string if necessary
                 if isinstance(result, bytes):
                     return result.decode("utf-8")
 
@@ -648,6 +703,8 @@ class RedisCacher(StringCacher):
                 return
 
             try:
+                logger.info(f"Saving cached value to Redis for key {cache_key}")
+
                 self.redis.set(self._get_prefixed_key(cache_key), value)
 
             except (redis.RedisError, redis.ConnectionError) as e:
