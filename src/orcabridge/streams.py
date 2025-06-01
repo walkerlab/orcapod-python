@@ -12,13 +12,14 @@ class SyncStreamFromLists(SyncStream):
         paired: Collection[tuple[Tag, Packet]] | None = None,
         tag_keys: list[str] | None = None,
         packet_keys: list[str] | None = None,
+        strict: bool = True,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self.tag_keys = tag_keys
         self.packet_keys = packet_keys
         if tags is not None and packets is not None:
-            if len(tags) != len(packets):
+            if strict and len(tags) != len(packets):
                 raise ValueError(
                     "tags and packets must have the same length if both are provided"
                 )

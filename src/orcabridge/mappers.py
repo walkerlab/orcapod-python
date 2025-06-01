@@ -1,15 +1,19 @@
+from collections import defaultdict
 from collections.abc import Callable, Collection, Iterator
 from itertools import chain
+from typing import Any
+
 
 from orcabridge.base import Mapper, SyncStream
 from orcabridge.hashing import function_content_hash, hash_function
-from orcabridge.stream import SyncStreamFromGenerator
+from orcabridge.streams import SyncStreamFromGenerator
 from orcabridge.utils.stream_utils import (
     batch_packet,
-    batch_tag,
+    batch_tags,
     check_packet_compatibility,
     join_tags,
 )
+from orcabridge.utils.stream_utils import fill_missing
 
 from .types import Packet, Tag
 
@@ -22,6 +26,10 @@ class Repeat(Mapper):
 
     def __init__(self, repeat_count: int) -> None:
         super().__init__()
+        if not isinstance(repeat_count, int):
+            raise TypeError("repeat_count must be an integer")
+        if repeat_count < 0:
+            raise ValueError("repeat_count must be non-negative")
         self.repeat_count = repeat_count
 
     def identity_structure(self, *streams) -> tuple[str, int, set[SyncStream]]:
@@ -56,15 +64,18 @@ class Repeat(Mapper):
     def __repr__(self) -> str:
         return f"Repeat(count={self.repeat_count})"
 
+    def claims_unique_tags(
+        self, *streams: SyncStream, trigger_run: bool = True
+    ) -> bool:
+        if len(streams) != 1:
+            raise ValueError(
+                "Repeat operation only supports operating on a single input stream"
+            )
 
-def fill_missing(dict, keys, default=None):
-    """
-    Fill the missing keys in the dictionary with the specified default value.
-    """
-    for key in keys:
-        if key not in dict:
-            dict[key] = default
-    return dict
+        # Repeat's uniquness is true only if (1) input stream has unique tags and (2) repeat count is 1
+        return self.repeat_count == 1 and streams[0].claims_unique_tags(
+            trigger_run=trigger_run
+        )
 
 
 class Merge(Mapper):
@@ -107,6 +118,32 @@ class Merge(Mapper):
 
     def __repr__(self) -> str:
         return "Merge()"
+
+    def claims_unique_tags(
+        self, *streams: SyncStream, trigger_run: bool = True
+    ) -> bool:
+        """
+        Merge operation can only claim unique tags if all input streams have unique tags AND
+        the tag keys are not identical across all streams.
+        """
+        if len(streams) < 2:
+            raise ValueError("Merge operation requires at least two streams")
+        # Check if all streams have unique tags
+        unique_tags = all(
+            stream.claims_unique_tags(trigger_run=trigger_run) for stream in streams
+        )
+        if not unique_tags:
+            return False
+        # check that all streams' tag keys are not identical
+        tag_key_pool = set()
+        for stream in streams:
+            tag_keys, packet_keys = stream.keys()
+            # TODO: re-evaluate the implication of having empty tag keys in uniqueness guarantee
+            if tag_keys is None or set(tag_keys) in tag_key_pool:
+                return False
+            tag_key_pool.add(frozenset(tag_keys))
+
+        return True
 
 
 class Join(Mapper):
@@ -501,7 +538,7 @@ class Batch(Mapper):
         super().__init__()
         self.batch_size = batch_size
         if tag_processor is None:
-            tag_processor = lambda tags: batch_tag(tags)  # noqa: E731
+            tag_processor = batch_tags  # noqa: E731
 
         self.tag_processor = tag_processor
         self.drop_last = drop_last
@@ -552,6 +589,74 @@ class Batch(Mapper):
             ),
             self.drop_last,
         ) + tuple(streams)
+
+
+class GroupBy(Mapper):
+    def __init__(
+        self,
+        group_keys: Collection[str] | None = None,
+        reduce_keys: bool = False,
+        selection_function: Callable[[Collection[tuple[Tag, Packet]]], Collection[bool]]
+        | None = None,
+    ) -> None:
+        super().__init__()
+        self.group_keys = group_keys
+        self.reduce_keys = reduce_keys
+        self.selection_function = selection_function
+
+    def identity_structure(self, *streams: SyncStream) -> Any:
+        struct = (self.__class__.__name__, self.group_keys, self.reduce_keys)
+        if self.selection_function is not None:
+            struct += (hash_function(self.selection_function),)
+        return struct + tuple(streams)
+
+    def forward(self, *streams: SyncStream) -> SyncStream:
+        if len(streams) != 1:
+            raise ValueError("GroupBy operation requires exactly one stream")
+
+        stream = streams[0]
+        stream_keys, packet_keys = stream.keys()
+        stream_keys = stream_keys or []
+        packet_keys = packet_keys or []
+        group_keys = self.group_keys if self.group_keys is not None else stream_keys
+
+        def generator() -> Iterator[tuple[Tag, Packet]]:
+            # step through all packets in the stream and group them by the specified keys
+            grouped_packets: dict[tuple, list[tuple[Tag, Packet]]] = defaultdict(list)
+            for tag, packet in stream:
+                key = tuple(tag.get(key, None) for key in group_keys)
+                grouped_packets[key].append((tag, packet))
+
+            for key, packets in grouped_packets.items():
+                if self.selection_function is not None:
+                    # apply the selection function to the grouped packets
+                    selected_packets = self.selection_function(packets)
+                    packets = [
+                        p for p, selected in zip(packets, selected_packets) if selected
+                    ]
+
+                if not packets:
+                    continue
+
+                # create a new tag that combines the group keys
+                # if reduce_keys is True, we only keep the group keys as a singular value
+                new_tag = {}
+                if self.reduce_keys:
+                    new_tag = {k: key[i] for i, k in enumerate(group_keys)}
+                    remaining_keys = set(stream_keys) - set(group_keys)
+                else:
+                    remaining_keys = set(stream_keys) | set(group_keys)
+                # for remaining keys return list of tag values
+                for k in remaining_keys:
+                    if k not in new_tag:
+                        new_tag[k] = [t.get(k, None) for t, _ in packets]
+                # combine all packets into a single packet
+                combined_packet = {
+                    k: [p.get(k, None) for _, p in packets] for k in packet_keys
+                }
+                yield new_tag, combined_packet
+
+        return SyncStreamFromGenerator(generator)
 
 
 class CacheStream(Mapper):

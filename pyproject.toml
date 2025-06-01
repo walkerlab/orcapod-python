@@ -8,9 +8,12 @@ description = "Function-based Oracapod Pipeline implementation in Python"
 dynamic = ["version"]
 dependencies = [
     "xxhash",
- "networkx",
- "typing_extensions",
- "matplotlib>=3.10.3",
+    "networkx",
+    "typing_extensions",
+    "matplotlib>=3.10.3",
+    "pandas>=2.2.3",
+    "pyyaml>=6.0.2",
+    "pyarrow>=20.0.0",
 ]
 readme = "README.md"
 requires-python = ">=3.10"

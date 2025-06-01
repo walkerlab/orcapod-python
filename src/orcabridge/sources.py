@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from orcabridge.base import Source
 from orcabridge.hashing import hash_function
-from orcabridge.stream import SyncStream, SyncStreamFromGenerator
+from orcabridge.streams import SyncStream, SyncStreamFromGenerator
 from orcabridge.types import Packet, Tag
 
 
@@ -40,31 +40,32 @@ class GlobSource(Source):
     ...                     lambda f: {'date': Path(f).stem[:8]})
     """
 
-    default_tag_function = lambda f: {"file_name": Path(f).stem}  # noqa: E731
+    @staticmethod
+    def default_tag_function(f: PathLike) -> Tag:
+        return {"file_name": Path(f).stem}  # noqa: E731
 
     def __init__(
         self,
         name: str,
         file_path: PathLike,
         pattern: str = "*",
+        absolute_path: bool = False,
         label: str | None = None,
-        tag_function: str | Callable[[PathLike], Tag] | None = None,
+        tag_function: Callable[[PathLike], Tag] | None = None,
         tag_function_hash_mode: Literal["content", "signature", "name"] = "name",
         expected_tag_keys: Collection[str] | None = None,
         **kwargs,
     ) -> None:
         super().__init__(label=label, **kwargs)
         self.name = name
+        file_path = Path(file_path)
+        if absolute_path:
+            file_path = file_path.resolve()
         self.file_path = file_path
         self.pattern = pattern
         self.expected_tag_keys = expected_tag_keys
-        if self.expected_tag_keys is None and isinstance(tag_function, str):
-            self.expected_tag_keys = [tag_function]
         if tag_function is None:
             tag_function = self.__class__.default_tag_function
-        elif isinstance(tag_function, str):
-            tag_key = tag_function
-            tag_function = lambda f: {tag_key: Path(f).stem}  # noqa: E731
         self.tag_function: Callable[[PathLike], Tag] = tag_function
         self.tag_function_hash_mode = tag_function_hash_mode
 
@@ -124,3 +125,17 @@ class GlobSource(Source):
             self.pattern,
             tag_function_hash,
         ) + tuple(streams)
+
+    def claims_unique_tags(
+        self, *streams: "SyncStream", trigger_run: bool = True
+    ) -> bool:
+        if len(streams) != 0:
+            raise ValueError(
+                "GlobSource does not support forwarding streams. "
+                "It generates its own stream from the file system."
+            )
+        # Claim uniqueness only if the default tag function is used
+        if self.tag_function == self.__class__.default_tag_function:
+            return True
+        # Otherwise, delegate to the base class
+        return super().claims_unique_tags(trigger_run=trigger_run)
