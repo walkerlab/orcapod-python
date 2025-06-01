@@ -1,8 +1,10 @@
-from abc import abstractmethod
 import functools
 import logging
+import pickle
 import warnings
-from collections.abc import Callable, Collection, Iterator
+from abc import abstractmethod
+import sys
+from collections.abc import Callable, Collection, Iterable, Iterator
 from typing import (
     Any,
     Literal,
@@ -10,9 +12,9 @@ from typing import (
 
 from orcabridge.base import Operation
 from orcabridge.hashing import get_function_signature, hash_function
-from orcabridge.mapper import Join
+from orcabridge.mappers import Join
 from orcabridge.store import DataStore, NoOpDataStore
-from orcabridge.stream import SyncStream, SyncStreamFromGenerator
+from orcabridge.streams import SyncStream, SyncStreamFromGenerator
 from orcabridge.types import Packet, PathSet, PodFunction, Tag
 
 logger = logging.getLogger(__name__)
@@ -22,6 +24,7 @@ def function_pod(
     output_keys: Collection[str] | None = None,
     function_name: str | None = None,
     data_store: DataStore | None = None,
+    store_name: str | None = None,
     function_hash_mode: Literal["signature", "content", "name", "custom"] = "name",
     custom_hash: int | None = None,
     force_computation: bool = False,
@@ -42,12 +45,31 @@ def function_pod(
     """
 
     def decorator(func) -> FunctionPod:
-        # Create a FunctionPod instance with the function and parameters
+        if func.__name__ == "<lambda>":
+            raise ValueError("Lambda functions cannot be used with function_pod")
+
+        if not hasattr(func, "__module__") or func.__module__ is None:
+            raise ValueError(
+                f"Function {func.__name__} must be defined at module level"
+            )
+
+        # Store the original function in the module for pickling purposes
+        # and make sure to change the name of the function
+        module = sys.modules[func.__module__]
+        base_function_name = func.__name__
+        new_function_name = f"_original_{func.__name__}"
+        setattr(module, new_function_name, func)
+        # rename the function to be consistent and make it pickleable
+        setattr(func, "__name__", new_function_name)
+        setattr(func, "__qualname__", new_function_name)
+
+        # Create the FunctionPod
         pod = FunctionPod(
             function=func,
             output_keys=output_keys,
-            function_name=function_name,
+            function_name=function_name or base_function_name,
             data_store=data_store,
+            store_name=store_name,
             function_hash_mode=function_hash_mode,
             custom_hash=custom_hash,
             force_computation=force_computation,
@@ -55,9 +77,6 @@ def function_pod(
             error_handling=error_handling,
             **kwargs,
         )
-
-        # Update the metadata to make the pod look more like the original function
-        functools.update_wrapper(pod, func)
 
         return pod
 
@@ -109,11 +128,12 @@ class FunctionPod(Pod):
         output_keys: Collection[str] | None = None,
         function_name=None,
         data_store: DataStore | None = None,
+        store_name: str | None = None,
         function_hash_mode: Literal["signature", "content", "name", "custom"] = "name",
         custom_hash: int | None = None,
         label: str | None = None,
         force_computation: bool = False,
-        skip_cache_lookup: bool = False,
+        skip_memoization_lookup: bool = False,
         skip_memoization: bool = False,
         error_handling: Literal["raise", "ignore", "warn"] = "raise",
         _hash_function_kwargs: dict | None = None,
@@ -121,9 +141,7 @@ class FunctionPod(Pod):
     ) -> None:
         super().__init__(label=label, **kwargs)
         self.function = function
-        if output_keys is None:
-            output_keys = []
-        self.output_keys = output_keys
+        self.output_keys = output_keys or []
         if function_name is None:
             if hasattr(self.function, "__name__"):
                 function_name = getattr(self.function, "__name__")
@@ -134,10 +152,11 @@ class FunctionPod(Pod):
 
         self.function_name = function_name
         self.data_store = data_store if data_store is not None else NoOpDataStore()
+        self.store_name = store_name or function_name
         self.function_hash_mode = function_hash_mode
         self.custom_hash = custom_hash
         self.force_computation = force_computation
-        self.skip_cache_lookup = skip_cache_lookup
+        self.skip_memoization_lookup = skip_memoization_lookup
         self.skip_memoization = skip_memoization
         self.error_handling = error_handling
         self._hash_function_kwargs = _hash_function_kwargs
@@ -153,6 +172,36 @@ class FunctionPod(Pod):
         tag_keys, _ = stream[0].keys()
         return tag_keys, tuple(self.output_keys)
 
+    def is_memoized(self, packet: Packet) -> bool:
+        return self.retrieve_memoized(packet) is not None
+
+    def retrieve_memoized(self, packet: Packet) -> Packet | None:
+        """
+        Retrieve a memoized packet from the data store.
+        Returns None if no memoized packet is found.
+        """
+        return self.data_store.retrieve_memoized(
+            self.store_name,
+            self.content_hash(char_count=16),
+            packet,
+        )
+
+    def memoize(
+        self,
+        packet: Packet,
+        output_packet: Packet,
+    ) -> Packet:
+        """
+        Memoize the output packet in the data store.
+        Returns the memoized packet.
+        """
+        return self.data_store.memoize(
+            self.store_name,
+            self.content_hash(char_count=16),  # identity of this function pod
+            packet,
+            output_packet,
+        )
+
     def forward(self, *streams: SyncStream) -> SyncStream:
         # if multiple streams are provided, join them
         if len(streams) > 1:
@@ -166,12 +215,8 @@ class FunctionPod(Pod):
             for tag, packet in stream:
                 output_values: list["PathSet"] = []
                 try:
-                    if not self.skip_cache_lookup:
-                        memoized_packet = self.data_store.retrieve_memoized(
-                            self.function_name,
-                            self.content_hash(char_count=16),
-                            packet,
-                        )
+                    if not self.skip_memoization_lookup:
+                        memoized_packet = self.retrieve_memoized(packet)
                     else:
                         memoized_packet = None
                     if not self.force_computation and memoized_packet is not None:
@@ -181,14 +226,10 @@ class FunctionPod(Pod):
                     values = self.function(**packet)
 
                     if len(self.output_keys) == 0:
-                        output_values: list["PathSet"] = []
-                    elif (
-                        len(self.output_keys) == 1
-                        and values is not None
-                        and not isinstance(values, Collection)
-                    ):
-                        output_values = [values]
-                    elif isinstance(values, Collection):
+                        output_values = []
+                    elif len(self.output_keys) == 1:
+                        output_values = [values]  # type: ignore
+                    elif isinstance(values, Iterable):
                         output_values = list(values)  # type: ignore
                     elif len(self.output_keys) > 1:
                         raise ValueError(
@@ -197,7 +238,7 @@ class FunctionPod(Pod):
 
                     if len(output_values) != len(self.output_keys):
                         raise ValueError(
-                            "Number of output keys does not match number of values returned by function"
+                            f"Number of output keys {len(self.output_keys)}:{self.output_keys} does not match number of values returned by function {len(output_values)}"
                         )
                 except Exception as e:
                     logger.error(f"Error processing packet {packet}: {e}")
@@ -216,12 +257,7 @@ class FunctionPod(Pod):
                 if not self.skip_memoization:
                     # output packet may be modified by the memoization process
                     # e.g. if the output is a file, the path may be changed
-                    output_packet = self.data_store.memoize(
-                        self.function_name,
-                        self.content_hash(),  # identity of this function pod
-                        packet,
-                        output_packet,
-                    )
+                    output_packet = self.memoize(packet, output_packet)  # type: ignore
 
                 n_computed += 1
                 logger.info(f"Computed item {n_computed}")
@@ -240,18 +276,21 @@ class FunctionPod(Pod):
                 }
             function_hash_value = hash_function(
                 self.function,
+                name_override=self.function_name,
                 function_hash_mode="content",
                 content_kwargs=content_kwargs,
             )
         elif self.function_hash_mode == "signature":
             function_hash_value = hash_function(
                 self.function,
+                name_override=self.function_name,
                 function_hash_mode="signature",
                 content_kwargs=content_kwargs,
             )
         elif self.function_hash_mode == "name":
             function_hash_value = hash_function(
                 self.function,
+                name_override=self.function_name,
                 function_hash_mode="name",
                 content_kwargs=content_kwargs,
             )

@@ -8,7 +8,8 @@ from typing_extensions import TypeAlias
 PathLike = str | os.PathLike
 
 # an (optional) string or a collection of (optional) string values
-TagValue: TypeAlias = str | None | Collection[str | None]
+# Note that TagValue can be nested, allowing for an arbitrary depth of nested lists
+TagValue: TypeAlias = str | None | Collection["TagValue"]
 
 
 # the top level tag is a mapping from string keys to values that can be a string or

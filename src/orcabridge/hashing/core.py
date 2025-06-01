@@ -176,7 +176,7 @@ class HashableMixin:
         if structure is None:
             logger.warning(
                 f"HashableMixin.content_hash called on {self.__class__.__name__} "
-                "instance without identity_structure() implementation. "
+                "instance that returned identity_structure() of None. "
                 "Using class name as default identity, which may not correctly reflect object uniqueness."
             )
             # Fall back to class name for consistent behavior
@@ -775,7 +775,10 @@ def hash_file(file_path, algorithm="sha256", buffer_size=65536) -> str:
 
 
 def get_function_signature(
-    func: Callable, include_defaults: bool = True, include_module: bool = True
+    func: Callable,
+    name_override: str | None = None,
+    include_defaults: bool = True,
+    include_module: bool = True,
 ) -> str:
     """
     Get a stable string representation of a function's signature.
@@ -798,7 +801,7 @@ def get_function_signature(
         parts.append(f"module:{func.__module__}")
 
     # Add function name
-    parts.append(f"name:{func.__name__}")
+    parts.append(f"name:{name_override or func.__name__}")
 
     # Add parameters
     param_strs = []
@@ -832,6 +835,7 @@ def _is_in_string(line, pos):
 
 def get_function_components(
     func: Callable,
+    name_override: str | None = None,
     include_name: bool = True,
     include_module: bool = True,
     include_declaration: bool = True,
@@ -862,7 +866,7 @@ def get_function_components(
 
     # Add function name
     if include_name:
-        components.append(f"name:{func.__name__}")
+        components.append(f"name:{name_override or func.__name__}")
 
     # Add module
     if include_module and hasattr(func, "__module__"):
@@ -915,7 +919,7 @@ def get_function_components(
 
     except (IOError, TypeError):
         # If source can't be retrieved, fall back to signature
-        components.append(f"name:{func.__name__}")
+        components.append(f"name:{name_override or func.__name__}")
         try:
             sig = inspect.signature(func)
             components.append(f"signature:{str(sig)}")
@@ -984,6 +988,7 @@ def hash_function(
     function: Callable,
     function_hash_mode: Literal["content", "signature", "name"] = "content",
     return_type: Literal["hex", "int", "uuid"] = "hex",
+    name_override: Optional[str] = None,
     content_kwargs=None,
     hash_kwargs=None,
 ) -> Union[str, int, UUID]:
@@ -998,7 +1003,7 @@ def hash_function(
             extractors:
             - "content": arguments for get_function_components
             - "signature": arguments for get_function_signature
-            - "name": no underlying function used - simply function.__name__
+            - "name": no underlying function used - simply function.__name__ or name_override if provided
         hash_kwargs: Additional arguments for the hashing function that depends on the return type
             - "hex": arguments for hash_to_hex
             - "int": arguments for hash_to_int
@@ -1018,14 +1023,19 @@ def hash_function(
 
     logger.debug(
         f"Hashing function '{function.__name__}' using mode '{function_hash_mode}'"
+        + (f" with name override '{name_override}'" if name_override else "")
     )
 
     if function_hash_mode == "content":
-        hash_content = "\n".join(get_function_components(function, **content_kwargs))
+        hash_content = "\n".join(
+            get_function_components(
+                function, name_override=name_override, **content_kwargs
+            )
+        )
     elif function_hash_mode == "signature":
         hash_content = get_function_signature(function, **content_kwargs)
     elif function_hash_mode == "name":
-        hash_content = function.__name__
+        hash_content = name_override or function.__name__
     else:
         err_msg = f"Unknown function_hash_mode: {function_hash_mode}"
         logger.error(err_msg)
