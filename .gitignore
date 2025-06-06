@@ -1,3 +1,10 @@
+# Ignore data files in notebooks folder
+notebooks/**/*.json
+notebooks/**/*.yaml
+notebooks/**/*.parquet
+notebooks/**/*.pkl
+notebooks/**/*.db
+
 # Ignore vscode settings
 .vscode/
 
