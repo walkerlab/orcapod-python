@@ -38,9 +38,7 @@ class TableCachedPod(QueryPod, QuerySource):
         self.fp = fp
         self.schema = schema
         self.table_name = (
-            table_name
-            if table_name is not None
-            else pascal_to_snake(fp.function.__name__)
+            table_name if table_name is not None else pascal_to_snake(fp.function_name)
         ) + (f"_{table_postfix}" if table_postfix else "")
         self.streams = streams if streams is not None else []
         self.table = None
@@ -58,7 +56,7 @@ class TableCachedPod(QueryPod, QuerySource):
     @property
     def label(self) -> str:
         if self._label is None:
-            return snake_to_pascal(self.fp.function.__name__)
+            return snake_to_pascal(self.fp.function_name)
         return self._label
 
     def prepare_source_query(self) -> Tuple[QueryStream, Collection[Table]]:
