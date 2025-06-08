@@ -7,9 +7,9 @@ import networkx as nx
 from datajoint import Schema
 
 from orcabridge.base import Operation, Source
-from orcabridge.mapper import Mapper, Merge
+from orcabridge.mappers import Mapper, Merge
 from orcabridge.pod import FunctionPod
-from orcabridge.tracker import GraphTracker
+from orcabridge.pipeline import GraphTracker
 
 from .mapper import convert_to_query_mapper
 from .operation import QueryOperation

@@ -5,7 +5,7 @@ from typing import Any, Collection, Union
 from datajoint.expression import QueryExpression
 from datajoint.table import Table
 
-from ..stream import SyncStream
+from orcabridge.streams import SyncStream
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class QueryStream(SyncStream):
         Restrict the query stream by `other` and return a new query stream
         """
         # lazy load to avoid circular import
-        from ..source import TableSource
+        from .source import TableSource
         from .mapper import RestrictQuery
 
         if isinstance(other, TableSource):

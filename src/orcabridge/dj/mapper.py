@@ -1,7 +1,7 @@
 import warnings
 from typing import Optional
 
-from ..mapper import Join, MapPackets, Mapper, MapTags
+from orcabridge.mappers import Join, MapPackets, Mapper, MapTags
 from .operation import QueryOperation
 from .stream import QueryStream
 

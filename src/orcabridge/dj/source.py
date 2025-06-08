@@ -6,8 +6,8 @@ from datajoint import Schema, Table
 
 from orcabridge.hashing import hash_to_uuid
 
-from ..source import Source
-from ..stream import SyncStream
+from orcabridge.sources import Source
+from orcabridge.streams import SyncStream
 from ..utils.name import pascal_to_snake, snake_to_pascal
 from ..utils.stream_utils import common_elements
 from .operation import QueryOperation
