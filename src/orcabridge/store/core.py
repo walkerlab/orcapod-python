@@ -61,7 +61,7 @@ class DirDataStore(DataStore):
         self.preserve_filename = preserve_filename
         self.overwrite = overwrite
         self.supplement_source = supplement_source
-        if packet_hasher is None:
+        if packet_hasher is None and not legacy_mode:
             packet_hasher = get_default_composite_hasher(with_cache=True)
         self.packet_hasher = packet_hasher
         self.legacy_mode = legacy_mode
