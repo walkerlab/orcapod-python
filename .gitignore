@@ -5,6 +5,10 @@ notebooks/**/*.parquet
 notebooks/**/*.pkl
 notebooks/**/*.db
 
+
+# Ignore any notebook that starts with an underscore
+notebooks/**/_*.ipynb
+
 # Ignore vscode settings
 .vscode/
 
