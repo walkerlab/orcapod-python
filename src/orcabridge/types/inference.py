@@ -5,10 +5,50 @@ from collections.abc import Callable, Collection, Sequence
 from typing import get_origin, get_args, TypeAlias
 import inspect
 import logging
+from beartype.door import is_bearable, is_subhint
+
 
 logger = logging.getLogger(__name__)
 DataType: TypeAlias = type
 TypeSpec: TypeAlias = dict[str, DataType]  # Mapping of parameter names to their types
+
+
+def verify_against_typespec(packet: dict, typespec: TypeSpec) -> bool:
+    """Verify that the dictionary's types match the expected types in the typespec."""
+    # verify that packet contains no keys not in typespec
+    if set(packet.keys()) - set(typespec.keys()):
+        logger.warning(
+            f"Packet contains keys not in typespec: {set(packet.keys()) - set(typespec.keys())}. "
+        )
+        return False
+    for key, type_info in typespec.items():
+        if key not in packet:
+            logger.warning(
+                f"Key '{key}' not found in packet. Assuming None but this behavior may change in the future"
+            )
+        if not is_bearable(packet.get(key), type_info):
+            logger.warning(
+                f"Type mismatch for key '{key}': expected {type_info}, got {packet.get(key)}."
+            )
+            return False
+    return True
+
+
+# TODO: is_subhint does not handle invariance properly
+# so when working with mutable types, we have to make sure to perform deep copy
+def check_typespec_compatibility(
+    incoming_types: TypeSpec, receiving_types: TypeSpec
+) -> bool:
+    for key, type_info in incoming_types.items():
+        if key not in receiving_types:
+            logger.warning(f"Key '{key}' not found in parameter types.")
+            return False
+        if not is_subhint(type_info, receiving_types[key]):
+            logger.warning(
+                f"Type mismatch for key '{key}': expected {receiving_types[key]}, got {type_info}."
+            )
+            return False
+    return True
 
 
 def extract_function_data_types(
