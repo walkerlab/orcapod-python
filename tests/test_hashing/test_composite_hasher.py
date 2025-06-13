@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 # filepath: /home/eywalker/workspace/orcabridge/tests/test_hashing/test_composite_hasher.py
-"""Tests for the CompositeHasher implementation."""
+"""Tests for the CompositeFileHasher implementation."""
 
 from unittest.mock import patch
 
 import pytest
 
 from orcabridge.hashing.core import hash_to_hex
-from orcabridge.hashing.file_hashers import BasicFileHasher, CompositeHasher
+from orcabridge.hashing.file_hashers import BasicFileHasher, DefaultCompositeFileHasher
 from orcabridge.hashing.types import FileHasher, PacketHasher, PathSetHasher
 
 
@@ -97,13 +97,13 @@ def patch_hash_functions():
         yield
 
 
-def test_composite_hasher_implements_all_protocols():
-    """Test that CompositeHasher implements all three protocols."""
+def test_default_composite_hasher_implements_all_protocols():
+    """Test that CompositeFileHasher implements all three protocols."""
     # Create a basic file hasher to be used within the composite hasher
     file_hasher = BasicFileHasher()
 
     # Create the composite hasher
-    composite_hasher = CompositeHasher(file_hasher)
+    composite_hasher = DefaultCompositeFileHasher(file_hasher)
 
     # Verify it implements all three protocols
     assert isinstance(composite_hasher, FileHasher)
@@ -111,8 +111,8 @@ def test_composite_hasher_implements_all_protocols():
     assert isinstance(composite_hasher, PacketHasher)
 
 
-def test_composite_hasher_file_hashing():
-    """Test CompositeHasher's file hashing functionality."""
+def test_default_composite_hasher_file_hashing():
+    """Test CompositeFileHasher's file hashing functionality."""
     # We can use a mock path since our mocks don't require real files
     file_path = "/path/to/mock_file.txt"
 
@@ -122,7 +122,7 @@ def test_composite_hasher_file_hashing():
             return mock_hash_file(file_path)
 
     file_hasher = MockFileHasher()
-    composite_hasher = CompositeHasher(file_hasher)
+    composite_hasher = DefaultCompositeFileHasher(file_hasher)
 
     # Get hash from the composite hasher and directly from the file hasher
     direct_hash = file_hasher.hash_file(file_path)
@@ -132,8 +132,8 @@ def test_composite_hasher_file_hashing():
     assert direct_hash == composite_hash
 
 
-def test_composite_hasher_pathset_hashing():
-    """Test CompositeHasher's path set hashing functionality."""
+def test_default_composite_hasher_pathset_hashing():
+    """Test CompositeFileHasher's path set hashing functionality."""
 
     # Create a custom mock file hasher that doesn't check for file existence
     class MockFileHasher:
@@ -141,7 +141,7 @@ def test_composite_hasher_pathset_hashing():
             return mock_hash_file(file_path)
 
     file_hasher = MockFileHasher()
-    composite_hasher = CompositeHasher(file_hasher)
+    composite_hasher = DefaultCompositeFileHasher(file_hasher)
 
     # Simple path set with non-existent paths
     pathset = ["/path/to/file1.txt", "/path/to/file2.txt"]
@@ -151,76 +151,6 @@ def test_composite_hasher_pathset_hashing():
 
     # The result should be a string hash
     assert isinstance(result, str)
-
-
-def test_composite_hasher_packet_hashing():
-    """Test CompositeHasher's packet hashing functionality."""
-
-    # Create a completely custom composite hasher that doesn't rely on real functions
-    class MockHasher:
-        def hash_file(self, file_path):
-            return mock_hash_file(file_path)
-
-        def hash_pathset(self, pathset):
-            return hash_to_hex(f"pathset_{pathset}")
-
-        def hash_packet(self, packet):
-            return hash_to_hex(f"packet_{packet}")
-
-    mock_hasher = MockHasher()
-    # Use mock_hasher directly as both the file_hasher and as the composite_hasher
-    # This way we're not calling into any code that checks file existence
-
-    # Simple packet with non-existent paths
-    packet = {
-        "input": ["/path/to/input1.txt", "/path/to/input2.txt"],
-        "output": "/path/to/output.txt",
-    }
-
-    # Hash the packet using our mock
-    result = mock_hasher.hash_packet(packet)
-
-    # The result should be a string hash
-    assert isinstance(result, str)
-
-
-def test_composite_hasher_with_char_count():
-    """Test CompositeHasher with different char_count values."""
-
-    # Create completely mocked hashers that don't check file existence
-    class MockHasher:
-        def __init__(self, char_count=32):
-            self.char_count = char_count
-
-        def hash_file(self, file_path):
-            return mock_hash_file(file_path)
-
-        def hash_pathset(self, pathset):
-            return hash_to_hex(f"pathset_{pathset}", char_count=self.char_count)
-
-        def hash_packet(self, packet):
-            return hash_to_hex(f"packet_{packet}", char_count=self.char_count)
-
-    # Create two mock hashers with different char_counts
-    default_hasher = MockHasher()
-    custom_hasher = MockHasher(char_count=16)
-
-    # Simple test data
-    pathset = ["/path/to/file1.txt", "/path/to/file2.txt"]
-    packet = {"input": pathset}
-
-    # Get hashes with different char_counts
-    default_pathset_hash = default_hasher.hash_pathset(pathset)
-    custom_pathset_hash = custom_hasher.hash_pathset(pathset)
-
-    default_packet_hash = default_hasher.hash_packet(packet)
-    custom_packet_hash = custom_hasher.hash_packet(packet)
-
-    # Verify all results are strings
-    assert isinstance(default_pathset_hash, str)
-    assert isinstance(custom_pathset_hash, str)
-    assert isinstance(default_packet_hash, str)
-    assert isinstance(custom_packet_hash, str)
 
 
 if __name__ == "__main__":

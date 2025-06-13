@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from orcabridge.hashing.file_hashers import HasherFactory
+from orcabridge.hashing.file_hashers import PathLikeHasherFactory
 
 
 def load_hash_lut():
@@ -83,7 +83,7 @@ def verify_path_exists(rel_path):
 def test_default_file_hasher_file_hash_consistency():
     """Test that DefaultFileHasher.hash_file produces consistent results for the sample files."""
     hash_lut = load_hash_lut()
-    hasher = HasherFactory.create_basic_composite()
+    hasher = PathLikeHasherFactory.create_basic_composite()
 
     for filename, info in hash_lut.items():
         rel_path = info["file"]
@@ -105,7 +105,7 @@ def test_default_file_hasher_file_hash_consistency():
 def test_default_file_hasher_pathset_hash_consistency():
     """Test that DefaultFileHasher.hash_pathset produces consistent results for the sample pathsets."""
     hash_lut = load_pathset_hash_lut()
-    hasher = HasherFactory.create_basic_composite()
+    hasher = PathLikeHasherFactory.create_basic_composite()
 
     for name, info in hash_lut.items():
         paths_rel = info["paths"]
@@ -138,7 +138,7 @@ def test_default_file_hasher_pathset_hash_consistency():
 def test_default_file_hasher_packet_hash_consistency():
     """Test that DefaultFileHasher.hash_packet produces consistent results for the sample packets."""
     hash_lut = load_packet_hash_lut()
-    hasher = HasherFactory.create_basic_composite()
+    hasher = PathLikeHasherFactory.create_basic_composite()
 
     for name, info in hash_lut.items():
         structure = info["structure"]
@@ -182,7 +182,7 @@ def test_default_file_hasher_file_hash_algorithm_parameters():
 
     for algorithm in algorithms:
         try:
-            hasher = HasherFactory.create_basic_composite(algorithm=algorithm)
+            hasher = PathLikeHasherFactory.create_basic_composite(algorithm=algorithm)
             hash1 = hasher.hash_file(file_path)
             hash2 = hasher.hash_file(file_path)
             assert hash1 == hash2, f"Hash inconsistent for algorithm {algorithm}"
@@ -194,7 +194,7 @@ def test_default_file_hasher_file_hash_algorithm_parameters():
     buffer_sizes = [1024, 4096, 16384, 65536]
 
     for buffer_size in buffer_sizes:
-        hasher = HasherFactory.create_basic_composite(buffer_size=buffer_size)
+        hasher = PathLikeHasherFactory.create_basic_composite(buffer_size=buffer_size)
         hash1 = hasher.hash_file(file_path)
         hash2 = hasher.hash_file(file_path)
         assert hash1 == hash2, f"Hash inconsistent for buffer size {buffer_size}"
@@ -223,7 +223,7 @@ def test_default_file_hasher_pathset_hash_algorithm_parameters():
 
     for algorithm in algorithms:
         try:
-            hasher = HasherFactory.create_basic_composite(algorithm=algorithm)
+            hasher = PathLikeHasherFactory.create_basic_composite(algorithm=algorithm)
             hash1 = hasher.hash_pathset(pathset)
             hash2 = hasher.hash_pathset(pathset)
             assert hash1 == hash2, f"Hash inconsistent for algorithm {algorithm}"
@@ -235,7 +235,7 @@ def test_default_file_hasher_pathset_hash_algorithm_parameters():
     buffer_sizes = [1024, 4096, 16384, 65536]
 
     for buffer_size in buffer_sizes:
-        hasher = HasherFactory.create_basic_composite(buffer_size=buffer_size)
+        hasher = PathLikeHasherFactory.create_basic_composite(buffer_size=buffer_size)
         hash1 = hasher.hash_pathset(pathset)
         hash2 = hasher.hash_pathset(pathset)
         assert hash1 == hash2, f"Hash inconsistent for buffer size {buffer_size}"
@@ -267,7 +267,7 @@ def test_default_file_hasher_packet_hash_algorithm_parameters():
 
     for algorithm in algorithms:
         try:
-            hasher = HasherFactory.create_basic_composite(algorithm=algorithm)
+            hasher = PathLikeHasherFactory.create_basic_composite(algorithm=algorithm)
             hash1 = hasher.hash_packet(packet)
             hash2 = hasher.hash_packet(packet)
 
@@ -286,7 +286,7 @@ def test_default_file_hasher_packet_hash_algorithm_parameters():
     buffer_sizes = [1024, 4096, 16384, 65536]
 
     for buffer_size in buffer_sizes:
-        hasher = HasherFactory.create_basic_composite(buffer_size=buffer_size)
+        hasher = PathLikeHasherFactory.create_basic_composite(buffer_size=buffer_size)
         hash1 = hasher.hash_packet(packet)
         hash2 = hasher.hash_packet(packet)
         assert hash1 == hash2, f"Hash inconsistent for buffer size {buffer_size}"

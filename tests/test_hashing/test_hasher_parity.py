@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from orcabridge.hashing.core import hash_file, hash_packet, hash_pathset
-from orcabridge.hashing.file_hashers import HasherFactory
+from orcabridge.hashing.file_hashers import PathLikeHasherFactory
 
 
 def load_hash_lut():
@@ -74,7 +74,7 @@ def verify_path_exists(rel_path):
 def test_hasher_core_parity_file_hash():
     """Test that BasicFileHasher.hash_file produces the same results as hash_file."""
     hash_lut = load_hash_lut()
-    hasher = HasherFactory.create_basic_composite()
+    hasher = PathLikeHasherFactory.create_basic_composite()
 
     # Test all sample files
     for filename, info in hash_lut.items():
@@ -103,7 +103,7 @@ def test_hasher_core_parity_file_hash():
         for buffer_size in buffer_sizes:
             try:
                 # Create a hasher with specific parameters
-                hasher = HasherFactory.create_basic_composite(
+                hasher = PathLikeHasherFactory.create_basic_composite(
                     algorithm=algorithm, buffer_size=buffer_size
                 )
 
@@ -148,7 +148,7 @@ def test_hasher_core_parity_pathset_hash():
             for buffer_size in buffer_sizes:
                 for char_count in char_counts:
                     # Create a hasher with specific parameters
-                    hasher = HasherFactory.create_basic_composite(
+                    hasher = PathLikeHasherFactory.create_basic_composite(
                         algorithm=algorithm,
                         buffer_size=buffer_size,
                         char_count=char_count,
@@ -202,7 +202,7 @@ def test_hasher_core_parity_packet_hash():
             for buffer_size in buffer_sizes:
                 for char_count in char_counts:
                     # Create a hasher with specific parameters
-                    hasher = HasherFactory.create_basic_composite(
+                    hasher = PathLikeHasherFactory.create_basic_composite(
                         algorithm=algorithm,
                         buffer_size=buffer_size,
                         char_count=char_count,

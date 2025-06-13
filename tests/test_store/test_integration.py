@@ -10,14 +10,14 @@ import pytest
 from orcabridge.hashing.file_hashers import (
     BasicFileHasher,
     CachedFileHasher,
-    CompositeHasher,
+    DefaultCompositeFileHasher,
 )
 from orcabridge.hashing.string_cachers import InMemoryCacher
 from orcabridge.store.core import DirDataStore, NoOpDataStore
 
 
 def test_integration_with_cached_file_hasher(temp_dir, sample_files):
-    """Test integration of DirDataStore with CompositeHasher using CachedFileHasher."""
+    """Test integration of DirDataStore with CompositeFileHasher using CachedFileHasher."""
     store_dir = Path(temp_dir) / "test_store"
 
     # Create a CachedFileHasher with InMemoryCacher
@@ -28,10 +28,10 @@ def test_integration_with_cached_file_hasher(temp_dir, sample_files):
         string_cacher=string_cacher,
     )
 
-    # Create a CompositeHasher that will use the CachedFileHasher
-    composite_hasher = CompositeHasher(file_hasher)
+    # Create a CompositeFileHasher that will use the CachedFileHasher
+    composite_hasher = DefaultCompositeFileHasher(file_hasher)
 
-    # Create the store with CompositeHasher
+    # Create the store with CompositeFileHasher
     store = DirDataStore(store_dir=store_dir, packet_hasher=composite_hasher)
 
     # Create simple packet and output packet
@@ -51,7 +51,7 @@ def test_integration_with_cached_file_hasher(temp_dir, sample_files):
 
     # Check that the cached hasher is working (by checking the cache)
     # In the new design, CachedFileHasher only handles file hashing, not packet hashing
-    # The packet hash is handled by a PacketHasher instance inside CompositeHasher
+    # The packet hash is handled by a PacketHasher instance inside CompositeFileHasher
     file_path = sample_files["input"]["file1"]
     file_key = f"file:{file_path}"
     cached_file_hash = string_cacher.get_cached(file_key)

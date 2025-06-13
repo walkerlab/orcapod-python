@@ -197,12 +197,12 @@ class TestMerge:
             result_packets.append(packet)
 
         assert len(result_packets) == 10
-        assert set(result_packets) == set(all_packets)    def test_merge_pickle(self):
+        assert set(result_packets) == set(all_packets)
         """Test that Merge mapper is pickleable."""
         merge = Merge()
         pickled = pickle.dumps(merge)
         unpickled = pickle.loads(pickled)
-        
+
         # Test that unpickled mapper works the same
         assert isinstance(unpickled, Merge)
         assert unpickled.__class__.__name__ == "Merge"
