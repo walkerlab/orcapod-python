@@ -10,13 +10,19 @@ from .core import (
     hash_to_int,
     hash_to_uuid,
 )
-from .defaults import get_default_composite_hasher
-from .types import FileHasher, ObjectHasher, StringCacher
+from .defaults import get_default_composite_file_hasher, get_default_object_hasher
+from .types import (
+    FileHasher,
+    ObjectHasher,
+    StringCacher,
+    CompositeFileHasher,
+)
 
 __all__ = [
     "FileHasher",
     "StringCacher",
     "ObjectHasher",
+    "CompositeFileHasher",
     "hash_file",
     "hash_pathset",
     "hash_packet",
@@ -27,5 +33,6 @@ __all__ = [
     "get_function_signature",
     "function_content_hash",
     "HashableMixin",
-    "get_default_composite_hasher",
+    "get_default_composite_file_hasher",
+    "get_default_object_hasher",
 ]
