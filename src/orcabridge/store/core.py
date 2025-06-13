@@ -5,7 +5,7 @@ from os import PathLike
 from pathlib import Path
 
 from orcabridge.hashing import hash_packet
-from orcabridge.hashing.defaults import get_default_composite_hasher
+from orcabridge.hashing.defaults import get_default_composite_file_hasher
 from orcabridge.hashing.types import PacketHasher
 from orcabridge.store.types import DataStore
 from orcabridge.types import Packet
@@ -62,7 +62,7 @@ class DirDataStore(DataStore):
         self.overwrite = overwrite
         self.supplement_source = supplement_source
         if packet_hasher is None and not legacy_mode:
-            packet_hasher = get_default_composite_hasher(with_cache=True)
+            packet_hasher = get_default_composite_file_hasher(with_cache=True)
         self.packet_hasher = packet_hasher
         self.legacy_mode = legacy_mode
         self.legacy_algorithm = legacy_algorithm
@@ -77,7 +77,7 @@ class DirDataStore(DataStore):
         if self.legacy_mode:
             packet_hash = hash_packet(packet, algorithm=self.legacy_algorithm)
         else:
-            packet_hash = self.packet_hasher.hash_packet(packet)
+            packet_hash = self.packet_hasher.hash_packet(packet)  # type: ignore[no-untyped-call]
         output_dir = self.store_dir / function_name / function_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
         source_path = output_dir / "_source.json"
@@ -144,6 +144,9 @@ class DirDataStore(DataStore):
         if self.legacy_mode:
             packet_hash = hash_packet(packet, algorithm=self.legacy_algorithm)
         else:
+            assert self.packet_hasher is not None, (
+                "Packer hasher should be configured if not in legacy mode"
+            )
             packet_hash = self.packet_hasher.hash_packet(packet)
         output_dir = self.store_dir / function_name / function_hash / str(packet_hash)
         info_path = output_dir / "_info.json"
