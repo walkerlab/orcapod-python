@@ -11,6 +11,7 @@ import inspect
 import json
 import logging
 import zlib
+from .types import FunctionInfoExtractor
 from functools import partial
 from os import PathLike
 from pathlib import Path
@@ -281,20 +282,11 @@ class HashableMixin:
 # Core hashing functions that serve as the unified interface
 
 
-def hash_to_hex(obj: Any, char_count: int | None = 32) -> str:
-    """
-    Create a stable hex hash of any object that remains consistent across Python sessions.
-
-    Args:
-        obj: The object to hash - can be a primitive type, nested data structure, or
-             HashableMixin instance
-        char_count: Number of hex characters to return (None for full hash)
-
-    Returns:
-        A hex string hash
-    """
+def legacy_hash(
+    obj: Any, function_info_extractor: FunctionInfoExtractor | None = None
+) -> bytes:
     # Process the object to handle nested structures and HashableMixin instances
-    processed = process_structure(obj)
+    processed = process_structure(obj, function_info_extractor=function_info_extractor)
 
     # Serialize the processed structure
     try:
@@ -322,16 +314,45 @@ def hash_to_hex(obj: Any, char_count: int | None = 32) -> str:
             json_str = str(processed).encode("utf-8")
 
     # Create the hash
-    hash_hex = hashlib.sha256(json_str).hexdigest()
+    return hashlib.sha256(json_str).digest()
+
+
+def hash_to_hex(
+    obj: Any,
+    char_count: int | None = 32,
+    function_info_extractor: FunctionInfoExtractor | None = None,
+) -> str:
+    """
+    Create a stable hex hash of any object that remains consistent across Python sessions.
+
+    Args:
+        obj: The object to hash - can be a primitive type, nested data structure, or
+             HashableMixin instance
+        char_count: Number of hex characters to return (None for full hash)
+
+    Returns:
+        A hex string hash
+    """
+
+    # Create the hash
+    hash_hex = legacy_hash(obj, function_info_extractor=function_info_extractor).hex()
 
     # Return the requested number of characters
     if char_count is not None:
         logger.debug(f"Using char_count: {char_count}")
+        if char_count > len(hash_hex):
+            raise ValueError(
+                f"Cannot truncate to {char_count} chars, hash only has {len(hash_hex)}"
+            )
         return hash_hex[:char_count]
     return hash_hex
 
 
-def hash_to_int(obj: Any, hexdigits: int = 16) -> int:
+def hash_to_int(
+    obj: Any,
+    hexdigits: int = 16,
+    function_info_extractor: FunctionInfoExtractor | None = None,
+) -> int:
     """
     Convert any object to a stable integer hash that remains consistent across Python sessions.
 
@@ -342,11 +363,15 @@ def hash_to_int(obj: Any, hexdigits: int = 16) -> int:
     Returns:
         An integer hash
     """
-    hash_hex = hash_to_hex(obj)
-    return int(hash_hex[:hexdigits], 16)
+    hash_hex = hash_to_hex(
+        obj, char_count=hexdigits, function_info_extractor=function_info_extractor
+    )
+    return int(hash_hex, 16)
 
 
-def hash_to_uuid(obj: Any) -> UUID:
+def hash_to_uuid(
+    obj: Any, function_info_extractor: FunctionInfoExtractor | None = None
+) -> UUID:
     """
     Convert any object to a stable UUID hash that remains consistent across Python sessions.
 
@@ -356,12 +381,19 @@ def hash_to_uuid(obj: Any) -> UUID:
     Returns:
         A UUID hash
     """
-    hash_hex = hash_to_hex(obj, char_count=32)
+    hash_hex = hash_to_hex(
+        obj, char_count=32, function_info_extractor=function_info_extractor
+    )
+    # TODO: update this to use UUID5 with a namespace on hash bytes output instead
     return UUID(hash_hex)
 
 
 # Helper function for processing nested structures
-def process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
+def process_structure(
+    obj: Any,
+    visited: Optional[Set[int]] = None,
+    function_info_extractor: FunctionInfoExtractor | None = None,
+) -> Any:
     """
     Recursively process a structure to prepare it for hashing.
 
@@ -427,13 +459,16 @@ def process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
         logger.debug(f"Processing named tuple of type {type(obj).__name__}")
         # For namedtuples, convert to dict and then process
         d = {field: getattr(obj, field) for field in obj._fields}  # type: ignore
-        return process_structure(d, visited)
+        return process_structure(d, visited, function_info_extractor)
 
     # Handle mappings (dict-like objects)
     if isinstance(obj, Mapping):
         # Process both keys and values
         processed_items = [
-            (process_structure(k, visited), process_structure(v, visited))
+            (
+                process_structure(k, visited, function_info_extractor),
+                process_structure(v, visited, function_info_extractor),
+            )
             for k, v in obj.items()
         ]
 
@@ -452,7 +487,9 @@ def process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
             f"Processing set/frozenset of type {type(obj).__name__} with {len(obj)} items"
         )
         # Process each item first, then sort the processed results
-        processed_items = [process_structure(item, visited) for item in obj]
+        processed_items = [
+            process_structure(item, visited, function_info_extractor) for item in obj
+        ]
         return sorted(processed_items, key=str)
 
     # Handle collections (list-like objects)
@@ -460,12 +497,23 @@ def process_structure(obj: Any, visited: Optional[Set[int]] = None) -> Any:
         logger.debug(
             f"Processing collection of type {type(obj).__name__} with {len(obj)} items"
         )
-        return [process_structure(item, visited) for item in obj]
+        return [
+            process_structure(item, visited, function_info_extractor) for item in obj
+        ]
 
     # For functions, use the function_content_hash
     if callable(obj) and hasattr(obj, "__code__"):
         logger.debug(f"Processing function: {obj.__name__}")
-        return function_content_hash(obj)
+        if function_info_extractor is not None:
+            # Use the extractor to get a stable representation
+            function_info = function_info_extractor.extract_function_info(obj)
+            logger.debug(f"Extracted function info: {function_info} for {obj.__name__}")
+
+            # simply return the function info as a stable representation
+            return function_info
+        else:
+            # Default to using legacy function content hash
+            return function_content_hash(obj)
 
     # For other objects, create a deterministic representation
     try:
@@ -605,7 +653,8 @@ def hash_packet_with_psh(
     """
     hash_results = {}
     for key, pathset in packet.items():
-        hash_results[key] = algo.hash_pathset(pathset)
+        # TODO: fix pathset handling
+        hash_results[key] = algo.hash_pathset(pathset)  # type: ignore
 
     packet_hash = hash_to_hex(hash_results)
 
@@ -643,7 +692,8 @@ def hash_packet(
 
     hash_results = {}
     for key, pathset in packet.items():
-        hash_results[key] = pathset_hasher(pathset)
+        # TODO: fix Pathset handling
+        hash_results[key] = pathset_hasher(pathset)  # type: ignore
 
     packet_hash = hash_to_hex(hash_results, char_count=char_count)
 
