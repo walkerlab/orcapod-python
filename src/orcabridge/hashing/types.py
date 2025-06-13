@@ -1,6 +1,7 @@
 """Hash strategy protocols for dependency injection."""
 
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 from uuid import UUID
 
@@ -29,7 +30,19 @@ class ObjectHasher(ABC):
     @abstractmethod
     def hash_to_hex(self, obj: Any, char_count: int | None = 32) -> str: ...
 
-    def hash_to_int(self, obj: Any, hexdigits: int = 16) -> int: ...
+    def hash_to_int(self, obj: Any, hexdigits: int = 16) -> int:
+        """
+        Hash an object to an integer.
+
+        Args:
+            obj (Any): The object to hash.
+            hexdigits (int): Number of hexadecimal digits to use for the hash.
+
+        Returns:
+            int: The integer representation of the hash.
+        """
+        hex_hash = self.hash_to_hex(obj, char_count=hexdigits // 2)
+        return int(hex_hash, 16)
 
     def hash_to_uuid(self, obj: Any) -> UUID: ...
 
@@ -71,3 +84,11 @@ class CompositeFileHasher(FileHasher, PathSetHasher, PacketHasher, Protocol):
     """Combined interface for all file-related hashing operations."""
 
     pass
+
+
+# Function hasher protocol
+@runtime_checkable
+class FunctionInfoExtractor(Protocol):
+    """Protocol for extracting function information."""
+
+    def extract_function_info(self, func: Callable[..., Any]) -> dict[str, Any]: ...
