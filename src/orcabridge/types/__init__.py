@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Any, Protocol
 from typing_extensions import TypeAlias
 
-import polars as pl
+
+SUPPORTED_PYTHON_TYPES = (str, int, float, bool, bytes)
 
 # Convenience alias for anything pathlike
 PathLike = str | os.PathLike
@@ -22,23 +23,13 @@ Tag: TypeAlias = Mapping[str, TagValue]
 PathSet: TypeAlias = PathLike | Collection[PathLike | None]
 
 # Simple data types that we support (with clear Polars correspondence)
-SimpleDataValue: TypeAlias = str | int | float | bool | bytes
+SupportedNativePythonData: TypeAlias = str | int | float | bool | bytes
 
-# Extended data types that can be stored in packets
+ExtendedSupportedPythonData: TypeAlias = SupportedNativePythonData | PathLike
+
+# Extended data values that can be stored in packets
 # Either the original PathSet or one of our supported simple data types
-DataValue: TypeAlias = PathSet | SimpleDataValue
-
-# Data type specifications - only support Python types and Polars types for simplicity
-DataType: TypeAlias = (
-    type[str]
-    | type[int]
-    | type[float]
-    | type[bool]
-    | type[bytes]
-    | type[Path]
-    | type[list]  # this needs to be validated specifically at runtime
-    | type[pl.DataType]
-)
+DataValue: TypeAlias = PathSet | SupportedNativePythonData | Collection["DataValue"]
 
 
 # a packet is a mapping from string keys to data values
@@ -46,9 +37,6 @@ Packet: TypeAlias = Mapping[str, DataValue]
 
 # a batch is a tuple of a tag and a list of packets
 Batch: TypeAlias = tuple[Tag, Collection[Packet]]
-
-# Type specification for function inputs/outputs
-TypeSpec: TypeAlias = dict[str, DataType]
 
 
 class PodFunction(Protocol):
