@@ -1,8 +1,9 @@
-from orcabridge.hashing.core import hash_file, hash_packet, hash_pathset
+from orcabridge.hashing.core import hash_file, hash_pathset, hash_packet
 from orcabridge.hashing.types import (
     FileHasher,
     PathSetHasher,
     StringCacher,
+    CompositeFileHasher,
 )
 from orcabridge.types import Packet, PathLike, PathSet
 
@@ -93,7 +94,7 @@ class DefaultPacketHasher:
 
 
 # Convenience composite implementation
-class CompositeHasher:
+class DefaultCompositeFileHasher:
     """Composite hasher that implements all interfaces."""
 
     def __init__(
@@ -103,7 +104,7 @@ class CompositeHasher:
         packet_prefix: str = "",
     ):
         self.file_hasher = file_hasher
-        self.pathset_hasher = DefaultPathsetHasher(file_hasher, char_count)
+        self.pathset_hasher = DefaultPathsetHasher(self.file_hasher, char_count)
         self.packet_hasher = DefaultPacketHasher(
             self.pathset_hasher, char_count, packet_prefix
         )
@@ -119,7 +120,7 @@ class CompositeHasher:
 
 
 # Factory for easy construction
-class HasherFactory:
+class PathLikeHasherFactory:
     """Factory for creating various hasher combinations."""
 
     @staticmethod
@@ -127,11 +128,13 @@ class HasherFactory:
         algorithm: str = "sha256",
         buffer_size: int = 65536,
         char_count: int | None = 32,
-    ) -> CompositeHasher:
+    ) -> CompositeFileHasher:
         """Create a basic composite hasher."""
         file_hasher = BasicFileHasher(algorithm, buffer_size)
         # use algorithm as the prefix for the packet hasher
-        return CompositeHasher(file_hasher, char_count, packet_prefix=algorithm)
+        return DefaultCompositeFileHasher(
+            file_hasher, char_count, packet_prefix=algorithm
+        )
 
     @staticmethod
     def create_cached_composite(
@@ -139,11 +142,13 @@ class HasherFactory:
         algorithm: str = "sha256",
         buffer_size: int = 65536,
         char_count: int | None = 32,
-    ) -> CompositeHasher:
+    ) -> CompositeFileHasher:
         """Create a composite hasher with file caching."""
         basic_file_hasher = BasicFileHasher(algorithm, buffer_size)
         cached_file_hasher = CachedFileHasher(basic_file_hasher, string_cacher)
-        return CompositeHasher(cached_file_hasher, char_count, packet_prefix=algorithm)
+        return DefaultCompositeFileHasher(
+            cached_file_hasher, char_count, packet_prefix=algorithm
+        )
 
     @staticmethod
     def create_file_hasher(
