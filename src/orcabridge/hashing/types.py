@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
-from uuid import UUID
+import uuid
 
 from orcabridge.types import Packet, PathLike, PathSet
 
@@ -28,7 +28,30 @@ class ObjectHasher(ABC):
     """Abstract class for general object hashing."""
 
     @abstractmethod
-    def hash_to_hex(self, obj: Any, char_count: int | None = 32) -> str: ...
+    def hash(self, obj: Any) -> bytes:
+        """
+        Hash an object to a byte representation.
+
+        Args:
+            obj (Any): The object to hash.
+
+        Returns:
+            bytes: The byte representation of the hash.
+        """
+        ...
+
+    def hash_to_hex(self, obj: Any, char_count: int | None = None) -> str:
+        hash_bytes = self.hash(obj)
+        hex_str = hash_bytes.hex()
+
+        # TODO: clean up this logic, as char_count handling is messy
+        if char_count is not None:
+            if char_count > len(hex_str):
+                raise ValueError(
+                    f"Cannot truncate to {char_count} chars, hash only has {len(hex_str)}"
+                )
+            return hex_str[:char_count]
+        return hex_str
 
     def hash_to_int(self, obj: Any, hexdigits: int = 16) -> int:
         """
@@ -41,10 +64,15 @@ class ObjectHasher(ABC):
         Returns:
             int: The integer representation of the hash.
         """
-        hex_hash = self.hash_to_hex(obj, char_count=hexdigits // 2)
+        hex_hash = self.hash_to_hex(obj, char_count=hexdigits)
         return int(hex_hash, 16)
 
-    def hash_to_uuid(self, obj: Any) -> UUID: ...
+    def hash_to_uuid(
+        self, obj: Any, namespace: uuid.UUID = uuid.NAMESPACE_OID
+    ) -> uuid.UUID:
+        """Convert hash to proper UUID5."""
+        # Use the hex representation as input to UUID5
+        return uuid.uuid5(namespace, self.hash(obj))
 
 
 @runtime_checkable
