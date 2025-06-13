@@ -73,23 +73,16 @@ class TypeRegistry:
         """Get handler by semantic name."""
         return self._semantic_handlers.get(semantic_name)
 
-    # TODO: reconsider the need for this method
-    def extract_type_info(self, python_type: type) -> TypeInfo:
-        """Extract TypeInfo for a Python type."""
-        handler_info = self._handlers.get(python_type)
-        if not handler_info:
-            raise ValueError(f"Unsupported Python type: {python_type}")
-
-        handler, semantic_name = handler_info
-        return TypeInfo(
-            python_type=python_type,
-            arrow_type=handler.to_storage_type(),
-            semantic_type=semantic_name,
-        )
-
     def __contains__(self, python_type: type) -> bool:
         """Check if a Python type is registered."""
         return python_type in self._handlers
+
+
+def is_packet_supported(
+    packet_type_info: dict[str, type], registry: TypeRegistry
+) -> bool:
+    """Check if all types in the packet are supported by the registry."""
+    return all(python_type in registry for python_type in packet_type_info.values())
 
 
 def create_packet_converters(
