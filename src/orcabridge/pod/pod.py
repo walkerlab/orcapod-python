@@ -4,18 +4,31 @@ import pickle
 import warnings
 from abc import abstractmethod
 import sys
-from collections.abc import Callable, Collection, Iterable, Iterator
+from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from typing import (
     Any,
     Literal,
 )
 
 from orcabridge.base import Operation
-from orcabridge.hashing import get_function_signature, hash_function
+from orcabridge.hashing import (
+    ObjectHasher,
+    get_function_signature,
+    hash_function,
+    get_default_object_hasher,
+)
 from orcabridge.mappers import Join
 from orcabridge.store import DataStore, NoOpDataStore
 from orcabridge.streams import SyncStream, SyncStreamFromGenerator
 from orcabridge.types import Packet, PathSet, PodFunction, Tag
+from orcabridge.types.default import default_registry
+from orcabridge.types.inference import (
+    TypeSpec,
+    extract_function_data_types,
+    verify_against_typespec,
+    check_typespec_compatibility,
+)
+from orcabridge.types.registry import is_packet_supported
 
 logger = logging.getLogger(__name__)
 
@@ -303,6 +316,359 @@ class FunctionPod(Pod):
                 f"Unknown function hash mode: {self.function_hash_mode}. "
                 "Must be one of 'content', 'signature', 'name', or 'custom'."
             )
+
+        return (
+            self.__class__.__name__,
+            function_hash_value,
+            tuple(self.output_keys),
+        ) + tuple(streams)
+
+
+def typed_function_pod(
+    output_keys: Collection[str] | None = None,
+    function_name: str | None = None,
+    **kwargs: Any,
+) -> Callable[..., "FunctionPod"]:
+    """
+    Decorator that wraps a function in a FunctionPod instance.
+
+    Args:
+        output_keys: Keys for the function output(s)
+        function_name: Name of the function pod; if None, defaults to the function name
+        **kwargs: Additional keyword arguments to pass to the FunctionPod constructor. Please refer to the FunctionPod documentation for details.
+
+    Returns:
+        FunctionPod instance wrapping the decorated function
+    """
+
+    def decorator(func) -> FunctionPod:
+        if func.__name__ == "<lambda>":
+            raise ValueError("Lambda functions cannot be used with function_pod")
+
+        if not hasattr(func, "__module__") or func.__module__ is None:
+            raise ValueError(
+                f"Function {func.__name__} must be defined at module level"
+            )
+
+        # Store the original function in the module for pickling purposes
+        # and make sure to change the name of the function
+        module = sys.modules[func.__module__]
+        base_function_name = func.__name__
+        new_function_name = f"_original_{func.__name__}"
+        setattr(module, new_function_name, func)
+        # rename the function to be consistent and make it pickleable
+        setattr(func, "__name__", new_function_name)
+        setattr(func, "__qualname__", new_function_name)
+
+        # Create the FunctionPod
+        pod = FunctionPod(
+            function=func,
+            output_keys=output_keys,
+            function_name=function_name or base_function_name,
+            data_store=data_store,
+            store_name=store_name,
+            function_hash_mode=function_hash_mode,
+            custom_hash=custom_hash,
+            force_computation=force_computation,
+            skip_memoization=skip_memoization,
+            error_handling=error_handling,
+            **kwargs,
+        )
+
+        return pod
+
+    return decorator
+
+
+class TypedFunctionPod(Pod):
+    """
+    A type-aware pod that wraps a function and provides automatic type validation and inference.
+
+    This pod extends the base Pod functionality by automatically extracting and validating
+    type information from function signatures and user-provided specifications. It ensures
+    type safety by verifying that both input and output types are supported by the
+    configured type registry before execution.
+
+    The TypedFunctionPod analyzes the wrapped function's signature to determine:
+    - Parameter types (from annotations or user-provided input_types)
+    - Return value types (from annotations or user-provided output_types)
+    - Type compatibility with the packet type registry
+
+    Key Features:
+    - Automatic type extraction from function annotations
+    - Type override support via input_types and output_types parameters
+    - Registry-based type validation ensuring data compatibility
+    - Memoization support with type-aware caching
+    - Multiple output key handling with proper type mapping
+    - Comprehensive error handling for type mismatches
+
+    Type Resolution Priority:
+    1. User-provided input_types/output_types override function annotations
+    2. Function parameter annotations are used when available
+    3. Function return annotations are parsed for output type inference
+    4. Error raised if types cannot be determined or are unsupported
+
+    Args:
+        function: The function to wrap. Must accept keyword arguments corresponding
+            to packet keys and return values compatible with output_keys.
+        output_keys: Collection of string keys for the function outputs. For functions
+            returning a single value, provide a single key. For multiple returns
+            (tuple/list), provide keys matching the number of return items.
+        function_name: Optional name for the function. Defaults to function.__name__.
+        input_types: Optional mapping of parameter names to their types. Overrides
+            function annotations for specified parameters.
+        output_types: Optional type specification for return values. Can be:
+            - A dict mapping output keys to types (TypeSpec)
+            - A sequence of types mapped to output_keys in order
+            These override inferred types from function return annotations.
+        data_store: DataStore instance for memoization. Defaults to NoOpDataStore.
+        function_hasher: Hasher function for creating function identity hashes.
+            Required parameter - no default implementation available.
+        label: Optional label for the pod instance.
+        skip_memoization_lookup: If True, skips checking for memoized results.
+        skip_memoization: If True, disables memoization entirely.
+        error_handling: How to handle execution errors:
+            - "raise": Raise exceptions (default)
+            - "ignore": Skip failed packets silently
+            - "warn": Issue warnings and continue
+        packet_type_registry: Registry for validating packet types. Defaults to
+            the default registry if None.
+        **kwargs: Additional arguments passed to the parent Pod class and above.
+
+    Raises:
+        ValueError: When:
+            - function_name cannot be determined and is not provided
+            - Input types are not supported by the registry
+            - Output types are not supported by the registry
+            - Type extraction fails due to missing annotations/specifications
+        NotImplementedError: When function_hasher is None (required parameter).
+
+    Examples:
+        Basic usage with annotated function:
+
+        >>> def process_data(text: str, count: int) -> tuple[str, int]:
+        ...     return text.upper(), count * 2
+        >>>
+        >>> pod = TypedFunctionPod(
+        ...     function=process_data,
+        ...     output_keys=['upper_text', 'doubled_count'],
+        ...     function_hasher=my_hasher
+        ... )
+
+        Override types for legacy function:
+
+        >>> def legacy_func(x, y):  # No annotations
+        ...     return x + y
+        >>>
+        >>> pod = TypedFunctionPod(
+        ...     function=legacy_func,
+        ...     output_keys=['sum'],
+        ...     input_types={'x': int, 'y': int},
+        ...     output_types={'sum': int},
+        ...     function_hasher=my_hasher
+        ... )
+
+        Multiple outputs with sequence override:
+
+        >>> def analyze(data: list) -> tuple[int, float, str]:
+        ...     return len(data), sum(data), str(data)
+        >>>
+        >>> pod = TypedFunctionPod(
+        ...     function=analyze,
+        ...     output_keys=['count', 'total', 'repr'],
+        ...     output_types=[int, float, str],  # Override with sequence
+        ...     function_hasher=my_hasher
+        ... )
+
+    Attributes:
+        function: The wrapped function.
+        output_keys: List of output key names.
+        function_name: Name identifier for the function.
+        function_input_types: Resolved input type specification.
+        function_output_types: Resolved output type specification.
+        registry: Type registry for validation.
+        data_store: DataStore instance for memoization.
+        function_hasher: Function hasher for identity computation.
+        skip_memoization_lookup: Whether to skip memoization lookups.
+        skip_memoization: Whether to disable memoization entirely.
+        error_handling: Error handling strategy.
+
+    Note:
+        The TypedFunctionPod requires a function_hasher to be provided as there
+        is no default implementation. This hasher is used to create stable
+        identity hashes for memoization and caching purposes.
+
+        Type validation occurs during initialization, ensuring that any type
+        incompatibilities are caught early rather than during stream processing.
+    """
+
+    def __init__(
+        self,
+        function: PodFunction,
+        output_keys: Collection[str] | None = None,
+        function_name=None,
+        input_types: TypeSpec | None = None,
+        output_types: TypeSpec | Sequence[type] | None = None,
+        data_store: DataStore | None = None,
+        function_hasher: ObjectHasher | None = None,
+        label: str | None = None,
+        skip_memoization_lookup: bool = False,
+        skip_memoization: bool = False,
+        error_handling: Literal["raise", "ignore", "warn"] = "raise",
+        packet_type_registry=None,
+        **kwargs,
+    ) -> None:
+        super().__init__(label=label, **kwargs)
+        self.function = function
+        self.output_keys = output_keys or []
+        if function_name is None:
+            if hasattr(self.function, "__name__"):
+                function_name = getattr(self.function, "__name__")
+            else:
+                raise ValueError(
+                    "function_name must be provided if function has no __name__ attribute"
+                )
+
+        self.function_name = function_name
+        self.data_store = data_store if data_store is not None else NoOpDataStore()
+        if function_hasher is None:
+            function_hasher = get_default_object_hasher()
+        self.function_hasher = function_hasher
+        self.skip_memoization_lookup = skip_memoization_lookup
+        self.skip_memoization = skip_memoization
+        self.error_handling = error_handling
+        if packet_type_registry is None:
+            packet_type_registry = default_registry
+
+        self.registry = packet_type_registry
+
+        # extract input and output types from the function signature
+        function_input_types, function_output_types = extract_function_data_types(
+            self.function,
+            self.output_keys,
+            input_types=input_types,
+            output_types=output_types,
+        )
+        # verify that both input types and output types are supported by the registry
+        if not is_packet_supported(function_input_types, self.registry):
+            raise ValueError(
+                f"Input types {function_input_types} are not supported by the registry {self.registry}"
+            )
+        if not is_packet_supported(function_output_types, self.registry):
+            raise ValueError(
+                f"Output types {function_output_types} are not supported by the registry {self.registry}"
+            )
+
+        self.function_input_types = function_input_types
+        self.function_output_types = function_output_types
+
+    # TODO: prepare a separate str and repr methods
+    def __repr__(self) -> str:
+        func_sig = get_function_signature(self.function)
+        return f"FunctionPod:{func_sig} ⇒ {self.output_keys}"
+
+    def keys(
+        self, *streams: SyncStream
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
+        stream = self.process_stream(*streams)
+        tag_keys, _ = stream[0].keys()
+        return tag_keys, tuple(self.output_keys)
+
+    def is_memoized(self, packet: Packet) -> bool:
+        return self.retrieve_memoized(packet) is not None
+
+    def retrieve_memoized(self, packet: Packet) -> Packet | None:
+        """
+        Retrieve a memoized packet from the data store.
+        Returns None if no memoized packet is found.
+        """
+        return self.data_store.retrieve_memoized(
+            self.function_name,
+            self.content_hash(char_count=16),
+            packet,
+        )
+
+    def memoize(
+        self,
+        packet: Packet,
+        output_packet: Packet,
+    ) -> Packet:
+        """
+        Memoize the output packet in the data store.
+        Returns the memoized packet.
+        """
+        return self.data_store.memoize(
+            self.function_name,
+            self.content_hash(char_count=16),  # identity of this function pod
+            packet,
+            output_packet,
+        )
+
+    def forward(self, *streams: SyncStream) -> SyncStream:
+        # if multiple streams are provided, join them
+        if len(streams) > 1:
+            raise ValueError("Multiple streams should be joined before calling forward")
+        if len(streams) == 0:
+            raise ValueError("No streams provided to forward")
+        stream = streams[0]
+
+        def generator() -> Iterator[tuple[Tag, Packet]]:
+            n_computed = 0
+            for tag, packet in stream:
+                output_values: list["PathSet"] = []
+                try:
+                    if not self.skip_memoization_lookup:
+                        memoized_packet = self.retrieve_memoized(packet)
+                    else:
+                        memoized_packet = None
+                    if memoized_packet is not None:
+                        logger.info("Memoized packet found, skipping computation")
+                        yield tag, memoized_packet
+                        continue
+                    values = self.function(**packet)
+
+                    if len(self.output_keys) == 0:
+                        output_values = []
+                    elif len(self.output_keys) == 1:
+                        output_values = [values]  # type: ignore
+                    elif isinstance(values, Iterable):
+                        output_values = list(values)  # type: ignore
+                    elif len(self.output_keys) > 1:
+                        raise ValueError(
+                            "Values returned by function must be a pathlike or a sequence of pathlikes"
+                        )
+
+                    if len(output_values) != len(self.output_keys):
+                        raise ValueError(
+                            f"Number of output keys {len(self.output_keys)}:{self.output_keys} does not match number of values returned by function {len(output_values)}"
+                        )
+                except Exception as e:
+                    logger.error(f"Error processing packet {packet}: {e}")
+                    if self.error_handling == "raise":
+                        raise e
+                    elif self.error_handling == "ignore":
+                        continue
+                    elif self.error_handling == "warn":
+                        warnings.warn(f"Error processing packet {packet}: {e}")
+                        continue
+
+                output_packet: Packet = {
+                    k: v for k, v in zip(self.output_keys, output_values)
+                }
+
+                if not self.skip_memoization:
+                    # output packet may be modified by the memoization process
+                    # e.g. if the output is a file, the path may be changed
+                    output_packet = self.memoize(packet, output_packet)  # type: ignore
+
+                n_computed += 1
+                logger.info(f"Computed item {n_computed}")
+                yield tag, output_packet
+
+        return SyncStreamFromGenerator(generator)
+
+    def identity_structure(self, *streams) -> Any:
+        function_hash_value = self.function_hasher.hash_to_hex(self.function)
 
         return (
             self.__class__.__name__,
