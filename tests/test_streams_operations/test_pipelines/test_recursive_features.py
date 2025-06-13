@@ -12,8 +12,8 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from orcabridge.base import SyncStream, Operation
-from orcabridge.stream import SyncStreamFromLists, SyncStreamFromGenerator
-from orcabridge.mapper import (
+from orcabridge.streams import SyncStreamFromLists, SyncStreamFromGenerator
+from orcabridge.mappers import (
     Join,
     Merge,
     Filter,

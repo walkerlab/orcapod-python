@@ -10,7 +10,7 @@ import pytest
 from unittest.mock import Mock, patch
 import gc
 
-from orcabridge.stream import SyncStreamFromLists, SyncStreamFromGenerator
+from orcabridge.streams import SyncStreamFromLists, SyncStreamFromGenerator
 from orcabridge.base import SyncStream
 
 

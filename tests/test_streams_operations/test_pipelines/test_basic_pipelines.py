@@ -11,8 +11,8 @@ import tempfile
 from pathlib import Path
 
 from orcabridge.base import SyncStream
-from orcabridge.stream import SyncStreamFromLists
-from orcabridge.mapper import (
+from orcabridge.streams import SyncStreamFromLists
+from orcabridge.mappers import (
     Join,
     Merge,
     Filter,

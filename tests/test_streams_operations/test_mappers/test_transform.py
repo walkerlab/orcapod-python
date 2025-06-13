@@ -1,9 +1,8 @@
 """Tests for Transform mapper functionality."""
 
 import pytest
-from orcabridge.base import PacketType
-from orcabridge.mapper import Transform
-from orcabridge.stream import SyncStreamFromLists
+from orcabridge.mappers import Transform
+from orcabridge.streams import SyncStreamFromLists
 
 
 class TestTransform:

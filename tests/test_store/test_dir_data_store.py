@@ -503,6 +503,9 @@ def test_dir_data_store_legacy_mode_compatibility(temp_dir, sample_files):
     from orcabridge.hashing import hash_packet
 
     legacy_hash = hash_packet(packet, algorithm="sha256")
+    assert store_default.packet_hasher is not None, (
+        "Default store should have a packet hasher"
+    )
     default_hash = store_default.packet_hasher.hash_packet(packet)
 
     # The hashes should be identical since both implementations should produce the same result
@@ -609,10 +612,10 @@ def test_dir_data_store_hash_equivalence(temp_dir, sample_files):
 
     # First compute hashes directly
     from orcabridge.hashing import hash_packet
-    from orcabridge.hashing.defaults import get_default_composite_hasher
+    from orcabridge.hashing.defaults import get_default_composite_file_hasher
 
     legacy_hash = hash_packet(packet, algorithm="sha256")
-    default_hasher = get_default_composite_hasher(
+    default_hasher = get_default_composite_file_hasher(
         with_cache=False
     )  # No caching for direct comparison
     default_hash = default_hasher.hash_packet(packet)

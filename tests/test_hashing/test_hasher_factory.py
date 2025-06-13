@@ -7,17 +7,17 @@ from pathlib import Path
 from orcabridge.hashing.file_hashers import (
     BasicFileHasher,
     CachedFileHasher,
-    HasherFactory,
+    PathLikeHasherFactory,
 )
 from orcabridge.hashing.string_cachers import FileCacher, InMemoryCacher
 
 
-class TestHasherFactoryCreateFileHasher:
-    """Test cases for HasherFactory.create_file_hasher method."""
+class TestPathLikeHasherFactoryCreateFileHasher:
+    """Test cases for PathLikeHasherFactory.create_file_hasher method."""
 
     def test_create_file_hasher_without_cacher(self):
         """Test creating a file hasher without string cacher (returns BasicFileHasher)."""
-        hasher = HasherFactory.create_file_hasher()
+        hasher = PathLikeHasherFactory.create_file_hasher()
 
         # Should return BasicFileHasher
         assert isinstance(hasher, BasicFileHasher)
@@ -30,7 +30,7 @@ class TestHasherFactoryCreateFileHasher:
     def test_create_file_hasher_with_cacher(self):
         """Test creating a file hasher with string cacher (returns CachedFileHasher)."""
         cacher = InMemoryCacher()
-        hasher = HasherFactory.create_file_hasher(string_cacher=cacher)
+        hasher = PathLikeHasherFactory.create_file_hasher(string_cacher=cacher)
 
         # Should return CachedFileHasher
         assert isinstance(hasher, CachedFileHasher)
@@ -44,14 +44,14 @@ class TestHasherFactoryCreateFileHasher:
     def test_create_file_hasher_custom_algorithm(self):
         """Test creating file hasher with custom algorithm."""
         # Without cacher
-        hasher = HasherFactory.create_file_hasher(algorithm="md5")
+        hasher = PathLikeHasherFactory.create_file_hasher(algorithm="md5")
         assert isinstance(hasher, BasicFileHasher)
         assert hasher.algorithm == "md5"
         assert hasher.buffer_size == 65536
 
         # With cacher
         cacher = InMemoryCacher()
-        hasher = HasherFactory.create_file_hasher(
+        hasher = PathLikeHasherFactory.create_file_hasher(
             string_cacher=cacher, algorithm="sha512"
         )
         assert isinstance(hasher, CachedFileHasher)
@@ -61,14 +61,14 @@ class TestHasherFactoryCreateFileHasher:
     def test_create_file_hasher_custom_buffer_size(self):
         """Test creating file hasher with custom buffer size."""
         # Without cacher
-        hasher = HasherFactory.create_file_hasher(buffer_size=32768)
+        hasher = PathLikeHasherFactory.create_file_hasher(buffer_size=32768)
         assert isinstance(hasher, BasicFileHasher)
         assert hasher.algorithm == "sha256"
         assert hasher.buffer_size == 32768
 
         # With cacher
         cacher = InMemoryCacher()
-        hasher = HasherFactory.create_file_hasher(
+        hasher = PathLikeHasherFactory.create_file_hasher(
             string_cacher=cacher, buffer_size=8192
         )
         assert isinstance(hasher, CachedFileHasher)
@@ -78,7 +78,7 @@ class TestHasherFactoryCreateFileHasher:
     def test_create_file_hasher_all_custom_parameters(self):
         """Test creating file hasher with all custom parameters."""
         cacher = InMemoryCacher(max_size=500)
-        hasher = HasherFactory.create_file_hasher(
+        hasher = PathLikeHasherFactory.create_file_hasher(
             string_cacher=cacher, algorithm="blake2b", buffer_size=16384
         )
 
@@ -91,14 +91,16 @@ class TestHasherFactoryCreateFileHasher:
         """Test creating file hasher with different types of string cachers."""
         # InMemoryCacher
         memory_cacher = InMemoryCacher()
-        hasher1 = HasherFactory.create_file_hasher(string_cacher=memory_cacher)
+        hasher1 = PathLikeHasherFactory.create_file_hasher(string_cacher=memory_cacher)
         assert isinstance(hasher1, CachedFileHasher)
         assert hasher1.string_cacher is memory_cacher
 
         # FileCacher
         with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
             file_cacher = FileCacher(tmp_file.name)
-            hasher2 = HasherFactory.create_file_hasher(string_cacher=file_cacher)
+            hasher2 = PathLikeHasherFactory.create_file_hasher(
+                string_cacher=file_cacher
+            )
             assert isinstance(hasher2, CachedFileHasher)
             assert hasher2.string_cacher is file_cacher
 
@@ -107,7 +109,9 @@ class TestHasherFactoryCreateFileHasher:
 
     def test_create_file_hasher_functional_without_cache(self):
         """Test that created file hasher actually works for hashing files."""
-        hasher = HasherFactory.create_file_hasher(algorithm="sha256", buffer_size=1024)
+        hasher = PathLikeHasherFactory.create_file_hasher(
+            algorithm="sha256", buffer_size=1024
+        )
 
         # Create a temporary file to hash
         with tempfile.NamedTemporaryFile(mode="w", delete=False) as tmp_file:
@@ -132,7 +136,7 @@ class TestHasherFactoryCreateFileHasher:
     def test_create_file_hasher_functional_with_cache(self):
         """Test that created cached file hasher works and caches results."""
         cacher = InMemoryCacher()
-        hasher = HasherFactory.create_file_hasher(
+        hasher = PathLikeHasherFactory.create_file_hasher(
             string_cacher=cacher, algorithm="sha256"
         )
 
@@ -160,7 +164,7 @@ class TestHasherFactoryCreateFileHasher:
 
     def test_create_file_hasher_none_cacher_explicit(self):
         """Test explicitly passing None for string_cacher."""
-        hasher = HasherFactory.create_file_hasher(
+        hasher = PathLikeHasherFactory.create_file_hasher(
             string_cacher=None, algorithm="sha1", buffer_size=4096
         )
 
@@ -172,26 +176,26 @@ class TestHasherFactoryCreateFileHasher:
     def test_create_file_hasher_parameter_edge_cases(self):
         """Test edge cases for parameters."""
         # Very small buffer size
-        hasher1 = HasherFactory.create_file_hasher(buffer_size=1)
+        hasher1 = PathLikeHasherFactory.create_file_hasher(buffer_size=1)
         assert hasher1.buffer_size == 1
 
         # Large buffer size
-        hasher2 = HasherFactory.create_file_hasher(buffer_size=1024 * 1024)
+        hasher2 = PathLikeHasherFactory.create_file_hasher(buffer_size=1024 * 1024)
         assert hasher2.buffer_size == 1024 * 1024
 
         # Different algorithms
         for algorithm in ["md5", "sha1", "sha224", "sha256", "sha384", "sha512"]:
-            hasher = HasherFactory.create_file_hasher(algorithm=algorithm)
+            hasher = PathLikeHasherFactory.create_file_hasher(algorithm=algorithm)
             assert hasher.algorithm == algorithm
 
     def test_create_file_hasher_cache_independence(self):
         """Test that different cached hashers with same cacher are independent."""
         cacher = InMemoryCacher()
 
-        hasher1 = HasherFactory.create_file_hasher(
+        hasher1 = PathLikeHasherFactory.create_file_hasher(
             string_cacher=cacher, algorithm="sha256"
         )
-        hasher2 = HasherFactory.create_file_hasher(
+        hasher2 = PathLikeHasherFactory.create_file_hasher(
             string_cacher=cacher, algorithm="md5"
         )
 

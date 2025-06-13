@@ -2,7 +2,7 @@
 
 import pytest
 from orcabridge.pod import FunctionPod
-from orcabridge.stream import SyncStreamFromLists
+from orcabridge.streams import SyncStreamFromLists
 
 
 class TestFunctionPod:
