@@ -33,7 +33,7 @@ DataValue: TypeAlias = PathSet | SupportedNativePythonData | Collection["DataVal
 
 
 # a packet is a mapping from string keys to data values
-Packet: TypeAlias = Mapping[str, DataValue]
+Packet: TypeAlias = dict[str, DataValue]
 
 # a batch is a tuple of a tag and a list of packets
 Batch: TypeAlias = tuple[Tag, Collection[Packet]]
