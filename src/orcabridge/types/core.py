@@ -1,4 +1,4 @@
-from typing import Protocol, Any
+from typing import Protocol, Any, TypeAlias
 import pyarrow as pa
 from dataclasses import dataclass
 
@@ -9,7 +9,13 @@ from dataclasses import dataclass
 class TypeInfo:
     python_type: type
     arrow_type: pa.DataType
-    semantic_type: str  # name under which the type is registered
+    semantic_type: str | None  # name under which the type is registered
+    handler: "TypeHandler"
+
+
+DataType: TypeAlias = type
+
+TypeSpec: TypeAlias = dict[str, DataType]  # Mapping of parameter names to their types
 
 
 class TypeHandler(Protocol):
@@ -23,7 +29,7 @@ class TypeHandler(Protocol):
     and focus purely on conversion logic.
     """
 
-    def supported_types(self) -> type | tuple[type, ...]:
+    def python_types(self) -> type | tuple[type, ...]:
         """Return the Python type(s) this handler can process.
 
         Returns:
@@ -36,14 +42,14 @@ class TypeHandler(Protocol):
         """
         ...
 
-    def to_storage_type(self) -> pa.DataType:
+    def storage_type(self) -> pa.DataType:
         """Return the Arrow DataType instance for schema definition."""
         ...
 
-    def to_storage_value(self, value: Any) -> Any:
+    def python_to_storage(self, value: Any) -> Any:
         """Convert Python value to Arrow-compatible storage representation."""
         ...
 
-    def from_storage_value(self, value: Any) -> Any:
+    def storage_to_python(self, value: Any) -> Any:
         """Convert storage representation back to Python object."""
         ...

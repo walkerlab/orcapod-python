@@ -3,14 +3,13 @@
 
 from collections.abc import Callable, Collection, Sequence
 from typing import get_origin, get_args, TypeAlias
+from .core import TypeSpec
 import inspect
 import logging
 from beartype.door import is_bearable, is_subhint
 
 
 logger = logging.getLogger(__name__)
-DataType: TypeAlias = type
-TypeSpec: TypeAlias = dict[str, DataType]  # Mapping of parameter names to their types
 
 
 def verify_against_typespec(packet: dict, typespec: TypeSpec) -> bool:
