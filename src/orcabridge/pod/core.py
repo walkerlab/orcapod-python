@@ -9,6 +9,7 @@ from typing import (
     Any,
     Literal,
 )
+from orcabridge.types.registry import PacketConverter
 
 from orcabridge.base import Operation
 from orcabridge.hashing import (
@@ -122,9 +123,6 @@ class Pod(Operation):
     def __call__(self, *streams: SyncStream, **kwargs) -> SyncStream:
         stream = self.process_stream(*streams)
         return super().__call__(*stream, **kwargs)
-
-
-# TODO: reimplement the memoization as dependency injection
 
 
 class FunctionPod(Pod):
@@ -328,7 +326,7 @@ def typed_function_pod(
     output_keys: Collection[str] | None = None,
     function_name: str | None = None,
     **kwargs: Any,
-) -> Callable[..., "FunctionPod"]:
+) -> Callable[..., "TypedFunctionPod"]:
     """
     Decorator that wraps a function in a FunctionPod instance.
 
@@ -341,7 +339,7 @@ def typed_function_pod(
         FunctionPod instance wrapping the decorated function
     """
 
-    def decorator(func) -> FunctionPod:
+    def decorator(func) -> TypedFunctionPod:
         if func.__name__ == "<lambda>":
             raise ValueError("Lambda functions cannot be used with function_pod")
 
@@ -361,17 +359,10 @@ def typed_function_pod(
         setattr(func, "__qualname__", new_function_name)
 
         # Create the FunctionPod
-        pod = FunctionPod(
+        pod = TypedFunctionPod(
             function=func,
             output_keys=output_keys,
             function_name=function_name or base_function_name,
-            data_store=data_store,
-            store_name=store_name,
-            function_hash_mode=function_hash_mode,
-            custom_hash=custom_hash,
-            force_computation=force_computation,
-            skip_memoization=skip_memoization,
-            error_handling=error_handling,
             **kwargs,
         )
 
@@ -549,18 +540,15 @@ class TypedFunctionPod(Pod):
             input_types=input_types,
             output_types=output_types,
         )
-        # verify that both input types and output types are supported by the registry
-        if not is_packet_supported(function_input_types, self.registry):
-            raise ValueError(
-                f"Input types {function_input_types} are not supported by the registry {self.registry}"
-            )
-        if not is_packet_supported(function_output_types, self.registry):
-            raise ValueError(
-                f"Output types {function_output_types} are not supported by the registry {self.registry}"
-            )
 
         self.function_input_types = function_input_types
         self.function_output_types = function_output_types
+
+        # TODO: include explicit check of support during PacketConverter creation
+        self.input_converter = PacketConverter(self.function_input_types, self.registry)
+        self.output_converter = PacketConverter(
+            self.function_output_types, self.registry
+        )
 
     # TODO: prepare a separate str and repr methods
     def __repr__(self) -> str:
@@ -585,7 +573,7 @@ class TypedFunctionPod(Pod):
         return self.data_store.retrieve_memoized(
             self.function_name,
             self.content_hash(char_count=16),
-            packet,
+            self.input_converter.to_arrow_table(packet),
         )
 
     def memoize(
