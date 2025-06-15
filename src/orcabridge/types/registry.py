@@ -1,8 +1,21 @@
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Sequence
+import logging
+from optparse import Values
 from typing import Any
 import pyarrow as pa
 from orcabridge.types import Packet
-from .core import TypeHandler, TypeInfo
+from .core import TypeHandler, TypeInfo, TypeSpec
+
+# This mapping is expected to be stable
+# Be sure to test this assumption holds true
+DEFAULT_ARROW_TYPE_LUT = {
+    int: pa.int64(),
+    float: pa.float64(),
+    str: pa.string(),
+    bool: pa.bool_(),
+}
+
+logger = logging.getLogger(__name__)
 
 
 class TypeRegistry:
@@ -37,7 +50,7 @@ class TypeRegistry:
                 else (explicit_types,)
             )
         else:
-            supported = handler.supported_types()
+            supported = handler.python_types()
             types_to_register = (
                 supported if isinstance(supported, tuple) else (supported,)
             )
@@ -69,6 +82,19 @@ class TypeRegistry:
         handler_info = self._handlers.get(python_type)
         return handler_info[1] if handler_info else None
 
+    def get_type_info(self, python_type: type) -> TypeInfo | None:
+        """Get TypeInfo for a Python type."""
+        handler = self.get_handler(python_type)
+        if handler is None:
+            return None
+        semantic_name = self.get_semantic_name(python_type)
+        return TypeInfo(
+            python_type=python_type,
+            arrow_type=handler.storage_type(),
+            semantic_type=semantic_name,
+            handler=handler,
+        )
+
     def get_handler_by_semantic_name(self, semantic_name: str) -> TypeHandler | None:
         """Get handler by semantic name."""
         return self._semantic_handlers.get(semantic_name)
@@ -78,62 +104,39 @@ class TypeRegistry:
         return python_type in self._handlers
 
 
-def is_packet_supported(
-    packet_type_info: dict[str, type], registry: TypeRegistry
-) -> bool:
-    """Check if all types in the packet are supported by the registry."""
-    return all(python_type in registry for python_type in packet_type_info.values())
+class PacketConverter:
+    def __init__(self, python_type_spec: TypeSpec, registry: TypeRegistry):
+        self.python_type_spec = python_type_spec
+        self.registry = registry
 
+        # Lookup handlers and type info for fast access
+        self.handlers: dict[str, TypeHandler] = {}
+        self.storage_type_info: dict[str, TypeInfo] = {}
 
-def create_packet_converters(
-    packet_type_info: dict[str, type], registry: TypeRegistry
-) -> tuple[
-    Callable[[Packet], dict[str, Any]],
-    Callable[[dict[str, Any]], Packet],
-]:
-    """Create optimized conversion functions for a specific packet type.
+        self.expected_key_set = set(python_type_spec.keys())
 
-    Pre-looks up all handlers to avoid repeated registry lookups during conversion.
+        # prepare the corresponding arrow table schema with metadata
+        self.keys_with_handlers, self.schema = create_schema_from_python_type_info(
+            python_type_spec, registry
+        )
 
-    Args:
-        type_info: Dictionary mapping parameter names to their Python types
-        registry: TypeRegistry containing handlers for type conversions
+        self.semantic_type_lut = get_metadata_from_schema(self.schema, b"semantic_type")
 
-    Returns:
-        Tuple of (to_storage_converter, from_storage_converter) functions
+    def _check_key_consistency(self, keys):
+        """Check if the provided keys match the expected keys."""
+        keys_set = set(keys)
+        if keys_set != self.expected_key_set:
+            missing_keys = self.expected_key_set - keys_set
+            extra_keys = keys_set - self.expected_key_set
+            error_parts = []
+            if missing_keys:
+                error_parts.append(f"Missing keys: {missing_keys}")
+            if extra_keys:
+                error_parts.append(f"Extra keys: {extra_keys}")
 
-    Raises:
-        ValueError: If any type in type_info is not supported by the registry
+            raise KeyError(f"Keys don't match expected keys. {'; '.join(error_parts)}")
 
-    Example:
-        type_info = {
-            'file_path': Path,
-            'threshold': float,
-            'user_id': UUID
-        }
-
-        to_storage, from_storage = create_packet_converters(type_info, registry)
-
-        # Fast conversion (no registry lookups)
-        storage_packet = to_storage(original_packet)
-        restored_packet = from_storage(storage_packet)
-    """
-
-    # Pre-lookup all handlers and validate they exist
-    handlers: dict[str, TypeHandler] = {}
-    expected_types: dict[str, type] = {}
-
-    for key, python_type in packet_type_info.items():
-        handler = registry.get_handler(python_type)
-        if handler is None:
-            raise ValueError(
-                f"No handler registered for type {python_type} (key: '{key}')"
-            )
-
-        handlers[key] = handler
-        expected_types[key] = python_type
-
-    def to_storage_converter(packet: Packet) -> dict[str, Any]:
+    def _to_storage_packet(self, packet: Packet) -> dict[str, Any]:
         """Convert packet to storage representation.
 
         Args:
@@ -149,259 +152,250 @@ def create_packet_converters(
         """
         # Validate packet keys
         packet_keys = set(packet.keys())
-        expected_keys = set(expected_types.keys())
 
-        if packet_keys != expected_keys:
-            missing_in_packet = expected_keys - packet_keys
-            extra_in_packet = packet_keys - expected_keys
-
-            error_parts = []
-            if missing_in_packet:
-                error_parts.append(f"Missing keys: {missing_in_packet}")
-            if extra_in_packet:
-                error_parts.append(f"Extra keys: {extra_in_packet}")
-
-            raise KeyError(
-                f"Packet keys don't match expected keys. {'; '.join(error_parts)}"
-            )
+        self._check_key_consistency(packet_keys)
 
         # Convert each value
-        storage_packet = {}
+        storage_packet: dict[str, Any] = (
+            packet.copy()
+        )  # Start with a copy of the packet
 
-        for key, value in packet.items():
-            expected_type = expected_types[key]
-            handler = handlers[key]
-
-            # Handle None values
-            if value is None:
-                storage_packet[key] = None
-                continue
-
-            # Validate value type
-            if not isinstance(value, expected_type):
-                raise TypeError(
-                    f"Value for '{key}' is {type(value).__name__}, expected {expected_type.__name__}"
-                )
-
-            # Convert to storage representation
+        for key, handler in self.keys_with_handlers:
             try:
-                storage_value = handler.to_storage_value(value)
-                storage_packet[key] = storage_value
+                storage_packet[key] = handler.python_to_storage(storage_packet[key])
             except Exception as e:
-                raise ValueError(
-                    f"Failed to convert '{key}' of type {expected_type}: {e}"
-                ) from e
+                raise ValueError(f"Failed to convert value for '{key}': {e}") from e
 
         return storage_packet
 
-    def from_storage_converter(storage_packet: dict[str, Any]) -> Packet:
-        """Convert storage packet back to Python values.
+    def _from_storage_packet(self, storage_packet: dict[str, Any]) -> Packet:
+        """Convert storage packet back to Python packet.
 
         Args:
             storage_packet: Dictionary with values in storage format
 
         Returns:
-            Dictionary with same keys but values converted back to Python types
+            Packet with values converted back to Python types
 
         Raises:
-            KeyError: If storage_packet keys don't match the expected type_info keys
+            KeyError: If storage packet keys don't match the expected type_info keys
+            TypeError: If value type doesn't match expected type
             ValueError: If conversion fails
         """
         # Validate storage packet keys
-        packet_keys = set(storage_packet.keys())
-        expected_keys = set(expected_types.keys())
+        storage_keys = set(storage_packet.keys())
 
-        if packet_keys != expected_keys:
-            missing_in_packet = expected_keys - packet_keys
-            extra_in_packet = packet_keys - expected_keys
+        self._check_key_consistency(storage_keys)
 
-            error_parts = []
-            if missing_in_packet:
-                error_parts.append(f"Missing keys: {missing_in_packet}")
-            if extra_in_packet:
-                error_parts.append(f"Extra keys: {extra_in_packet}")
+        # Convert each value back to Python type
+        packet: Packet = storage_packet.copy()
 
-            raise KeyError(
-                f"Storage packet keys don't match expected keys. {'; '.join(error_parts)}"
-            )
-
-        # Convert each value back
-        python_packet = {}
-
-        for key, storage_value in storage_packet.items():
-            handler = handlers[key]
-
-            # Handle None values
-            if storage_value is None:
-                python_packet[key] = None
-                continue
-
-            # Convert from storage representation
+        for key, handler in self.keys_with_handlers:
             try:
-                python_value = handler.from_storage_value(storage_value)
-                python_packet[key] = python_value
+                packet[key] = handler.storage_to_python(storage_packet[key])
             except Exception as e:
-                raise ValueError(f"Failed to convert '{key}' from storage: {e}") from e
+                raise ValueError(f"Failed to convert value for '{key}': {e}") from e
 
-        return python_packet
+        return packet
 
-    return to_storage_converter, from_storage_converter
+    def to_arrow_table(self, packet: Packet | Sequence[Packet]) -> pa.Table:
+        """Convert packet to PyArrow Table with field metadata.
+
+        Args:
+            packet: Dictionary mapping parameter names to Python values
+
+        Returns:
+            PyArrow Table with the packet data as a single row
+        """
+        # Convert packet to storage format
+        if not isinstance(packet, Sequence):
+            packets = [packet]
+        else:
+            packets = packet
+
+        storage_packets = [self._to_storage_packet(p) for p in packets]
+
+        # Create arrays
+        arrays = []
+        for field in self.schema:
+            values = [p[field.name] for p in storage_packets]
+            array = pa.array(values, type=field.type)
+            arrays.append(array)
+
+        return pa.Table.from_arrays(arrays, schema=self.schema)
+
+    def from_arrow_table(
+        self, table: pa.Table, verify_semantic_equivalence: bool = True
+    ) -> list[Packet]:
+        """Convert Arrow table to packet with field metadata.
+
+        Args:
+            table: PyArrow Table with metadata
+
+        Returns:
+            List of packets converted from the Arrow table
+        """
+        # Check for consistency in the semantic type mapping:
+        semantic_type_info = get_metadata_from_schema(table.schema, b"semantic_type")
+
+        if semantic_type_info != self.semantic_type_lut:
+            if not verify_semantic_equivalence:
+                logger.warning(
+                    "Arrow table semantic types do not match expected type registry. "
+                    f"Expected: {self.semantic_type_lut}, got: {semantic_type_info}"
+                )
+            else:
+                raise ValueError(
+                    "Arrow table semantic types do not match expected type registry. "
+                    f"Expected: {self.semantic_type_lut}, got: {semantic_type_info}"
+                )
+
+        # Create packets from the Arrow table
+        # TODO: make this more efficient
+        storage_packets: list[Packet] = arrow_to_dicts(table)  # type: ignore
+        if not self.keys_with_handlers:
+            # no special handling required
+            return storage_packets
+
+        return [self._from_storage_packet(packet) for packet in storage_packets]
 
 
-def convert_packet_to_storage(
-    packet: Packet, type_info: dict[str, type], registry: TypeRegistry
-) -> Packet:
-    """Convert a packet to its storage representation using the provided type info.
-
+def arrow_to_dicts(table: pa.Table) -> list[dict[str, Any]]:
+    """
+    Convert Arrow table to dictionary or list of dictionaries.
+    By default returns a list of dictionaries (one per row) with column names as keys.
+    If `collapse_singleton` is True, return a single dictionary for single-row tables.
     Args:
-        packet: The original packet to convert
-        type_info: Dictionary mapping parameter names to their Python types
-        registry: TypeRegistry containing handlers for type conversions
-
+        table: PyArrow Table to convert
+        collapse_singleton: If True, return a single dictionary for single-row tables. Defaults to False.
     Returns:
-        Converted packet in storage format
+        A dictionary if singleton and collapse_singleton=True. Otherwise, list of dictionaries for multi-row tables.
     """
-    to_storage, _ = create_packet_converters(type_info, registry)
-    return to_storage(packet)
+    if len(table) == 0:
+        return []
+
+    # Multiple rows: return list of dicts (one per row)
+    return [
+        {col_name: table.column(col_name)[i].as_py() for col_name in table.column_names}
+        for i in range(len(table))
+    ]
 
 
-def convert_storage_to_packet(
-    storage_packet: dict[str, Any], type_info: dict[str, type], registry: TypeRegistry
-) -> Packet | None:
-    pass
-
-
-class PacketConverter:
+def get_metadata_from_schema(
+    schema: pa.Schema, metadata_field: bytes
+) -> dict[str, str]:
     """
-    Convenience class for converting packets between storage and Python formats.
+    Extract metadata from Arrow schema fields. Metadata value will be utf-8 decoded.
+    Args:
+        schema: PyArrow Schema to extract metadata from
+        metadata_field: Metadata field to extract (e.g., b'semantic_type')
+    Returns:
+        Dictionary mapping field names to their metadata values
     """
-
-    def __init__(self, packet_type_info: dict[str, type], registry: TypeRegistry):
-        """Initialize the packet converter with type info and registry."""
-        self._to_storage, self._from_storage = create_packet_converters(
-            packet_type_info, registry
-        )
-        self.packet_type_info = packet_type_info
-
-    def to_storage(self, packet: Packet) -> dict[str, Any]:
-        """Convert packet to storage representation."""
-        return self._to_storage(packet)
-
-    def from_storage(self, storage_packet: dict[str, Any]) -> Packet:
-        """Convert storage packet back to Python values."""
-        return self._from_storage(storage_packet)
+    metadata = {}
+    for field in schema:
+        if field.metadata and metadata_field in field.metadata:
+            metadata[field.name] = field.metadata[metadata_field].decode("utf-8")
+    return metadata
 
 
-def convert_packet_to_arrow_table(
-    packet: dict[str, Any], type_info: dict[str, type], registry: TypeRegistry
-) -> pa.Table:
-    """Convert a single packet to a PyArrow Table with one row.
+def create_schema_from_python_type_info(
+    python_type_spec: TypeSpec,
+    registry: TypeRegistry,
+    arrow_type_lut: dict[type, pa.DataType] | None = None,
+) -> tuple[list[tuple[str, TypeHandler]], pa.Schema]:
+    if arrow_type_lut is None:
+        arrow_type_lut = DEFAULT_ARROW_TYPE_LUT
+    keys_with_handlers: list[tuple[str, TypeHandler]] = []
+    schema_fields = []
+    for key, python_type in python_type_spec.items():
+        type_info = registry.get_type_info(python_type)
+
+        field_metadata = {}
+        if type_info and type_info.semantic_type:
+            field_metadata["semantic_type"] = type_info.semantic_type
+            keys_with_handlers.append((key, type_info.handler))
+            arrow_type = type_info.arrow_type
+        else:
+            arrow_type = arrow_type_lut.get(python_type)
+            if arrow_type is None:
+                raise ValueError(
+                    f"Direct support for Python type {python_type} is not provided. Register a handler to work with {python_type}"
+                )
+
+        schema_fields.append(pa.field(key, arrow_type, metadata=field_metadata))
+    return keys_with_handlers, pa.schema(schema_fields)
+
+
+def arrow_table_to_packets(
+    table: pa.Table,
+    registry: TypeRegistry,
+) -> list[Packet]:
+    """Convert Arrow table to packet with field metadata.
 
     Args:
         packet: Dictionary mapping parameter names to Python values
-        type_info: Dictionary mapping parameter names to their Python types
-        registry: TypeRegistry containing handlers for type conversions
 
     Returns:
         PyArrow Table with the packet data as a single row
     """
-    # Get the converter functions
-    to_storage, _ = create_packet_converters(type_info, registry)
+    packets: list[Packet] = []
 
-    # Convert packet to storage format
-    storage_packet = to_storage(packet)
+    # prepare converter for each field
 
-    # Create schema
-    schema_fields = []
-    for key, python_type in type_info.items():
-        type_info_obj = registry.extract_type_info(python_type)
-        schema_fields.append(pa.field(key, type_info_obj.arrow_type))
+    def no_op(x) -> Any:
+        return x
 
-    schema = pa.schema(schema_fields)
+    converter_lut = {}
+    for field in table.schema:
+        if field.metadata and b"semantic_type" in field.metadata:
+            semantic_type = field.metadata[b"semantic_type"].decode("utf-8")
+            if semantic_type:
+                handler = registry.get_handler_by_semantic_name(semantic_type)
+                if handler is None:
+                    raise ValueError(
+                        f"No handler registered for semantic type '{semantic_type}'"
+                    )
+                converter_lut[field.name] = handler.storage_to_python
 
-    # Convert storage packet to arrays (single element each)
-    arrays = []
-    for field in schema:
-        field_name = field.name
-        value = storage_packet[field_name]
+    # Create packets from the Arrow table
+    # TODO: make this more efficient
+    for row in range(table.num_rows):
+        packet: Packet = {}
+        for field in table.schema:
+            value = table.column(field.name)[row].as_py()
+            packet[field.name] = converter_lut.get(field.name, no_op)(value)
+        packets.append(packet)
 
-        # Create single-element array
-        array = pa.array([value], type=field.type)
-        arrays.append(array)
-
-    # Create table
-    return pa.Table.from_arrays(arrays, schema=schema)
+    return packets
 
 
-def convert_packets_to_arrow_table(
-    packets: list[dict[str, Any]], type_info: dict[str, type], registry: TypeRegistry
-) -> pa.Table:
-    """Convert multiple packets to a PyArrow Table.
+def is_packet_supported(
+    python_type_info: TypeSpec, registry: TypeRegistry, type_lut: dict | None = None
+) -> bool:
+    """Check if all types in the packet are supported by the registry or known to the default lut."""
+    if type_lut is None:
+        type_lut = {}
+    return all(
+        python_type in registry or python_type in type_lut
+        for python_type in python_type_info.values()
+    )
+
+
+def create_arrow_table_with_meta(
+    storage_packet: dict[str, Any], type_info: dict[str, TypeInfo]
+):
+    """Create an Arrow table with metadata from a storage packet.
 
     Args:
-        packets: List of packets (dictionaries)
-        type_info: Dictionary mapping parameter names to their Python types
-        registry: TypeRegistry containing handlers for type conversions
+        storage_packet: Dictionary with values in storage format
+        type_info: Dictionary mapping parameter names to TypeInfo objects
 
     Returns:
-        PyArrow Table with all packet data as rows
+        PyArrow Table with metadata
     """
-    if not packets:
-        # Return empty table with correct schema
-        schema_fields = []
-        for key, python_type in type_info.items():
-            type_info_obj = registry.extract_type_info(python_type)
-            schema_fields.append(pa.field(key, type_info_obj.arrow_type))
-        schema = pa.schema(schema_fields)
-        return pa.Table.from_arrays([], schema=schema)
-
-    # Get the converter functions (reuse for all packets)
-    to_storage, _ = create_packet_converters(type_info, registry)
-
-    # Convert all packets to storage format
-    storage_packets = [to_storage(packet) for packet in packets]
-
-    # Create schema
     schema_fields = []
-    for key, python_type in type_info.items():
-        type_info_obj = registry.extract_type_info(python_type)
-        schema_fields.append(pa.field(key, type_info_obj.arrow_type))
-
-    schema = pa.schema(schema_fields)
-
-    # Group values by column
-    column_data = {}
-    for field in schema:
-        field_name = field.name
-        column_data[field_name] = [packet[field_name] for packet in storage_packets]
-
-    # Create arrays for each column
-    arrays = []
-    for field in schema:
-        field_name = field.name
-        values = column_data[field_name]
-        array = pa.array(values, type=field.type)
-        arrays.append(array)
-
-    # Create table
-    return pa.Table.from_arrays(arrays, schema=schema)
-
-
-def convert_packet_to_arrow_table_with_field_metadata(
-    packet: Packet, type_info: dict[str, type], registry: TypeRegistry
-) -> pa.Table:
-    """Convert packet to Arrow table with semantic type stored as field metadata."""
-
-    # Get converter
-    to_storage, _ = create_packet_converters(type_info, registry)
-    storage_packet = to_storage(packet)
-
-    # Create schema fields with metadata
-    schema_fields = []
-    for key, python_type in type_info.items():
-        type_info_obj = registry.extract_type_info(python_type)
-
-        # Create field with semantic type metadata
+    for key, type_info_obj in type_info.items():
         field_metadata = {}
         if type_info_obj.semantic_type:
             field_metadata["semantic_type"] = type_info_obj.semantic_type
@@ -411,7 +405,6 @@ def convert_packet_to_arrow_table_with_field_metadata(
 
     schema = pa.schema(schema_fields)
 
-    # Create arrays
     arrays = []
     for field in schema:
         value = storage_packet[field.name]
@@ -421,191 +414,26 @@ def convert_packet_to_arrow_table_with_field_metadata(
     return pa.Table.from_arrays(arrays, schema=schema)
 
 
-def convert_packets_to_arrow_table_with_field_metadata(
-    packets: list[Packet], type_info: dict[str, type], registry: TypeRegistry
-) -> pa.Table:
-    """Convert multiple packets to Arrow table with field metadata."""
-
-    if not packets:
-        return _create_empty_table_with_field_metadata(type_info, registry)
-
-    # Get converter
-    to_storage, _ = create_packet_converters(type_info, registry)
-    storage_packets = [to_storage(packet) for packet in packets]
-
-    # Create schema with field metadata
-    schema = _create_schema_with_field_metadata(type_info, registry)
-
-    # Group values by column
-    column_data = {}
-    for field in schema:
-        field_name = field.name
-        column_data[field_name] = [packet[field_name] for packet in storage_packets]
-
-    # Create arrays
-    arrays = []
-    for field in schema:
-        values = column_data[field.name]
-        array = pa.array(values, type=field.type)
-        arrays.append(array)
-
-    return pa.Table.from_arrays(arrays, schema=schema)
-
-
-def _create_schema_with_field_metadata(
-    type_info: dict[str, type], registry: TypeRegistry
-) -> pa.Schema:
-    """Helper to create schema with field-level semantic type metadata."""
-    schema_fields = []
-
-    for key, python_type in type_info.items():
-        type_info_obj = registry.extract_type_info(python_type)
-
-        # Create field metadata
-        field_metadata = {}
-        if type_info_obj.semantic_type:
-            field_metadata["semantic_type"] = type_info_obj.semantic_type
-
-        field = pa.field(key, type_info_obj.arrow_type, metadata=field_metadata)
-        schema_fields.append(field)
-
-    return pa.schema(schema_fields)
-
-
-def _create_empty_table_with_field_metadata(
-    type_info: dict[str, type], registry: TypeRegistry
-) -> pa.Table:
-    """Helper to create empty table with correct schema and field metadata."""
-    schema = _create_schema_with_field_metadata(type_info, registry)
-    arrays = [pa.array([], type=field.type) for field in schema]
-    return pa.Table.from_arrays(arrays, schema=schema)
-
-
-def extract_field_semantic_types(table: pa.Table) -> dict[str, str | None]:
-    """Extract semantic type from each field's metadata."""
-    semantic_types = {}
-
-    for field in table.schema:
-        if field.metadata and b"semantic_type" in field.metadata:
-            semantic_type = field.metadata[b"semantic_type"].decode("utf-8")
-            semantic_types[field.name] = semantic_type
-        else:
-            semantic_types[field.name] = None
-
-    return semantic_types
-
-
-def convert_arrow_table_to_packets_with_field_metadata(
-    table: pa.Table, registry: TypeRegistry
-) -> list[Packet]:
-    """Convert Arrow table back to packets using field metadata."""
-
-    # Extract semantic types from field metadata
-    field_semantic_types = extract_field_semantic_types(table)
-
-    # Reconstruct type_info from field metadata
-    type_info = {}
-    for field in table.schema:
-        field_name = field.name
-        semantic_type = field_semantic_types.get(field_name)
-
-        if semantic_type:
-            # Get handler by semantic type
-            handler = registry.get_handler_by_semantic_name(semantic_type)
-            if handler:
-                python_type = handler.supported_types()
-                if isinstance(python_type, tuple):
-                    python_type = python_type[0]  # Take first if multiple
-                type_info[field_name] = python_type
-            else:
-                # Fallback to basic type inference
-                type_info[field_name] = _infer_python_type_from_arrow(field.type)
-        else:
-            # No semantic type metadata - infer from Arrow type
-            type_info[field_name] = _infer_python_type_from_arrow(field.type)
-
-    # Convert using reconstructed type info
-    _, from_storage = create_packet_converters(type_info, registry)
-    storage_packets = table.to_pylist()
-
-    return [from_storage(packet) for packet in storage_packets]
-
-
-def _infer_python_type_from_arrow(arrow_type: pa.DataType) -> type:
-    """Infer Python type from Arrow type as fallback."""
-    if arrow_type == pa.int64():
-        return int
-    elif arrow_type == pa.float64():
-        return float
-    elif arrow_type == pa.string():
-        return str
-    elif arrow_type == pa.bool_():
-        return bool
-    elif arrow_type == pa.binary():
-        return bytes
-    else:
-        return str  # Safe fallback
-
-
-# TODO: move these functions to util
-def escape_with_postfix(field: str, postfix=None, separator="_") -> str:
-    """
-    Escape the field string by doubling separators and optionally append a postfix.
-    This function takes a field string and escapes any occurrences of the separator
-    by doubling them, then optionally appends a postfix with a separator prefix.
+def retrieve_storage_packet_from_arrow_with_meta(
+    arrow_table: pa.Table,
+) -> dict[str, Any]:
+    """Retrieve storage packet from Arrow table with metadata.
 
     Args:
-        field (str): The input string containing to be escaped.
-        postfix (str, optional): An optional postfix to append to the escaped string.
-                               If None, no postfix is added. Defaults to None.
-        separator (str, optional): The separator character to escape and use for
-                                 prefixing the postfix. Defaults to "_".
+        arrow_table: PyArrow Table with metadata
+
     Returns:
-        str: The escaped string with optional postfix. Returns empty string if
-             fields is provided but postfix is None.
-    Examples:
-        >>> escape_with_postfix("field1_field2", "suffix")
-        'field1__field2_suffix'
-        >>> escape_with_postfix("name_age_city", "backup", "_")
-        'name__age__city_backup'
-        >>> escape_with_postfix("data-info", "temp", "-")
-        'data--info-temp'
-        >>> escape_with_postfix("simple", None)
-        'simple'
-        >>> escape_with_postfix("no_separators", "end")
-        'no__separators_end'
+        Dictionary representing the storage packet
     """
+    storage_packet = {}
+    for field in arrow_table.schema:
+        # Extract value from Arrow array
+        array = arrow_table.column(field.name)
+        if array.num_chunks > 0:
+            value = array.chunk(0).as_py()[0]  # Get first value
+        else:
+            value = None  # Handle empty arrays
 
-    return field.replace(separator, separator * 2) + (f"_{postfix}" if postfix else "")
+        storage_packet[field.name] = value
 
-
-def unescape_with_postfix(field: str, separator="_") -> tuple[str, str | None]:
-    """
-    Unescape a string by converting double separators back to single separators and extract postfix metadata.
-    This function reverses the escaping process where single separators were doubled to avoid
-    conflicts with metadata delimiters. It splits the input on double separators, then extracts
-    any postfix metadata from the last part.
-
-    Args:
-        field (str): The escaped string containing doubled separators and optional postfix metadata
-        separator (str, optional): The separator character used for escaping. Defaults to "_"
-    Returns:
-        tuple[str, str | None]: A tuple containing:
-            - The unescaped string with single separators restored
-            - The postfix metadata if present, None otherwise
-    Examples:
-        >>> unescape_with_postfix("field1__field2__field3")
-        ('field1_field2_field3', None)
-        >>> unescape_with_postfix("field1__field2_metadata")
-        ('field1_field2', 'metadata')
-        >>> unescape_with_postfix("simple")
-        ('simple', None)
-        >>> unescape_with_postfix("field1--field2", separator="-")
-        ('field1-field2', None)
-        >>> unescape_with_postfix("field1--field2-meta", separator="-")
-        ('field1-field2', 'meta')
-    """
-
-    parts = field.split(separator * 2)
-    parts[-1], *meta = parts[-1].split("_", 1)
-    return separator.join(parts), meta[0] if meta else None
+    return storage_packet
