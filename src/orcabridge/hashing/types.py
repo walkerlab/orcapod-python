@@ -91,6 +91,11 @@ class PathSetHasher(Protocol):
 
 
 @runtime_checkable
+class SemanticHasher(Protocol):
+    pass
+
+
+@runtime_checkable
 class PacketHasher(Protocol):
     """Protocol for hashing packets (collections of pathsets)."""
 
