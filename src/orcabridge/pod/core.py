@@ -3,6 +3,7 @@ import logging
 import pickle
 import warnings
 from abc import abstractmethod
+import pyarrow as pa
 import sys
 from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from typing import (
@@ -14,12 +15,14 @@ from orcabridge.types.registry import PacketConverter
 from orcabridge.base import Operation
 from orcabridge.hashing import (
     ObjectHasher,
+    ArrowPacketHasher,
+    FunctionInfoExtractor,
     get_function_signature,
     hash_function,
     get_default_object_hasher,
 )
 from orcabridge.mappers import Join
-from orcabridge.store import DataStore, NoOpDataStore
+from orcabridge.store import DataStore, ArrowDataStore, NoOpDataStore
 from orcabridge.streams import SyncStream, SyncStreamFromGenerator
 from orcabridge.types import Packet, PathSet, PodFunction, Tag
 from orcabridge.types.default import default_registry
@@ -105,6 +108,12 @@ class Pod(Operation):
     the pods act as pure functions which is a necessary condition to guarantee reproducibility.
     """
 
+    def __init__(
+        self, error_handling: Literal["raise", "ignore", "warn"] = "raise", **kwargs
+    ):
+        super().__init__(**kwargs)
+        self.error_handling = error_handling
+
     def process_stream(self, *streams: SyncStream) -> list[SyncStream]:
         """
         Prepare the incoming streams for execution in the pod. This default implementation
@@ -123,6 +132,37 @@ class Pod(Operation):
     def __call__(self, *streams: SyncStream, **kwargs) -> SyncStream:
         stream = self.process_stream(*streams)
         return super().__call__(*stream, **kwargs)
+
+    def call(self, tag: Tag, packet: Packet) -> tuple[Tag, Packet]: ...
+
+    def forward(self, *streams: SyncStream) -> SyncStream:
+        # if multiple streams are provided, join them
+        if len(streams) > 1:
+            raise ValueError("Multiple streams should be joined before calling forward")
+        if len(streams) == 0:
+            raise ValueError("No streams provided to forward")
+        stream = streams[0]
+
+        def generator() -> Iterator[tuple[Tag, Packet]]:
+            n_computed = 0
+            for tag, packet in stream:
+                try:
+                    tag, output_packet = self.call(tag, packet)
+                    n_computed += 1
+                    logger.info(f"Computed item {n_computed}")
+                    yield tag, output_packet
+
+                except Exception as e:
+                    logger.error(f"Error processing packet {packet}: {e}")
+                    if self.error_handling == "raise":
+                        raise e
+                    elif self.error_handling == "ignore":
+                        continue
+                    elif self.error_handling == "warn":
+                        warnings.warn(f"Error processing packet {packet}: {e}")
+                        continue
+
+        return SyncStreamFromGenerator(generator)
 
 
 class FunctionPod(Pod):
@@ -495,23 +535,23 @@ class TypedFunctionPod(Pod):
 
     def __init__(
         self,
-        function: PodFunction,
-        output_keys: Collection[str] | None = None,
+        function: Callable[..., Any],
+        output_keys: str | Collection[str] | None = None,
         function_name=None,
         input_types: TypeSpec | None = None,
         output_types: TypeSpec | Sequence[type] | None = None,
-        data_store: DataStore | None = None,
-        function_hasher: ObjectHasher | None = None,
         label: str | None = None,
-        skip_memoization_lookup: bool = False,
-        skip_memoization: bool = False,
-        error_handling: Literal["raise", "ignore", "warn"] = "raise",
         packet_type_registry=None,
+        function_info_extractor: FunctionInfoExtractor | None = None,
         **kwargs,
     ) -> None:
         super().__init__(label=label, **kwargs)
         self.function = function
-        self.output_keys = output_keys or []
+        if output_keys is None:
+            output_keys = []
+        if isinstance(output_keys, str):
+            output_keys = [output_keys]
+        self.output_keys = output_keys
         if function_name is None:
             if hasattr(self.function, "__name__"):
                 function_name = getattr(self.function, "__name__")
@@ -519,19 +559,13 @@ class TypedFunctionPod(Pod):
                 raise ValueError(
                     "function_name must be provided if function has no __name__ attribute"
                 )
-
         self.function_name = function_name
-        self.data_store = data_store if data_store is not None else NoOpDataStore()
-        if function_hasher is None:
-            function_hasher = get_default_object_hasher()
-        self.function_hasher = function_hasher
-        self.skip_memoization_lookup = skip_memoization_lookup
-        self.skip_memoization = skip_memoization
-        self.error_handling = error_handling
+
         if packet_type_registry is None:
             packet_type_registry = default_registry
 
         self.registry = packet_type_registry
+        self.function_info_extractor = function_info_extractor
 
         # extract input and output types from the function signature
         function_input_types, function_output_types = extract_function_data_types(
@@ -562,19 +596,154 @@ class TypedFunctionPod(Pod):
         tag_keys, _ = stream[0].keys()
         return tag_keys, tuple(self.output_keys)
 
+    def call(self, tag, packet) -> tuple[Tag, Packet]:
+        output_values: list["PathSet"] = []
+
+        values = self.function(**packet)
+
+        if len(self.output_keys) == 0:
+            output_values = []
+        elif len(self.output_keys) == 1:
+            output_values = [values]  # type: ignore
+        elif isinstance(values, Iterable):
+            output_values = list(values)  # type: ignore
+        elif len(self.output_keys) > 1:
+            raise ValueError(
+                "Values returned by function must be a pathlike or a sequence of pathlikes"
+            )
+
+        if len(output_values) != len(self.output_keys):
+            raise ValueError(
+                f"Number of output keys {len(self.output_keys)}:{self.output_keys} does not match number of values returned by function {len(output_values)}"
+            )
+
+        output_packet: Packet = {k: v for k, v in zip(self.output_keys, output_values)}
+        return tag, output_packet
+
+    def identity_structure(self, *streams) -> Any:
+        # construct identity structure for the function
+        # if function_info_extractor is available, use that but substitute the function_name
+        if self.function_info_extractor is not None:
+            function_info = self.function_info_extractor.extract_function_info(
+                self.function,
+                function_name=self.function_name,
+                input_types=self.function_input_types,
+                output_types=self.function_output_types,
+            )
+        else:
+            # use basic information only
+            function_info = {
+                "name": self.function_name,
+                "input_types": self.function_input_types,
+                "output_types": self.function_output_types,
+            }
+        function_info["output_keys"] = tuple(self.output_keys)
+
+        return (
+            self.__class__.__name__,
+            function_info,
+        ) + tuple(streams)
+
+
+class CachedFunctionPod(Pod):
+    def __init__(
+        self,
+        function_pod: TypedFunctionPod,
+        object_hasher: ObjectHasher,
+        packet_hasher: ArrowPacketHasher,
+        result_store: ArrowDataStore,
+        tag_store: ArrowDataStore | None = None,
+        label: str | None = None,
+        skip_memoization_lookup: bool = False,
+        skip_memoization: bool = False,
+        skip_tag_record: bool = False,
+        error_handling: Literal["raise", "ignore", "warn"] = "raise",
+        **kwargs,
+    ) -> None:
+        super().__init__(label=label, error_handling=error_handling, **kwargs)
+        self.function_pod = function_pod
+
+        self.object_hasher = object_hasher
+        self.packet_hasher = packet_hasher
+        self.result_store = result_store
+        self.tag_store = tag_store
+
+        self.skip_memoization_lookup = skip_memoization_lookup
+        self.skip_memoization = skip_memoization
+        self.skip_tag_record = skip_tag_record
+
+        # TODO: consider making this dynamic
+        self.function_pod_hash = self.object_hasher.hash_to_hex(self.function_pod)
+
+    def get_packet_key(self, packet: Packet) -> str:
+        return self.packet_hasher.hash_arrow_packet(
+            self.function_pod.input_converter.to_arrow_table(packet)
+        )
+
+    # TODO: prepare a separate str and repr methods
+    def __repr__(self) -> str:
+        return f"Cached:{self.function_pod}"
+
+    def keys(
+        self, *streams: SyncStream
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
+        return self.function_pod.keys(*streams)
+
     def is_memoized(self, packet: Packet) -> bool:
         return self.retrieve_memoized(packet) is not None
+
+    def add_tag_record(self, tag: Tag, packet: Packet) -> Tag:
+        """
+        Record the tag for the packet in the record store.
+        This is used to keep track of the tags associated with memoized packets.
+        """
+
+        return self._add_tag_record_with_packet_key(tag, self.get_packet_key(packet))
+
+    def _add_tag_record_with_packet_key(self, tag: Tag, packet_key: str) -> Tag:
+        if self.tag_store is None:
+            raise ValueError("Recording of tag requires tag_store but none provided")
+
+        tag = tag.copy()  # ensure we don't modify the original tag
+        tag["__packet_key"] = packet_key
+
+        # convert tag to arrow table
+        table = pa.Table.from_pylist([tag])
+
+        entry_hash = self.packet_hasher.hash_arrow_packet(table)
+
+        # TODO: add error handling
+        self.tag_store.add_record(
+            self.function_pod.function_name, self.function_pod_hash, entry_hash, table
+        )
+
+        return tag
 
     def retrieve_memoized(self, packet: Packet) -> Packet | None:
         """
         Retrieve a memoized packet from the data store.
         Returns None if no memoized packet is found.
         """
-        return self.data_store.retrieve_memoized(
-            self.function_name,
-            self.content_hash(char_count=16),
-            self.input_converter.to_arrow_table(packet),
+        return self._retrieve_memoized_by_hash(self.get_packet_key(packet))
+
+    def _retrieve_memoized_by_hash(self, packet_hash: str) -> Packet | None:
+        """
+        Retrieve a memoized result packet from the data store, looking up by hash
+        Returns None if no memoized packet is found.
+        """
+        arrow_table = self.result_store.get_record(
+            self.function_pod.function_name,
+            self.function_pod_hash,
+            packet_hash,
         )
+        if arrow_table is None:
+            return None
+        packets = self.function_pod.output_converter.from_arrow_table(arrow_table)
+        # since memoizing single packet, it should only contain one packet
+        assert len(packets) == 1, (
+            f"Memoizing single packet return {len(packets)} packets!"
+        )
+        return packets[0]
 
     def memoize(
         self,
@@ -585,81 +754,55 @@ class TypedFunctionPod(Pod):
         Memoize the output packet in the data store.
         Returns the memoized packet.
         """
-        return self.data_store.memoize(
-            self.function_name,
-            self.content_hash(char_count=16),  # identity of this function pod
-            packet,
-            output_packet,
+        return self._memoize_by_hash(self.get_packet_key(packet), output_packet)
+
+    def _memoize_by_hash(self, packet_hash: str, output_packet: Packet) -> Packet:
+        """
+        Memoize the output packet in the data store, looking up by hash.
+        Returns the memoized packet.
+        """
+        packets = self.function_pod.output_converter.from_arrow_table(
+            self.result_store.add_record(
+                self.function_pod.function_name,
+                self.function_pod_hash,
+                packet_hash,
+                self.function_pod.output_converter.to_arrow_table(output_packet),
+            )
         )
+        # since memoizing single packet, it should only contain one packet
+        assert len(packets) == 1, (
+            f"Memoizing single packet return {len(packets)} packets!"
+        )
+        return packets[0]
 
-    def forward(self, *streams: SyncStream) -> SyncStream:
-        # if multiple streams are provided, join them
-        if len(streams) > 1:
-            raise ValueError("Multiple streams should be joined before calling forward")
-        if len(streams) == 0:
-            raise ValueError("No streams provided to forward")
-        stream = streams[0]
+    def call(self, tag: Tag, packet: Packet) -> tuple[Tag, Packet]:
+        packet_key = ""
+        if (
+            not self.skip_tag_record
+            or not self.skip_memoization_lookup
+            or not self.skip_memoization
+        ):
+            packet_key = self.get_packet_key(packet)
 
-        def generator() -> Iterator[tuple[Tag, Packet]]:
-            n_computed = 0
-            for tag, packet in stream:
-                output_values: list["PathSet"] = []
-                try:
-                    if not self.skip_memoization_lookup:
-                        memoized_packet = self.retrieve_memoized(packet)
-                    else:
-                        memoized_packet = None
-                    if memoized_packet is not None:
-                        logger.info("Memoized packet found, skipping computation")
-                        yield tag, memoized_packet
-                        continue
-                    values = self.function(**packet)
+        if not self.skip_tag_record and self.tag_store is not None:
+            self._add_tag_record_with_packet_key(tag, packet_key)
 
-                    if len(self.output_keys) == 0:
-                        output_values = []
-                    elif len(self.output_keys) == 1:
-                        output_values = [values]  # type: ignore
-                    elif isinstance(values, Iterable):
-                        output_values = list(values)  # type: ignore
-                    elif len(self.output_keys) > 1:
-                        raise ValueError(
-                            "Values returned by function must be a pathlike or a sequence of pathlikes"
-                        )
+        if not self.skip_memoization_lookup:
+            memoized_packet = self._retrieve_memoized_by_hash(packet_key)
+        else:
+            memoized_packet = None
+        if memoized_packet is not None:
+            logger.info("Memoized packet found, skipping computation")
+            return tag, memoized_packet
 
-                    if len(output_values) != len(self.output_keys):
-                        raise ValueError(
-                            f"Number of output keys {len(self.output_keys)}:{self.output_keys} does not match number of values returned by function {len(output_values)}"
-                        )
-                except Exception as e:
-                    logger.error(f"Error processing packet {packet}: {e}")
-                    if self.error_handling == "raise":
-                        raise e
-                    elif self.error_handling == "ignore":
-                        continue
-                    elif self.error_handling == "warn":
-                        warnings.warn(f"Error processing packet {packet}: {e}")
-                        continue
+        tag, output_packet = self.function_pod.call(tag, packet)
 
-                output_packet: Packet = {
-                    k: v for k, v in zip(self.output_keys, output_values)
-                }
+        if not self.skip_memoization:
+            # output packet may be modified by the memoization process
+            # e.g. if the output is a file, the path may be changed
+            output_packet = self.memoize(packet, output_packet)  # type: ignore
 
-                if not self.skip_memoization:
-                    # output packet may be modified by the memoization process
-                    # e.g. if the output is a file, the path may be changed
-                    output_packet = self.memoize(packet, output_packet)  # type: ignore
-
-                n_computed += 1
-                logger.info(f"Computed item {n_computed}")
-                yield tag, output_packet
-
-        return SyncStreamFromGenerator(generator)
+        return tag, output_packet
 
     def identity_structure(self, *streams) -> Any:
-        function_hash_value = self.function_hasher.hash_to_hex(self.function)
-
-        return (
-            self.__class__.__name__,
-            function_hash_value,
-            tuple(self.output_keys),
-        ) + tuple(streams)
+        return self.function_pod.identity_structure(*streams)
