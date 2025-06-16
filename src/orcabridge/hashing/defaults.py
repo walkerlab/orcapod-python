@@ -6,6 +6,7 @@ from orcabridge.hashing.string_cachers import InMemoryCacher
 from orcabridge.hashing.object_hashers import ObjectHasher
 from orcabridge.hashing.object_hashers import LegacyObjectHasher
 from orcabridge.hashing.function_info_extractors import FunctionInfoExtractorFactory
+from orcabridge.hashing.semantic_arrow_hasher import SemanticArrowHasher, PathHasher
 
 
 def get_default_composite_file_hasher(with_cache=True) -> CompositeFileHasher:
@@ -31,3 +32,12 @@ def get_default_object_hasher() -> ObjectHasher:
     return LegacyObjectHasher(
         char_count=32, function_info_extractor=function_info_extractor
     )
+
+
+def get_default_semantic_arrow_hasher(
+    chunk_size: int = 8192, handle_missing: str = "error"
+) -> SemanticArrowHasher:
+    hasher = SemanticArrowHasher(chunk_size=chunk_size, handle_missing=handle_missing)
+    # register semantic hasher for Path
+    hasher.register_semantic_hasher("Path", PathHasher())
+    return hasher
