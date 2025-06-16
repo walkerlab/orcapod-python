@@ -13,16 +13,22 @@ from .core import (
 from .defaults import get_default_composite_file_hasher, get_default_object_hasher
 from .types import (
     FileHasher,
+    PacketHasher,
+    ArrowPacketHasher,
     ObjectHasher,
     StringCacher,
+    FunctionInfoExtractor,
     CompositeFileHasher,
 )
 
 __all__ = [
     "FileHasher",
+    "PacketHasher",
+    "ArrowPacketHasher",
     "StringCacher",
     "ObjectHasher",
     "CompositeFileHasher",
+    "FunctionInfoExtractor",
     "hash_file",
     "hash_pathset",
     "hash_packet",
