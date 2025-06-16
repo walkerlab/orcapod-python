@@ -5,7 +5,9 @@ from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 import uuid
 
-from orcabridge.types import Packet, PathLike, PathSet
+from orcabridge.types import Packet, PathLike, PathSet, TypeSpec
+
+import pyarrow as pa
 
 
 @runtime_checkable
@@ -97,9 +99,15 @@ class SemanticHasher(Protocol):
 
 @runtime_checkable
 class PacketHasher(Protocol):
-    """Protocol for hashing packets (collections of pathsets)."""
+    """Protocol for hashing packets."""
 
     def hash_packet(self, packet: Packet) -> str: ...
+
+
+class ArrowPacketHasher:
+    """Protocol for hashing arrow packets."""
+
+    def hash_arrow_packet(self, packet: pa.Table) -> str: ...
 
 
 @runtime_checkable
@@ -124,4 +132,10 @@ class CompositeFileHasher(FileHasher, PathSetHasher, PacketHasher, Protocol):
 class FunctionInfoExtractor(Protocol):
     """Protocol for extracting function information."""
 
-    def extract_function_info(self, func: Callable[..., Any]) -> dict[str, Any]: ...
+    def extract_function_info(
+        self,
+        func: Callable[..., Any],
+        function_name: str | None = None,
+        input_types: TypeSpec | None = None,
+        output_types: TypeSpec | None = None,
+    ) -> dict[str, Any]: ...
