@@ -4,6 +4,7 @@ from collections.abc import Collection, Mapping
 from pathlib import Path
 from typing import Any, Protocol
 from typing_extensions import TypeAlias
+from .core import TypeSpec, TypeHandler
 
 
 SUPPORTED_PYTHON_TYPES = (str, int, float, bool, bytes)
@@ -17,7 +18,7 @@ TagValue: TypeAlias = str | None | Collection["TagValue"]
 
 # the top level tag is a mapping from string keys to values that can be a string or
 # an arbitrary depth of nested list of strings or None
-Tag: TypeAlias = Mapping[str, TagValue]
+Tag: TypeAlias = dict[str, TagValue]
 
 # a pathset is a path or an arbitrary depth of nested list of paths
 PathSet: TypeAlias = PathLike | Collection[PathLike | None]
