@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 import pyarrow as pa
 import pyarrow.ipc as ipc
 from io import BytesIO
+import polars as pl
 
 
 class SemanticTypeHasher(Protocol):
@@ -213,11 +214,16 @@ class SemanticArrowHasher:
         Returns:
             Hex string of the computed hash
         """
+
         # Step 1: Process columns with semantic types
         processed_table = self._process_table_columns(table)
 
         # Step 2: Sort columns by name for deterministic ordering
         sorted_table = self._sort_table_columns(processed_table)
+
+        # normalize all string to large strings by passing through polars
+        # TODO: consider cleaner approach in the future
+        sorted_table = pl.DataFrame(sorted_table).to_arrow()
 
         # Step 3: Serialize using Arrow IPC format
         serialized_bytes = self._serialize_table_ipc(sorted_table)

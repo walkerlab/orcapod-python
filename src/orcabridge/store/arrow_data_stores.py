@@ -1,17 +1,13 @@
 import pyarrow as pa
 import pyarrow.parquet as pq
-import pyarrow.dataset as ds
 import polars as pl
-import os
-import json
 import threading
-import time
 from pathlib import Path
 from typing import Any, cast
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
-
+from orcabridge.store.types import DuplicateError
 
 # Module-level logger
 logger = logging.getLogger(__name__)
@@ -199,7 +195,7 @@ class SourceCache:
 
                 # Ensure column order matches
                 if existing_cols != new_cols:
-                    logger.debug(f"Reordering columns to match existing schema")
+                    logger.debug("Reordering columns to match existing schema")
                     polars_table = polars_table.select(existing_cols)
 
                 # Add new entry
@@ -388,6 +384,15 @@ class ParquetArrowDataStore:
     - Single-row constraint: Each record must contain exactly one row
     """
 
+    _system_columns = [
+        "__source_name",
+        "__source_id",
+        "__entry_id",
+        "__created_at",
+        "__updated_at",
+        "__schema_hash",
+    ]
+
     def __init__(
         self,
         base_path: str | Path,
@@ -558,13 +563,28 @@ class ParquetArrowDataStore:
     ) -> pa.Table:
         """Add system columns to track record metadata."""
         # Keep all system columns for self-describing data
+        # Use large_string for all string columns
+        large_string_type = pa.large_string()
+
         system_columns = [
-            ("__source_name", pa.array([metadata.source_name] * len(table))),
-            ("__source_id", pa.array([metadata.source_id] * len(table))),
-            ("__entry_id", pa.array([metadata.entry_id] * len(table))),
+            (
+                "__source_name",
+                pa.array([metadata.source_name] * len(table), type=large_string_type),
+            ),
+            (
+                "__source_id",
+                pa.array([metadata.source_id] * len(table), type=large_string_type),
+            ),
+            (
+                "__entry_id",
+                pa.array([metadata.entry_id] * len(table), type=large_string_type),
+            ),
             ("__created_at", pa.array([metadata.created_at] * len(table))),
             ("__updated_at", pa.array([metadata.updated_at] * len(table))),
-            ("__schema_hash", pa.array([metadata.schema_hash] * len(table))),
+            (
+                "__schema_hash",
+                pa.array([metadata.schema_hash] * len(table), type=large_string_type),
+            ),
         ]
 
         # Combine user columns + system columns in consistent order
@@ -579,16 +599,7 @@ class ParquetArrowDataStore:
 
     def _remove_system_columns(self, table: pa.Table) -> pa.Table:
         """Remove system columns to get original user data."""
-        system_cols = [
-            "__source_name",
-            "__source_id",
-            "__entry_id",
-            "__created_at",
-            "__updated_at",
-            "__schema_hash",
-        ]
-        user_columns = [name for name in table.column_names if name not in system_cols]
-        return table.select(user_columns)
+        return table.drop(self._system_columns)
 
     def add_record(
         self, source_name: str, source_id: str, entry_id: str, arrow_data: pa.Table
@@ -610,6 +621,9 @@ class ParquetArrowDataStore:
             ValueError: If arrow_data contains more than 1 row
             ValueError: If arrow_data schema doesn't match existing data for this source
         """
+        # normalize arrow_data to conform to polars string. TODO: consider a clearner approach
+        arrow_data = pl.DataFrame(arrow_data).to_arrow()
+
         # CRITICAL: Enforce single-row constraint
         if len(arrow_data) != 1:
             raise ValueError(
@@ -664,7 +678,7 @@ class ParquetArrowDataStore:
         entry_exists = existing_metadata is not None
 
         if entry_exists and self.duplicate_entry_behavior == "error":
-            raise ValueError(
+            raise DuplicateError(
                 f"Entry '{entry_id}' already exists in {source_name}/{source_id}. "
                 f"Use duplicate_entry_behavior='overwrite' to allow updates."
             )
@@ -716,7 +730,9 @@ class ParquetArrowDataStore:
 
         return self._remove_system_columns(table)
 
-    def get_all_records(self, source_name: str, source_id: str) -> pa.Table | None:
+    def get_all_records(
+        self, source_name: str, source_id: str, _keep_system_columns: bool = False
+    ) -> pa.Table | None:
         """Retrieve all records for a given source as a single Arrow table."""
         cache = self._get_or_create_source_cache(source_name, source_id)
         table = cache.get_all_entries()
@@ -724,10 +740,12 @@ class ParquetArrowDataStore:
         if table is None:
             return None
 
+        if _keep_system_columns:
+            return table
         return self._remove_system_columns(table)
 
     def get_all_records_as_polars(
-        self, source_name: str, source_id: str
+        self, source_name: str, source_id: str, _keep_system_columns: bool = False
     ) -> pl.LazyFrame | None:
         """Retrieve all records for a given source as a Polars LazyFrame."""
         cache = self._get_or_create_source_cache(source_name, source_id)
@@ -736,11 +754,141 @@ class ParquetArrowDataStore:
         if lazy_frame is None:
             return None
 
-        # Remove system columns
-        system_cols = ["__entry_id", "__created_at", "__updated_at", "__schema_hash"]
-        user_columns = [col for col in lazy_frame.columns if col not in system_cols]
+        if _keep_system_columns:
+            return lazy_frame
 
-        return lazy_frame.select(user_columns)
+        return lazy_frame.drop(self._system_columns)
+
+    def get_records_by_ids(
+        self,
+        source_name: str,
+        source_id: str,
+        entry_ids: list[str] | pl.Series | pa.Array,
+        add_entry_id_column: bool | str = False,
+        preserve_input_order: bool = False,
+    ) -> pa.Table | None:
+        """
+        Retrieve multiple records by their entry_ids as a single Arrow table.
+
+        Args:
+            source_name: Name of the data source
+            source_id: ID of the specific dataset within the source
+            entry_ids: Entry IDs to retrieve. Can be:
+                - list[str]: List of entry ID strings
+                - pl.Series: Polars Series containing entry IDs
+                - pa.Array: PyArrow Array containing entry IDs
+            add_entry_id_column: Control entry ID column inclusion:
+                - False: Don't include entry ID column (default)
+                - True: Include entry ID column as "__entry_id"
+                - str: Include entry ID column with custom name
+            preserve_input_order: If True, return results in the same order as input entry_ids,
+                with null rows for missing entries. If False, return in storage order.
+
+        Returns:
+            Arrow table containing all found records, or None if no records found
+            When preserve_input_order=True, table length equals input length
+            When preserve_input_order=False, records are in storage order
+        """
+        # Get Polars result using the Polars method
+        polars_result = self.get_records_by_ids_as_polars(
+            source_name, source_id, entry_ids, add_entry_id_column, preserve_input_order
+        )
+
+        if polars_result is None:
+            return None
+
+        # Convert to Arrow table
+        return polars_result.collect().to_arrow()
+
+    def get_records_by_ids_as_polars(
+        self,
+        source_name: str,
+        source_id: str,
+        entry_ids: list[str] | pl.Series | pa.Array,
+        add_entry_id_column: bool | str = False,
+        preserve_input_order: bool = False,
+    ) -> pl.LazyFrame | None:
+        """
+        Retrieve multiple records by their entry_ids as a Polars LazyFrame.
+
+        Args:
+            source_name: Name of the data source
+            source_id: ID of the specific dataset within the source
+            entry_ids: Entry IDs to retrieve. Can be:
+                - list[str]: List of entry ID strings
+                - pl.Series: Polars Series containing entry IDs
+                - pa.Array: PyArrow Array containing entry IDs
+            add_entry_id_column: Control entry ID column inclusion:
+                - False: Don't include entry ID column (default)
+                - True: Include entry ID column as "__entry_id"
+                - str: Include entry ID column with custom name
+            preserve_input_order: If True, return results in the same order as input entry_ids,
+                with null rows for missing entries. If False, return in storage order.
+
+        Returns:
+            Polars LazyFrame containing all found records, or None if no records found
+            When preserve_input_order=True, frame length equals input length
+            When preserve_input_order=False, records are in storage order (existing behavior)
+        """
+        # Convert input to Polars Series
+        if isinstance(entry_ids, list):
+            if not entry_ids:
+                return None
+            entry_ids_series = pl.Series("entry_id", entry_ids)
+        elif isinstance(entry_ids, pl.Series):
+            if len(entry_ids) == 0:
+                return None
+            entry_ids_series = entry_ids
+        elif isinstance(entry_ids, pa.Array):
+            if len(entry_ids) == 0:
+                return None
+            entry_ids_series = pl.Series(
+                "entry_id", entry_ids
+            )  # Direct from Arrow array
+        else:
+            raise TypeError(
+                f"entry_ids must be list[str], pl.Series, or pa.Array, got {type(entry_ids)}"
+            )
+
+        cache = self._get_or_create_source_cache(source_name, source_id)
+        lazy_frame = cache.get_all_entries_as_polars()
+
+        if lazy_frame is None:
+            return None
+
+        # Define system columns that are always excluded (except optionally __entry_id)
+        system_cols = [
+            "__source_name",
+            "__source_id",
+            "__created_at",
+            "__updated_at",
+            "__schema_hash",
+        ]
+
+        # Add __entry_id to system columns if we don't want it in the result
+        if add_entry_id_column is False:
+            system_cols.append("__entry_id")
+
+        # Handle input order preservation vs filtering
+        if preserve_input_order:
+            # Create ordered DataFrame with input IDs and join to preserve order with nulls
+            ordered_df = pl.DataFrame({"__entry_id": entry_ids_series}).lazy()
+            # Join with all data to get results in input order with nulls for missing
+            result_frame = ordered_df.join(lazy_frame, on="__entry_id", how="left")
+        else:
+            # Standard filtering approach for storage order -- should be faster in general
+            result_frame = lazy_frame.filter(
+                pl.col("__entry_id").is_in(entry_ids_series)
+            )
+
+        # Apply column selection (same for both paths)
+        result_frame = result_frame.drop(system_cols)
+
+        # Rename __entry_id column if custom name provided
+        if isinstance(add_entry_id_column, str):
+            result_frame = result_frame.rename({"__entry_id": add_entry_id_column})
+
+        return result_frame
 
     def _sync_all_dirty_caches(self) -> None:
         """Sync all dirty caches to disk."""
@@ -911,7 +1059,7 @@ def demo_single_row_constraint():
 
             for i, entry_id in enumerate(valid_entries):
                 data = create_single_row_record(entry_id, value=100.0 + i)
-                result = store.add_record("experiments", "dataset_A", entry_id, data)
+                store.add_record("experiments", "dataset_A", entry_id, data)
                 print(
                     f"✓ Added single-row record {entry_id[:16]}... (value: {100.0 + i})"
                 )

@@ -10,16 +10,18 @@ from typing import (
     Any,
     Literal,
 )
+
 from orcabridge.types.registry import PacketConverter
 
 from orcabridge.core.base import Kernel
 from orcabridge.hashing import (
     ObjectHasher,
-    ArrowPacketHasher,
+    ArrowHasher,
     FunctionInfoExtractor,
     get_function_signature,
     hash_function,
     get_default_object_hasher,
+    get_default_arrow_hasher,
 )
 from orcabridge.core.operators import Join
 from orcabridge.store import DataStore, ArrowDataStore, NoOpDataStore
@@ -33,6 +35,7 @@ from orcabridge.types.inference import (
     check_typespec_compatibility,
 )
 from orcabridge.types.registry import is_packet_supported
+import polars as pl
 
 logger = logging.getLogger(__name__)
 
@@ -363,10 +366,15 @@ class FunctionPod(Pod):
 
 
 def typed_function_pod(
-    output_keys: Collection[str] | None = None,
+    output_keys: str | Collection[str] | None = None,
     function_name: str | None = None,
-    **kwargs: Any,
-) -> Callable[..., "TypedFunctionPod"]:
+    label: str | None = None,
+    result_store: ArrowDataStore | None = None,
+    tag_store: ArrowDataStore | None = None,
+    object_hasher: ObjectHasher | None = None,
+    arrow_hasher: ArrowHasher | None = None,
+    **kwargs,
+) -> Callable[..., "TypedFunctionPod | CachedFunctionPod"]:
     """
     Decorator that wraps a function in a FunctionPod instance.
 
@@ -379,7 +387,7 @@ def typed_function_pod(
         FunctionPod instance wrapping the decorated function
     """
 
-    def decorator(func) -> TypedFunctionPod:
+    def decorator(func) -> TypedFunctionPod | CachedFunctionPod:
         if func.__name__ == "<lambda>":
             raise ValueError("Lambda functions cannot be used with function_pod")
 
@@ -398,13 +406,27 @@ def typed_function_pod(
         setattr(func, "__name__", new_function_name)
         setattr(func, "__qualname__", new_function_name)
 
-        # Create the FunctionPod
+        # Create a simple typed function pod
         pod = TypedFunctionPod(
             function=func,
             output_keys=output_keys,
             function_name=function_name or base_function_name,
+            label=label,
             **kwargs,
         )
+
+        if result_store is not None:
+            pod = CachedFunctionPod(
+                function_pod=pod,
+                object_hasher=object_hasher
+                if object_hasher is not None
+                else get_default_object_hasher(),
+                arrow_hasher=arrow_hasher
+                if arrow_hasher is not None
+                else get_default_arrow_hasher(),
+                result_store=result_store,
+                tag_store=tag_store,
+            )
 
         return pod
 
@@ -650,7 +672,7 @@ class CachedFunctionPod(Pod):
         self,
         function_pod: TypedFunctionPod,
         object_hasher: ObjectHasher,
-        packet_hasher: ArrowPacketHasher,
+        arrow_hasher: ArrowHasher,
         result_store: ArrowDataStore,
         tag_store: ArrowDataStore | None = None,
         label: str | None = None,
@@ -664,7 +686,7 @@ class CachedFunctionPod(Pod):
         self.function_pod = function_pod
 
         self.object_hasher = object_hasher
-        self.packet_hasher = packet_hasher
+        self.arrow_hasher = arrow_hasher
         self.result_store = result_store
         self.tag_store = tag_store
 
@@ -676,7 +698,7 @@ class CachedFunctionPod(Pod):
         self.function_pod_hash = self.object_hasher.hash_to_hex(self.function_pod)
 
     def get_packet_key(self, packet: Packet) -> str:
-        return self.packet_hasher.hash_arrow_packet(
+        return self.arrow_hasher.hash_table(
             self.function_pod.input_converter.to_arrow_table(packet)
         )
 
@@ -710,12 +732,20 @@ class CachedFunctionPod(Pod):
         # convert tag to arrow table
         table = pa.Table.from_pylist([tag])
 
-        entry_hash = self.packet_hasher.hash_arrow_packet(table)
+        entry_hash = self.arrow_hasher.hash_table(table)
 
         # TODO: add error handling
-        self.tag_store.add_record(
-            self.function_pod.function_name, self.function_pod_hash, entry_hash, table
+        # check if record already exists:
+        retrieved_table = self.tag_store.get_record(
+            self.function_pod.function_name, self.function_pod_hash, entry_hash
         )
+        if retrieved_table is None:
+            self.tag_store.add_record(
+                self.function_pod.function_name,
+                self.function_pod_hash,
+                entry_hash,
+                table,
+            )
 
         return tag
 
@@ -803,6 +833,32 @@ class CachedFunctionPod(Pod):
             output_packet = self.memoize(packet, output_packet)  # type: ignore
 
         return tag, output_packet
+
+    def get_all_entries_with_tags(self) -> pl.LazyFrame | None:
+        """
+        Retrieve all entries from the tag store with their associated tags.
+        Returns a DataFrame with columns for tag and packet key.
+        """
+        if self.tag_store is None:
+            raise ValueError("Tag store is not set, cannot retrieve entries")
+
+        tag_records = self.tag_store.get_all_records_as_polars(
+            self.function_pod.function_name, self.function_pod_hash
+        )
+        if tag_records is None:
+            return None
+        result_packets = self.result_store.get_records_by_ids_as_polars(
+            self.function_pod.function_name,
+            self.function_pod_hash,
+            tag_records.collect()["__packet_key"],
+            preserve_input_order=True,
+        )
+        if result_packets is None:
+            return None
+
+        return pl.concat([tag_records, result_packets], how="horizontal").drop(
+            ["__packet_key"]
+        )
 
     def identity_structure(self, *streams) -> Any:
         return self.function_pod.identity_structure(*streams)

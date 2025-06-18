@@ -5,6 +5,10 @@ import pyarrow as pa
 import polars as pl
 
 
+class DuplicateError(ValueError):
+    pass
+
+
 @runtime_checkable
 class DataStore(Protocol):
     """
@@ -55,4 +59,26 @@ class ArrowDataStore(Protocol):
         self, source_name: str, source_id: str
     ) -> pl.LazyFrame | None:
         """Retrieve all records for a given source as a single Polars DataFrame."""
+        ...
+
+    def get_records_by_ids(
+        self,
+        source_name: str,
+        source_id: str,
+        entry_ids: list[str] | pl.Series | pa.Array,
+        add_entry_id_column: bool | str = False,
+        preserve_input_order: bool = False,
+    ) -> pa.Table | None:
+        """Retrieve records by entry IDs as a single table."""
+        ...
+
+    def get_records_by_ids_as_polars(
+        self,
+        source_name: str,
+        source_id: str,
+        entry_ids: list[str] | pl.Series | pa.Array,
+        add_entry_id_column: bool | str = False,
+        preserve_input_order: bool = False,
+    ) -> pl.LazyFrame | None:
+        """Retrieve records by entry IDs as a single Polars DataFrame."""
         ...
