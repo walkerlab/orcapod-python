@@ -4,22 +4,14 @@ import random
 import sqlite3
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TYPE_CHECKING
 
 from orcabridge.hashing.types import StringCacher
 
 logger = logging.getLogger(__name__)
 
-REDIS_AVAILABLE = False
 if TYPE_CHECKING:
     import redis
-else:
-    try:
-        import redis
-
-        REDIS_AVAILABLE = True
-    except ImportError:
-        redis = None
 
 
 class TransferCacher(StringCacher):
@@ -612,9 +604,14 @@ class RedisCacher(StringCacher):
             password: Redis password (used if connection is None)
             socket_timeout: Socket timeout in seconds
         """
-        if not REDIS_AVAILABLE:
-            raise ImportError("redis package is required for RedisCacher")
-
+        # TODO: cleanup the redis use pattern
+        try:
+            import redis 
+            self._redis_module = redis
+        except ImportError as e:
+            raise ImportError(
+                "Redis module not found. Please install the 'redis' package."
+            ) from e
         self.key_prefix = key_prefix
         self._connection_failed = False
         self._lock = threading.RLock()
@@ -623,7 +620,7 @@ class RedisCacher(StringCacher):
         if connection is not None:
             self.redis = connection
         else:
-            self.redis = redis.Redis(
+            self.redis = self._redis_module.Redis(
                 host=host,
                 port=port,
                 db=db,
@@ -657,7 +654,7 @@ class RedisCacher(StringCacher):
                     f"Redis connection established successfully with prefix '{self.key_prefix}'"
                 )
 
-            except (redis.RedisError, redis.ConnectionError) as e:
+            except (self._redis_module.RedisError, self._redis_module.ConnectionError) as e:
                 logging.error(f"Failed to establish Redis connection: {e}")
                 raise RuntimeError(f"Redis connection test failed: {e}")
 
@@ -689,7 +686,7 @@ class RedisCacher(StringCacher):
 
                 return str(result)
 
-            except (redis.RedisError, redis.ConnectionError) as e:
+            except (self._redis_module.RedisError, self._redis_module.ConnectionError) as e:
                 self._handle_redis_error("get", e)
                 return None
 
@@ -707,7 +704,7 @@ class RedisCacher(StringCacher):
 
                 self.redis.set(self._get_prefixed_key(cache_key), value)
 
-            except (redis.RedisError, redis.ConnectionError) as e:
+            except (self._redis_module.RedisError, self._redis_module.ConnectionError) as e:
                 self._handle_redis_error("set", e)
 
     def clear_cache(self) -> None:
@@ -721,7 +718,7 @@ class RedisCacher(StringCacher):
                 if keys:
                     self.redis.delete(*list(keys))  # type: ignore[arg-type]
 
-            except (redis.RedisError, redis.ConnectionError) as e:
+            except (self._redis_module.RedisError, self._redis_module.ConnectionError) as e:
                 self._handle_redis_error("clear", e)
 
     def is_connected(self) -> bool:

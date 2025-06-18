@@ -754,6 +754,7 @@ class CachedFunctionPod(Pod):
         Retrieve a memoized packet from the data store.
         Returns None if no memoized packet is found.
         """
+        logger.info("Retrieving memoized packet")
         return self._retrieve_memoized_by_hash(self.get_packet_key(packet))
 
     def _retrieve_memoized_by_hash(self, packet_hash: str) -> Packet | None:
@@ -761,6 +762,7 @@ class CachedFunctionPod(Pod):
         Retrieve a memoized result packet from the data store, looking up by hash
         Returns None if no memoized packet is found.
         """
+        logger.info(f"Retrieving memoized packet with hash {packet_hash}")
         arrow_table = self.result_store.get_record(
             self.function_pod.function_name,
             self.function_pod_hash,
@@ -784,6 +786,7 @@ class CachedFunctionPod(Pod):
         Memoize the output packet in the data store.
         Returns the memoized packet.
         """
+        logger.info("Memoizing packet")
         return self._memoize_by_hash(self.get_packet_key(packet), output_packet)
 
     def _memoize_by_hash(self, packet_hash: str, output_packet: Packet) -> Packet:
@@ -791,6 +794,7 @@ class CachedFunctionPod(Pod):
         Memoize the output packet in the data store, looking up by hash.
         Returns the memoized packet.
         """
+        logger.info(f"Memoizing packet with hash {packet_hash}")
         packets = self.function_pod.output_converter.from_arrow_table(
             self.result_store.add_record(
                 self.function_pod.function_name,

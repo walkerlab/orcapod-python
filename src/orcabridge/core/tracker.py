@@ -1,6 +1,4 @@
 from orcabridge.core.base import Invocation, Kernel, Tracker
-import networkx as nx
-import matplotlib.pyplot as plt
 
 
 class GraphTracker(Tracker):
@@ -45,6 +43,7 @@ class GraphTracker(Tracker):
         return namemap
 
     def generate_graph(self):
+        import networkx as nx
         G = nx.DiGraph()
 
         # Add edges for each invocation
@@ -59,6 +58,8 @@ class GraphTracker(Tracker):
         return G
 
     def draw_graph(self):
+        import networkx as nx
+        import matplotlib.pyplot as plt
         G = self.generate_graph()
         labels = self.generate_namemap()
 

@@ -6,7 +6,7 @@ from typing import get_origin, get_args, TypeAlias
 from .core import TypeSpec
 import inspect
 import logging
-from beartype.door import is_bearable, is_subhint
+
 
 
 logger = logging.getLogger(__name__)
@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 def verify_against_typespec(packet: dict, typespec: TypeSpec) -> bool:
     """Verify that the dictionary's types match the expected types in the typespec."""
+    from beartype.door import is_bearable
     # verify that packet contains no keys not in typespec
     if set(packet.keys()) - set(typespec.keys()):
         logger.warning(
@@ -38,6 +39,7 @@ def verify_against_typespec(packet: dict, typespec: TypeSpec) -> bool:
 def check_typespec_compatibility(
     incoming_types: TypeSpec, receiving_types: TypeSpec
 ) -> bool:
+    from beartype.door import is_subhint
     for key, type_info in incoming_types.items():
         if key not in receiving_types:
             logger.warning(f"Key '{key}' not found in parameter types.")
