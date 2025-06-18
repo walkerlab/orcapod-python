@@ -1,4 +1,4 @@
-from typing import Protocol, Any, TypeAlias
+from typing import Protocol, Any, TypeAlias, Mapping
 import pyarrow as pa
 from dataclasses import dataclass
 
@@ -15,7 +15,9 @@ class TypeInfo:
 
 DataType: TypeAlias = type
 
-TypeSpec: TypeAlias = dict[str, DataType]  # Mapping of parameter names to their types
+TypeSpec: TypeAlias = Mapping[
+    str, DataType
+]  # Mapping of parameter names to their types
 
 
 class TypeHandler(Protocol):
