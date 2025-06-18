@@ -4,21 +4,22 @@ from itertools import chain
 from typing import Any
 
 
-from orcabridge.base import Mapper, SyncStream
+from orcabridge.core.base import Operator, SyncStream
 from orcabridge.hashing import function_content_hash, hash_function
-from orcabridge.streams import SyncStreamFromGenerator
+from orcabridge.core.streams import SyncStreamFromGenerator
 from orcabridge.utils.stream_utils import (
     batch_packet,
     batch_tags,
     check_packet_compatibility,
     join_tags,
+    fill_missing,
+    merge_typespecs,
 )
-from orcabridge.utils.stream_utils import fill_missing
 
-from .types import Packet, Tag
+from orcabridge.types import Packet, Tag, TypeSpec
 
 
-class Repeat(Mapper):
+class Repeat(Operator):
     """
     A Mapper that repeats the packets in the stream a specified number of times.
     The repeat count is the number of times to repeat each packet.
@@ -31,22 +32,6 @@ class Repeat(Mapper):
         if repeat_count < 0:
             raise ValueError("repeat_count must be non-negative")
         self.repeat_count = repeat_count
-
-    def identity_structure(self, *streams) -> tuple[str, int, set[SyncStream]]:
-        # Join does not depend on the order of the streams -- convert it onto a set
-        return (self.__class__.__name__, self.repeat_count, set(streams))
-
-    def keys(
-        self, *streams: SyncStream
-    ) -> tuple[Collection[str] | None, Collection[str] | None]:
-        """
-        Repeat does not alter the keys of the stream.
-        """
-        if len(streams) != 1:
-            raise ValueError("Repeat operation requires exactly one stream")
-
-        stream = streams[0]
-        return stream.keys()
 
     def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
@@ -64,9 +49,37 @@ class Repeat(Mapper):
     def __repr__(self) -> str:
         return f"Repeat(count={self.repeat_count})"
 
+    def identity_structure(self, *streams) -> tuple[str, int, set[SyncStream]]:
+        # Join does not depend on the order of the streams -- convert it onto a set
+        return (self.__class__.__name__, self.repeat_count, set(streams))
+
+    def keys(
+        self, *streams: SyncStream, trigger_run=False
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
+        """
+        Repeat does not alter the keys of the stream.
+        """
+        if len(streams) != 1:
+            raise ValueError("Repeat operation requires exactly one stream")
+
+        stream = streams[0]
+        return stream.keys(trigger_run=trigger_run)
+
+    def types(
+        self, *streams: SyncStream, trigger_run=False
+    ) -> tuple[TypeSpec | None, TypeSpec | None]:
+        """
+        Repeat does not alter the types of the stream.
+        """
+        if len(streams) != 1:
+            raise ValueError("Repeat operation requires exactly one stream")
+
+        stream = streams[0]
+        return stream.types(trigger_run=trigger_run)
+
     def claims_unique_tags(
-        self, *streams: SyncStream, trigger_run: bool = True
-    ) -> bool:
+        self, *streams: SyncStream, trigger_run: bool = False
+    ) -> bool | None:
         if len(streams) != 1:
             raise ValueError(
                 "Repeat operation only supports operating on a single input stream"
@@ -78,32 +91,7 @@ class Repeat(Mapper):
         )
 
 
-class Merge(Mapper):
-    def identity_structure(self, *streams):
-        # Merge does not depend on the order of the streams -- convert it onto a set
-        return (self.__class__.__name__, set(streams))
-
-    def keys(
-        self, *streams: SyncStream
-    ) -> tuple[Collection[str] | None, Collection[str] | None]:
-        """
-        Merge does not alter the keys of the stream.
-        """
-        if len(streams) < 2:
-            raise ValueError("Merge operation requires at least two streams")
-
-        merged_tag_keys = set()
-        merged_packet_keys = set()
-
-        for stream in streams:
-            tag_keys, packet_keys = stream.keys()
-            if tag_keys is not None:
-                merged_tag_keys.update(set(tag_keys))
-            if packet_keys is not None:
-                merged_packet_keys.update(set(packet_keys))
-
-        return list(merged_tag_keys), list(merged_packet_keys)
-
+class Merge(Operator):
     def forward(self, *streams: SyncStream) -> SyncStream:
         tag_keys, packet_keys = self.keys(*streams)
 
@@ -119,13 +107,66 @@ class Merge(Mapper):
     def __repr__(self) -> str:
         return "Merge()"
 
+    def identity_structure(self, *streams):
+        # Merge does not depend on the order of the streams -- convert it onto a set
+        return (self.__class__.__name__, set(streams))
+
+    def keys(
+        self, *streams: SyncStream, trigger_run: bool = False
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
+        """
+        Merge does not alter the keys of the stream.
+        """
+        if len(streams) < 2:
+            raise ValueError("Merge operation requires at least two streams")
+
+        merged_tag_keys = set()
+        merged_packet_keys = set()
+
+        for stream in streams:
+            tag_keys, packet_keys = stream.keys(trigger_run=trigger_run)
+            if tag_keys is not None:
+                merged_tag_keys.update(set(tag_keys))
+            if packet_keys is not None:
+                merged_packet_keys.update(set(packet_keys))
+
+        return list(merged_tag_keys), list(merged_packet_keys)
+
+    def types(
+        self, *streams: SyncStream, trigger_run: bool = False
+    ) -> tuple[TypeSpec | None, TypeSpec | None]:
+        """
+        Merge does not alter the types of the stream.
+        """
+        if len(streams) < 2:
+            raise ValueError("Merge operation requires at least two streams")
+
+        merged_tag_types: TypeSpec | None = {}
+        merged_packet_types: TypeSpec | None = {}
+
+        for stream in streams:
+            if merged_tag_types is None and merged_packet_types is None:
+                break
+            tag_types, packet_types = stream.types(trigger_run=trigger_run)
+            if merged_tag_types is not None and tag_types is not None:
+                merged_tag_types.update(tag_types)
+            else:
+                merged_tag_types = None
+            if merged_tag_types is not None and packet_types is not None:
+                merged_packet_types.update(packet_types)
+            else:
+                merged_tag_types = None
+
+        return merged_tag_types, merged_packet_types
+
     def claims_unique_tags(
         self, *streams: SyncStream, trigger_run: bool = True
-    ) -> bool:
+    ) -> bool | None:
         """
         Merge operation can only claim unique tags if all input streams have unique tags AND
         the tag keys are not identical across all streams.
         """
+        # TODO: update implementation
         if len(streams) < 2:
             raise ValueError("Merge operation requires at least two streams")
         # Check if all streams have unique tags
@@ -146,14 +187,16 @@ class Merge(Mapper):
         return True
 
 
-class Join(Mapper):
+class Join(Operator):
     def identity_structure(self, *streams):
         # Join does not depend on the order of the streams -- convert it onto a set
         return (self.__class__.__name__, set(streams))
 
-    def keys(self, *streams: SyncStream) -> tuple[Collection[str], Collection[str]]:
+    def types(
+        self, *streams: SyncStream, trigger_run=False
+    ) -> tuple[TypeSpec | None, TypeSpec | None]:
         """
-        Returns the keys of the operation.
+        Returns the types of the operation.
         The first list contains the keys of the tags, and the second list contains the keys of the packets.
         The keys are returned if it is feasible to do so, otherwise a tuple
         (None, None) is returned to signify that the keys are not known.
@@ -162,15 +205,14 @@ class Join(Mapper):
             raise ValueError("Join operation requires exactly two streams")
 
         left_stream, right_stream = streams
-        left_tag_keys, left_packet_keys = left_stream.keys()
-        right_tag_keys, right_packet_keys = right_stream.keys()
+        left_tag_types, left_packet_types = left_stream.types(trigger_run=False)
+        right_tag_types, right_packet_types = right_stream.types(trigger_run=False)
 
-        joined_tag_keys = list(set(left_tag_keys or []) | set(right_tag_keys or []))
-        joined_packet_keys = list(
-            set(left_packet_keys or []) | set(right_packet_keys or [])
-        )
+        # TODO: do error handling when merge fails
+        joined_tag_types = merge_typespecs(left_tag_types, right_tag_types)
+        joined_packet_types = merge_typespecs(left_packet_types, right_packet_types)
 
-        return joined_tag_keys, joined_packet_keys
+        return joined_tag_types, joined_packet_types
 
     def forward(self, *streams: SyncStream) -> SyncStream:
         """
@@ -182,7 +224,7 @@ class Join(Mapper):
 
         left_stream, right_stream = streams
 
-        def generator():
+        def generator() -> Iterator[tuple[Tag, Packet]]:
             for left_tag, left_packet in left_stream:
                 for right_tag, right_packet in right_stream:
                     if (joined_tag := join_tags(left_tag, right_tag)) is not None:
@@ -198,37 +240,10 @@ class Join(Mapper):
         return "Join()"
 
 
-class FirstMatch(Mapper):
-    def identity_structure(self, *streams: SyncStream) -> tuple[str, set[SyncStream]]:
-        # Join does not depend on the order of the streams -- convert it onto a set
-        return (self.__class__.__name__, set(streams))
-
-    def keys(
-        self, *streams: SyncStream
-    ) -> tuple[Collection[str] | None, Collection[str] | None]:
-        """
-        Returns the keys of the operation.
-        The first list contains the keys of the tags, and the second list contains the keys of the packets.
-        The keys are returned if it is feasible to do so, otherwise a tuple
-        (None, None) is returned to signify that the keys are not known.
-        """
-        if len(streams) != 2:
-            raise ValueError("FirstMatch operation requires exactly two streams")
-
-        left_stream, right_stream = streams
-        left_tag_keys, left_packet_keys = left_stream.keys()
-        right_tag_keys, right_packet_keys = right_stream.keys()
-
-        joined_tag_keys = list(set(left_tag_keys or []) | set(right_tag_keys or []))
-        joined_packet_keys = list(
-            set(left_packet_keys or []) | set(right_packet_keys or [])
-        )
-
-        return joined_tag_keys, joined_packet_keys
-
+class FirstMatch(Operator):
     def forward(self, *streams: SyncStream) -> SyncStream:
         """
-        Joins two streams together based on their tags.
+        Joins two streams together based on their tags, returning at most one match for each tag.
         The resulting stream will contain all the tags from both streams.
         """
         if len(streams) != 2:
@@ -265,8 +280,71 @@ class FirstMatch(Mapper):
     def __repr__(self) -> str:
         return "MatchUpToN()"
 
+    def identity_structure(self, *streams: SyncStream) -> tuple[str, set[SyncStream]]:
+        # Join does not depend on the order of the streams -- convert it onto a set
+        return (self.__class__.__name__, set(streams))
 
-class MapPackets(Mapper):
+    def keys(
+        self, *streams: SyncStream, trigger_run: bool = False
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
+        """
+        Returns the keys of the operation.
+        The first list contains the keys of the tags, and the second list contains the keys of the packets.
+        The keys are returned if it is feasible to do so, otherwise a tuple
+        (None, None) is returned to signify that the keys are not known.
+        """
+        if len(streams) != 2:
+            raise ValueError("FirstMatch operation requires exactly two streams")
+
+        left_stream, right_stream = streams
+        left_tag_keys, left_packet_keys = left_stream.keys(trigger_run=trigger_run)
+        right_tag_keys, right_packet_keys = right_stream.keys(trigger_run=trigger_run)
+
+        # if any of the components return None -> resolve to default operation
+        if (
+            left_tag_keys is None
+            or right_tag_keys is None
+            or left_packet_keys is None
+            or right_packet_keys is None
+        ):
+            return super().keys(*streams, trigger_run=trigger_run)
+
+        joined_tag_keys = list(set(left_tag_keys) | set(right_tag_keys))
+        joined_packet_keys = list(set(left_packet_keys) | set(right_packet_keys))
+
+        return joined_tag_keys, joined_packet_keys
+
+    def types(
+        self, *streams: SyncStream, trigger_run: bool = False
+    ) -> tuple[TypeSpec | None, TypeSpec | None]:
+        """
+        Returns the typespecs of tag and packet.
+        """
+        if len(streams) != 2:
+            raise ValueError("FirstMatch operation requires exactly two streams")
+
+        left_stream, right_stream = streams
+        left_tag_types, left_packet_types = left_stream.types(trigger_run=trigger_run)
+        right_tag_types, right_packet_types = right_stream.types(
+            trigger_run=trigger_run
+        )
+
+        # if any of the components return None -> resolve to default operation
+        if (
+            left_tag_types is None
+            or right_tag_types is None
+            or left_packet_types is None
+            or right_packet_types is None
+        ):
+            return super().types(*streams, trigger_run=trigger_run)
+
+        joined_tag_types = merge_typespecs(left_tag_types, right_tag_types)
+        joined_packet_types = merge_typespecs(left_packet_types, right_packet_types)
+
+        return joined_tag_types, joined_packet_types
+
+
+class MapPackets(Operator):
     """
     A Mapper that maps the keys of the packet in the stream to new keys.
     The mapping is done using a dictionary that maps old keys to new keys.
@@ -278,32 +356,6 @@ class MapPackets(Mapper):
         super().__init__()
         self.key_map = key_map
         self.drop_unmapped = drop_unmapped
-
-    def keys(
-        self, *streams: SyncStream
-    ) -> tuple[Collection[str] | None, Collection[str] | None]:
-        """
-        Returns the keys of the operation.
-        The first list contains the keys of the tags, and the second list contains the keys of the packets.
-        The keys are inferred based on the first (tag, packet) pair in the stream.
-        """
-        if len(streams) != 1:
-            raise ValueError("MapPackets operation requires exactly one stream")
-
-        stream = streams[0]
-        tag_keys, packet_keys = stream.keys()
-        if tag_keys is None or packet_keys is None:
-            return None, None
-
-        if self.drop_unmapped:
-            # If drop_unmapped is True, we only keep the keys that are in the mapping
-            mapped_packet_keys = [
-                self.key_map[k] for k in packet_keys if k in self.key_map
-            ]
-        else:
-            mapped_packet_keys = [self.key_map.get(k, k) for k in packet_keys]
-
-        return tag_keys, mapped_packet_keys
 
     def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
@@ -334,8 +386,62 @@ class MapPackets(Mapper):
             self.drop_unmapped,
         ) + tuple(streams)
 
+    def keys(
+        self, *streams: SyncStream, trigger_run: bool = False
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
+        """
+        Returns the keys of the operation.
+        The first list contains the keys of the tags, and the second list contains the keys of the packets.
+        The keys are inferred based on the first (tag, packet) pair in the stream.
+        """
+        if len(streams) != 1:
+            raise ValueError("MapPackets operation requires exactly one stream")
 
-class DefaultTag(Mapper):
+        stream = streams[0]
+        tag_keys, packet_keys = stream.keys(trigger_run=trigger_run)
+        if tag_keys is None or packet_keys is None:
+            return super().keys(trigger_run=trigger_run)
+
+        if self.drop_unmapped:
+            # If drop_unmapped is True, we only keep the keys that are in the mapping
+            mapped_packet_keys = [
+                self.key_map[k] for k in packet_keys if k in self.key_map
+            ]
+        else:
+            mapped_packet_keys = [self.key_map.get(k, k) for k in packet_keys]
+
+        return tag_keys, mapped_packet_keys
+
+    def types(
+        self, *streams: SyncStream, trigger_run: bool = False
+    ) -> tuple[TypeSpec | None, TypeSpec | None]:
+        """
+        Returns the types of the operation.
+        The first list contains the types of the tags, and the second list contains the types of the packets.
+        The types are inferred based on the first (tag, packet) pair in the stream.
+        """
+        if len(streams) != 1:
+            raise ValueError("MapPackets operation requires exactly one stream")
+
+        stream = streams[0]
+        tag_types, packet_types = stream.types(trigger_run=trigger_run)
+        if tag_types is None or packet_types is None:
+            return super().types(trigger_run=trigger_run)
+
+        if self.drop_unmapped:
+            # If drop_unmapped is True, we only keep the keys that are in the mapping
+            mapped_packet_types = {
+                self.key_map[k]: v for k, v in packet_types.items() if k in self.key_map
+            }
+        else:
+            mapped_packet_types = {
+                self.key_map.get(k, k): v for k, v in packet_types.items()
+            }
+
+        return tag_types, mapped_packet_types
+
+
+class DefaultTag(Operator):
     """
     A Mapper that adds a default tag to the packets in the stream.
     The default tag is added to all packets in the stream. If the
@@ -345,22 +451,6 @@ class DefaultTag(Mapper):
     def __init__(self, default_tag: Tag) -> None:
         super().__init__()
         self.default_tag = default_tag
-
-    def keys(
-        self, *streams: SyncStream
-    ) -> tuple[Collection[str] | None, Collection[str] | None]:
-        """
-        Returns the keys of the operation.
-        The first list contains the keys of the tags, and the second list contains the keys of the packets.
-        The keys are inferred based on the first (tag, packet) pair in the stream.
-        """
-        if len(streams) != 1:
-            raise ValueError("DefaultTag operation requires exactly one stream")
-
-        stream = streams[0]
-        tag_keys, packet_keys = stream.keys()
-        tag_keys = list(set(tag_keys or []) | set(self.default_tag.keys()))
-        return tag_keys, packet_keys
 
     def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
@@ -377,8 +467,26 @@ class DefaultTag(Mapper):
     def __repr__(self) -> str:
         return f"DefaultTag({self.default_tag})"
 
+    def keys(
+        self, *streams: SyncStream, trigger_run: bool = False
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
+        """
+        Returns the keys of the operation.
+        The first list contains the keys of the tags, and the second list contains the keys of the packets.
+        The keys are inferred based on the first (tag, packet) pair in the stream.
+        """
+        if len(streams) != 1:
+            raise ValueError("DefaultTag operation requires exactly one stream")
 
-class MapTags(Mapper):
+        stream = streams[0]
+        tag_keys, packet_keys = stream.keys(trigger_run=trigger_run)
+        if tag_keys is None or packet_keys is None:
+            return super().keys(trigger_run=trigger_run)
+        tag_keys = list(set(tag_keys) | set(self.default_tag.keys()))
+        return tag_keys, packet_keys
+
+
+class MapTags(Operator):
     """
     A Mapper that maps the tags of the packet in the stream to new tags. Packet remains unchanged.
     The mapping is done using a dictionary that maps old tags to new tags.
@@ -390,30 +498,6 @@ class MapTags(Mapper):
         super().__init__()
         self.key_map = key_map
         self.drop_unmapped = drop_unmapped
-
-    def keys(
-        self, *streams: SyncStream
-    ) -> tuple[Collection[str] | None, Collection[str] | None]:
-        """
-        Returns the keys of the operation.
-        The first list contains the keys of the tags, and the second list contains the keys of the packets.
-        The keys are inferred based on the first (tag, packet) pair in the stream.
-        """
-        if len(streams) != 1:
-            raise ValueError("MapTags operation requires exactly one stream")
-
-        stream = streams[0]
-        tag_keys, packet_keys = stream.keys()
-        if tag_keys is None or packet_keys is None:
-            return None, None
-
-        if self.drop_unmapped:
-            # If drop_unmapped is True, we only keep the keys that are in the mapping
-            mapped_tag_keys = [self.key_map[k] for k in tag_keys if k in self.key_map]
-        else:
-            mapped_tag_keys = [self.key_map.get(k, k) for k in tag_keys]
-
-        return mapped_tag_keys, packet_keys
 
     def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
@@ -442,8 +526,32 @@ class MapTags(Mapper):
             self.drop_unmapped,
         ) + tuple(streams)
 
+    def keys(
+        self, *streams: SyncStream, trigger_run: bool = False
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
+        """
+        Returns the keys of the operation.
+        The first list contains the keys of the tags, and the second list contains the keys of the packets.
+        The keys are inferred based on the first (tag, packet) pair in the stream.
+        """
+        if len(streams) != 1:
+            raise ValueError("MapTags operation requires exactly one stream")
 
-class Filter(Mapper):
+        stream = streams[0]
+        tag_keys, packet_keys = stream.keys(trigger_run=trigger_run)
+        if tag_keys is None or packet_keys is None:
+            return super().keys(trigger_run=trigger_run)
+
+        if self.drop_unmapped:
+            # If drop_unmapped is True, we only keep the keys that are in the mapping
+            mapped_tag_keys = [self.key_map[k] for k in tag_keys if k in self.key_map]
+        else:
+            mapped_tag_keys = [self.key_map.get(k, k) for k in tag_keys]
+
+        return mapped_tag_keys, packet_keys
+
+
+class Filter(Operator):
     """
     A Mapper that filters the packets in the stream based on a predicate function.
     Predicate function should take two arguments: the tag and the packet, both as dictionaries.
@@ -453,18 +561,6 @@ class Filter(Mapper):
     def __init__(self, predicate: Callable[[Tag, Packet], bool]):
         super().__init__()
         self.predicate = predicate
-
-    def keys(
-        self, *streams: SyncStream
-    ) -> tuple[Collection[str] | None, Collection[str] | None]:
-        """
-        Filter does not alter the keys of the stream.
-        """
-        if len(streams) != 1:
-            raise ValueError("Filter operation requires exactly one stream")
-
-        stream = streams[0]
-        return stream.keys()
 
     def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
@@ -488,8 +584,20 @@ class Filter(Mapper):
             function_content_hash(self.predicate),
         ) + tuple(streams)
 
+    def keys(
+        self, *streams: SyncStream, trigger_run: bool = False
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
+        """
+        Filter does not alter the keys of the stream.
+        """
+        if len(streams) != 1:
+            raise ValueError("Filter operation requires exactly one stream")
 
-class Transform(Mapper):
+        stream = streams[0]
+        return stream.keys(trigger_run=trigger_run)
+
+
+class Transform(Operator):
     """
     A Mapper that transforms the packets in the stream based on a transformation function.
     The transformation function should take two arguments: the tag and the packet, both as dictionaries.
@@ -522,7 +630,7 @@ class Transform(Mapper):
         ) + tuple(streams)
 
 
-class Batch(Mapper):
+class Batch(Operator):
     """
     A Mapper that batches the packets in the stream based on a batch size.
     The batch size is the number of packets to include in each batch.
@@ -542,18 +650,6 @@ class Batch(Mapper):
 
         self.tag_processor = tag_processor
         self.drop_last = drop_last
-
-    def keys(
-        self, *streams: SyncStream
-    ) -> tuple[Collection[str] | None, Collection[str] | None]:
-        """
-        Batch does not alter the keys of the stream.
-        """
-        if len(streams) != 1:
-            raise ValueError("Batch operation requires exactly one stream")
-
-        stream = streams[0]
-        return stream.keys()
 
     def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
@@ -590,8 +686,20 @@ class Batch(Mapper):
             self.drop_last,
         ) + tuple(streams)
 
+    def keys(
+        self, *streams: SyncStream, trigger_run: bool = False
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
+        """
+        Batch does not alter the keys of the stream.
+        """
+        if len(streams) != 1:
+            raise ValueError("Batch operation requires exactly one stream")
 
-class GroupBy(Mapper):
+        stream = streams[0]
+        return stream.keys(trigger_run=trigger_run)
+
+
+class GroupBy(Operator):
     def __init__(
         self,
         group_keys: Collection[str] | None = None,
@@ -603,12 +711,6 @@ class GroupBy(Mapper):
         self.group_keys = group_keys
         self.reduce_keys = reduce_keys
         self.selection_function = selection_function
-
-    def identity_structure(self, *streams: SyncStream) -> Any:
-        struct = (self.__class__.__name__, self.group_keys, self.reduce_keys)
-        if self.selection_function is not None:
-            struct += (hash_function(self.selection_function),)
-        return struct + tuple(streams)
 
     def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 1:
@@ -640,7 +742,7 @@ class GroupBy(Mapper):
 
                 # create a new tag that combines the group keys
                 # if reduce_keys is True, we only keep the group keys as a singular value
-                new_tag = {}
+                new_tag: Tag = {}
                 if self.reduce_keys:
                     new_tag = {k: key[i] for i, k in enumerate(group_keys)}
                     remaining_keys = set(stream_keys) - set(group_keys)
@@ -651,15 +753,21 @@ class GroupBy(Mapper):
                     if k not in new_tag:
                         new_tag[k] = [t.get(k, None) for t, _ in packets]
                 # combine all packets into a single packet
-                combined_packet = {
+                combined_packet: Packet = {
                     k: [p.get(k, None) for _, p in packets] for k in packet_keys
                 }
                 yield new_tag, combined_packet
 
         return SyncStreamFromGenerator(generator)
 
+    def identity_structure(self, *streams: SyncStream) -> Any:
+        struct = (self.__class__.__name__, self.group_keys, self.reduce_keys)
+        if self.selection_function is not None:
+            struct += (hash_function(self.selection_function),)
+        return struct + tuple(streams)
 
-class CacheStream(Mapper):
+
+class CacheStream(Operator):
     """
     A Mapper that caches the packets in the stream, thus avoiding upstream recomputation.
     The cache is filled the first time the stream is iterated over.

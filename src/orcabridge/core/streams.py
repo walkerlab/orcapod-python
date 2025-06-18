@@ -1,6 +1,6 @@
 from collections.abc import Callable, Collection, Iterator
 
-from orcabridge.base import SyncStream
+from orcabridge.core.base import SyncStream
 from orcabridge.types import Packet, Tag
 
 
@@ -31,9 +31,11 @@ class SyncStreamFromLists(SyncStream):
                 "Either tags and packets or paired must be provided to SyncStreamFromLists"
             )
 
-    def keys(self) -> tuple[Collection[str] | None, Collection[str] | None]:
+    def keys(
+        self, *, trigger_run: bool = False
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
         if self.tag_keys is None or self.packet_keys is None:
-            return super().keys()
+            return super().keys(trigger_run=trigger_run)
         # If the keys are already set, return them
         return self.tag_keys.copy(), self.packet_keys.copy()
 
@@ -58,11 +60,13 @@ class SyncStreamFromGenerator(SyncStream):
         self.packet_keys = packet_keys
         self.generator_factory = generator_factory
 
-    def keys(self) -> tuple[Collection[str] | None, Collection[str] | None]:
-        if self.tag_keys is None or self.packet_keys is None:
-            return super().keys()
-        # If the keys are already set, return them
-        return self.tag_keys.copy(), self.packet_keys.copy()
-
     def __iter__(self) -> Iterator[tuple[Tag, Packet]]:
         yield from self.generator_factory()
+
+    def keys(
+        self, *, trigger_run: bool = False
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
+        if self.tag_keys is None or self.packet_keys is None:
+            return super().keys(trigger_run=trigger_run)
+        # If the keys are already set, return them
+        return self.tag_keys.copy(), self.packet_keys.copy()
