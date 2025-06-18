@@ -5,7 +5,7 @@ from .core.operators import Join, MapPackets, MapTags, packet, tag
 from .pod import FunctionPod, function_pod
 from .core.sources import GlobSource
 from .store import DirDataStore, SafeDirDataStore
-from .pipeline.pipeline import GraphTracker
+from .core.tracker import GraphTracker
 
 DEFAULT_TRACKER = GraphTracker()
 DEFAULT_TRACKER.activate()
