@@ -13,6 +13,14 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     import redis
 
+def _get_redis():
+    """Lazy import for Redis to avoid circular dependencies."""
+    try:
+        import redis
+        return redis
+    except ImportError as e:
+        return None
+
 
 class TransferCacher(StringCacher):
     """
@@ -605,13 +613,9 @@ class RedisCacher(StringCacher):
             socket_timeout: Socket timeout in seconds
         """
         # TODO: cleanup the redis use pattern
-        try:
-            import redis 
-            self._redis_module = redis
-        except ImportError as e:
-            raise ImportError(
-                "Redis module not found. Please install the 'redis' package."
-            ) from e
+        self._redis_module = _get_redis()
+        if self._redis_module is None:
+            raise ImportError("Could not import Redis module. redis package is required for RedisCacher")
         self.key_prefix = key_prefix
         self._connection_failed = False
         self._lock = threading.RLock()
@@ -648,7 +652,7 @@ class RedisCacher(StringCacher):
                 self.redis.delete(test_key)
 
                 if result != "test":
-                    raise redis.RedisError("Failed to verify key access")
+                    raise self._redis_module.RedisError("Failed to verify key access")
 
                 logging.info(
                     f"Redis connection established successfully with prefix '{self.key_prefix}'"
