@@ -3,9 +3,9 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, Literal
 
-from orcabridge.base import Source
+from orcabridge.core.base import Source
 from orcabridge.hashing import hash_function
-from orcabridge.streams import SyncStream, SyncStreamFromGenerator
+from orcabridge.core.streams import SyncStream, SyncStreamFromGenerator
 from orcabridge.types import Packet, Tag
 
 
@@ -69,24 +69,6 @@ class GlobSource(Source):
         self.tag_function: Callable[[PathLike], Tag] = tag_function
         self.tag_function_hash_mode = tag_function_hash_mode
 
-    def keys(
-        self, *streams: SyncStream
-    ) -> tuple[Collection[str] | None, Collection[str] | None]:
-        """
-        Returns the keys of the stream. The keys are the names of the packets
-        in the stream. The keys are used to identify the packets in the stream.
-        If expected_keys are provided, they will be used instead of the default keys.
-        """
-        if len(streams) != 0:
-            raise ValueError(
-                "GlobSource does not support forwarding streams. "
-                "It generates its own stream from the file system."
-            )
-
-        if self.expected_tag_keys is not None:
-            return tuple(self.expected_tag_keys), (self.name,)
-        return super().keys()
-
     def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 0:
             raise ValueError(
@@ -126,9 +108,27 @@ class GlobSource(Source):
             tag_function_hash,
         ) + tuple(streams)
 
+    def keys(
+        self, *streams: SyncStream, trigger_run: bool = False
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
+        """
+        Returns the keys of the stream. The keys are the names of the packets
+        in the stream. The keys are used to identify the packets in the stream.
+        If expected_keys are provided, they will be used instead of the default keys.
+        """
+        if len(streams) != 0:
+            raise ValueError(
+                "GlobSource does not support forwarding streams. "
+                "It generates its own stream from the file system."
+            )
+
+        if self.expected_tag_keys is not None:
+            return tuple(self.expected_tag_keys), (self.name,)
+        return super().keys(trigger_run=trigger_run)
+
     def claims_unique_tags(
         self, *streams: "SyncStream", trigger_run: bool = True
-    ) -> bool:
+    ) -> bool | None:
         if len(streams) != 0:
             raise ValueError(
                 "GlobSource does not support forwarding streams. "

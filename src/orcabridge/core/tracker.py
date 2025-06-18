@@ -1,4 +1,4 @@
-from orcabridge.base import Invocation, Operation, Tracker
+from orcabridge.core.base import Invocation, Kernel, Tracker
 import networkx as nx
 import matplotlib.pyplot as plt
 
@@ -13,14 +13,14 @@ class GraphTracker(Tracker):
 
     def __init__(self) -> None:
         super().__init__()
-        self.invocation_lut: dict[Operation, list[Invocation]] = {}
+        self.invocation_lut: dict[Kernel, list[Invocation]] = {}
 
     def record(self, invocation: Invocation) -> None:
         invocation_list = self.invocation_lut.setdefault(invocation.operation, [])
         if invocation not in invocation_list:
             invocation_list.append(invocation)
 
-    def reset(self) -> dict[Operation, list[Invocation]]:
+    def reset(self) -> dict[Kernel, list[Invocation]]:
         """
         Reset the tracker and return the recorded invocations.
         """

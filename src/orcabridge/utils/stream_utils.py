@@ -3,12 +3,60 @@ Utility functions for handling tags
 """
 
 from collections.abc import Collection, Mapping
-from typing import TypeVar
+from typing import TypeVar, Hashable, Any
 
-from orcabridge.types import Packet, Tag
+from orcabridge.types import Packet, Tag, TypeSpec
 
-K = TypeVar("K")
+
+K = TypeVar("K", bound=Hashable)
 V = TypeVar("V")
+
+
+def get_typespec(dict: Mapping) -> TypeSpec:
+    """
+    Returns a TypeSpec for the given dictionary.
+    The TypeSpec is a mapping from field name to Python type.
+    """
+    return {key: type(value) for key, value in dict.items()}
+
+
+def get_compatible_type(type1: Any, type2: Any) -> Any:
+    if type1 is type2:
+        return type1
+    if issubclass(type1, type2):
+        return type2
+    if issubclass(type2, type1):
+        return type1
+    raise TypeError(f"Types {type1} and {type2} are not compatible")
+
+
+def merge_dicts(left: dict[K, V], right: dict[K, V]) -> dict[K, V]:
+    merged = left.copy()
+    for key, right_value in right.items():
+        if key in merged:
+            if merged[key] != right_value:
+                raise ValueError(
+                    f"Conflicting values for key '{key}': {merged[key]} vs {right_value}"
+                )
+        else:
+            merged[key] = right_value
+    return merged
+
+
+def merge_typespecs(left: TypeSpec | None, right: TypeSpec | None) -> TypeSpec | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    # Merge the two TypeSpecs but raise an error if conflicts in types are found
+    merged = dict(left)
+    for key, right_type in right.items():
+        merged[key] = (
+            get_compatible_type(merged[key], right_type)
+            if key in merged
+            else right_type
+        )
+    return merged
 
 
 def common_elements(*values) -> Collection[str]:
@@ -26,10 +74,11 @@ def common_elements(*values) -> Collection[str]:
     return common_keys
 
 
-def join_tags(tag1: Mapping[K, V], tag2: Mapping[K, V]) -> Mapping[K, V] | None:
+def join_tags(tag1: Mapping[K, V], tag2: Mapping[K, V]) -> dict[K, V] | None:
     """
     Joins two tags together. If the tags have the same key, the value must be the same or None will be returned.
     """
+    # create a dict copy of tag1
     joined_tag = dict(tag1)
     for k, v in tag2.items():
         if k in joined_tag and joined_tag[k] != v:

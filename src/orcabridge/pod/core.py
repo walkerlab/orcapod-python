@@ -12,7 +12,7 @@ from typing import (
 )
 from orcabridge.types.registry import PacketConverter
 
-from orcabridge.base import Operation
+from orcabridge.core.base import Kernel
 from orcabridge.hashing import (
     ObjectHasher,
     ArrowPacketHasher,
@@ -21,13 +21,13 @@ from orcabridge.hashing import (
     hash_function,
     get_default_object_hasher,
 )
-from orcabridge.mappers import Join
+from orcabridge.core.operators import Join
 from orcabridge.store import DataStore, ArrowDataStore, NoOpDataStore
-from orcabridge.streams import SyncStream, SyncStreamFromGenerator
-from orcabridge.types import Packet, PathSet, PodFunction, Tag
+from orcabridge.core.streams import SyncStream, SyncStreamFromGenerator
+from orcabridge.types import Packet, PathSet, PodFunction, Tag, TypeSpec
+
 from orcabridge.types.default import default_registry
 from orcabridge.types.inference import (
-    TypeSpec,
     extract_function_data_types,
     verify_against_typespec,
     check_typespec_compatibility,
@@ -100,7 +100,7 @@ def function_pod(
     return decorator
 
 
-class Pod(Operation):
+class Pod(Kernel):
     """
     An (abstract) base class for all pods. A pod can be seen as a special type of operation that
     only operates on the packet content without reading tags. Consequently, no operation
@@ -217,10 +217,10 @@ class FunctionPod(Pod):
         return f"FunctionPod:{func_sig} ⇒ {self.output_keys}"
 
     def keys(
-        self, *streams: SyncStream
+        self, *streams: SyncStream, trigger_run: bool = False
     ) -> tuple[Collection[str] | None, Collection[str] | None]:
         stream = self.process_stream(*streams)
-        tag_keys, _ = stream[0].keys()
+        tag_keys, _ = stream[0].keys(trigger_run=trigger_run)
         return tag_keys, tuple(self.output_keys)
 
     def is_memoized(self, packet: Packet) -> bool:
@@ -589,13 +589,6 @@ class TypedFunctionPod(Pod):
         func_sig = get_function_signature(self.function)
         return f"FunctionPod:{func_sig} ⇒ {self.output_keys}"
 
-    def keys(
-        self, *streams: SyncStream
-    ) -> tuple[Collection[str] | None, Collection[str] | None]:
-        stream = self.process_stream(*streams)
-        tag_keys, _ = stream[0].keys()
-        return tag_keys, tuple(self.output_keys)
-
     def call(self, tag, packet) -> tuple[Tag, Packet]:
         output_values: list["PathSet"] = []
 
@@ -644,6 +637,13 @@ class TypedFunctionPod(Pod):
             function_info,
         ) + tuple(streams)
 
+    def keys(
+        self, *streams: SyncStream, trigger_run: bool = False
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
+        stream = self.process_stream(*streams)
+        tag_keys, _ = stream[0].keys(trigger_run=trigger_run)
+        return tag_keys, tuple(self.output_keys)
+
 
 class CachedFunctionPod(Pod):
     def __init__(
@@ -685,9 +685,9 @@ class CachedFunctionPod(Pod):
         return f"Cached:{self.function_pod}"
 
     def keys(
-        self, *streams: SyncStream
+        self, *streams: SyncStream, trigger_run: bool = False
     ) -> tuple[Collection[str] | None, Collection[str] | None]:
-        return self.function_pod.keys(*streams)
+        return self.function_pod.keys(*streams, trigger_run=trigger_run)
 
     def is_memoized(self, packet: Packet) -> bool:
         return self.retrieve_memoized(packet) is not None
@@ -704,7 +704,7 @@ class CachedFunctionPod(Pod):
         if self.tag_store is None:
             raise ValueError("Recording of tag requires tag_store but none provided")
 
-        tag = tag.copy()  # ensure we don't modify the original tag
+        tag = dict(tag)  # ensure we don't modify the original tag
         tag["__packet_key"] = packet_key
 
         # convert tag to arrow table
