@@ -18,7 +18,7 @@ TagValue: TypeAlias = str | None | Collection["TagValue"]
 
 # the top level tag is a mapping from string keys to values that can be a string or
 # an arbitrary depth of nested list of strings or None
-Tag: TypeAlias = dict[str, TagValue]
+Tag: TypeAlias = Mapping[str, TagValue]
 
 # a pathset is a path or an arbitrary depth of nested list of paths
 PathSet: TypeAlias = PathLike | Collection[PathLike | None]
@@ -34,7 +34,7 @@ DataValue: TypeAlias = PathSet | SupportedNativePythonData | Collection["DataVal
 
 
 # a packet is a mapping from string keys to data values
-Packet: TypeAlias = dict[str, DataValue]
+Packet: TypeAlias = Mapping[str, DataValue]
 
 # a batch is a tuple of a tag and a list of packets
 Batch: TypeAlias = tuple[Tag, Collection[Packet]]
