@@ -11,7 +11,6 @@ from typing import Any, cast
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
-from collections import defaultdict
 
 
 # Module-level logger
