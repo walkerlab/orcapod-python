@@ -104,10 +104,11 @@ class PacketHasher(Protocol):
     def hash_packet(self, packet: Packet) -> str: ...
 
 
-class ArrowPacketHasher:
+@runtime_checkable
+class ArrowHasher(Protocol):
     """Protocol for hashing arrow packets."""
 
-    def hash_arrow_packet(self, packet: pa.Table) -> str: ...
+    def hash_table(self, table: pa.Table) -> str: ...
 
 
 @runtime_checkable

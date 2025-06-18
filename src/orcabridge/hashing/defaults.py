@@ -1,6 +1,6 @@
 # A collection of utility function that provides a "default" implementation of hashers.
 # This is often used as the fallback hasher in the library code.
-from orcabridge.hashing.types import CompositeFileHasher
+from orcabridge.hashing.types import CompositeFileHasher, ArrowHasher
 from orcabridge.hashing.file_hashers import PathLikeHasherFactory
 from orcabridge.hashing.string_cachers import InMemoryCacher
 from orcabridge.hashing.object_hashers import ObjectHasher
@@ -34,9 +34,9 @@ def get_default_object_hasher() -> ObjectHasher:
     )
 
 
-def get_default_semantic_arrow_hasher(
+def get_default_arrow_hasher(
     chunk_size: int = 8192, handle_missing: str = "error"
-) -> SemanticArrowHasher:
+) -> ArrowHasher:
     hasher = SemanticArrowHasher(chunk_size=chunk_size, handle_missing=handle_missing)
     # register semantic hasher for Path
     hasher.register_semantic_hasher("Path", PathHasher())

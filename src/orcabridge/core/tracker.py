@@ -16,7 +16,7 @@ class GraphTracker(Tracker):
         self.invocation_lut: dict[Kernel, list[Invocation]] = {}
 
     def record(self, invocation: Invocation) -> None:
-        invocation_list = self.invocation_lut.setdefault(invocation.operation, [])
+        invocation_list = self.invocation_lut.setdefault(invocation.kernel, [])
         if invocation not in invocation_list:
             invocation_list.append(invocation)
 
@@ -30,16 +30,16 @@ class GraphTracker(Tracker):
 
     def generate_namemap(self) -> dict[Invocation, str]:
         namemap = {}
-        for operation, invocations in self.invocation_lut.items():
-            # if only one entry present, use the operation name alone
-            if operation.label is not None:
-                node_label = operation.label
+        for kernel, invocations in self.invocation_lut.items():
+            # if only one entry present, use the kernel name alone
+            if kernel.label is not None:
+                node_label = kernel.label
             else:
-                node_label = str(operation)
+                node_label = str(kernel)
             if len(invocations) == 1:
                 namemap[invocations[0]] = node_label
                 continue
-            # if multiple entries, use the operation name and index
+            # if multiple entries, use the kernel name and index
             for idx, invocation in enumerate(invocations):
                 namemap[invocation] = f"{node_label}_{idx}"
         return namemap
@@ -48,7 +48,7 @@ class GraphTracker(Tracker):
         G = nx.DiGraph()
 
         # Add edges for each invocation
-        for operation, invocations in self.invocation_lut.items():
+        for kernel, invocations in self.invocation_lut.items():
             for invocation in invocations:
                 for upstream in invocation.streams:
                     # if upstream.invocation is not in the graph, add it
