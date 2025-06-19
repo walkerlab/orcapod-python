@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from orcabridge.hashing import hash_to_hex, hash_to_int, hash_to_uuid
+from orcapod.hashing import hash_to_hex, hash_to_int, hash_to_uuid
 
 
 def get_latest_hash_samples():

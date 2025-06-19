@@ -1191,7 +1191,7 @@ wheels = [
 ]
 
 [[package]]
-name = "orcabridge"
+name = "orcapod"
 source = { editable = "." }
 dependencies = [
     { name = "beartype" },

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from orcabridge.hashing.file_hashers import PathLikeHasherFactory
+from orcapod.hashing.file_hashers import PathLikeHasherFactory
 
 
 def load_hash_lut():

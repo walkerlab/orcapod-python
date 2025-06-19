@@ -1,14 +1,13 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_hashing/test_composite_hasher.py
 """Tests for the CompositeFileHasher implementation."""
 
 from unittest.mock import patch
 
 import pytest
 
-from orcabridge.hashing.core import hash_to_hex
-from orcabridge.hashing.file_hashers import BasicFileHasher, DefaultCompositeFileHasher
-from orcabridge.hashing.types import FileHasher, PacketHasher, PathSetHasher
+from orcapod.hashing.core import hash_to_hex
+from orcapod.hashing.file_hashers import BasicFileHasher, DefaultCompositeFileHasher
+from orcapod.hashing.types import FileHasher, PacketHasher, PathSetHasher
 
 
 # Custom implementation of hash_file for tests that doesn't check for file existence
@@ -90,9 +89,9 @@ def mock_hash_packet(
 def patch_hash_functions():
     """Patch the hash functions in the core module for all tests."""
     with (
-        patch("orcabridge.hashing.core.hash_file", side_effect=mock_hash_file),
-        patch("orcabridge.hashing.core.hash_pathset", side_effect=mock_hash_pathset),
-        patch("orcabridge.hashing.core.hash_packet", side_effect=mock_hash_packet),
+        patch("orcapod.hashing.core.hash_file", side_effect=mock_hash_file),
+        patch("orcapod.hashing.core.hash_pathset", side_effect=mock_hash_pathset),
+        patch("orcapod.hashing.core.hash_packet", side_effect=mock_hash_packet),
     ):
         yield
 

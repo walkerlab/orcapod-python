@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from orcabridge.hashing.file_hashers import (
+from orcapod.hashing.file_hashers import (
     BasicFileHasher,
     CachedFileHasher,
     DefaultCompositeFileHasher,
 )
-from orcabridge.hashing.string_cachers import InMemoryCacher
-from orcabridge.store.core import DirDataStore, NoOpDataStore
+from orcapod.hashing.string_cachers import InMemoryCacher
+from orcapod.store.core import DirDataStore, NoOpDataStore
 
 
 def test_integration_with_cached_file_hasher(temp_dir, sample_files):

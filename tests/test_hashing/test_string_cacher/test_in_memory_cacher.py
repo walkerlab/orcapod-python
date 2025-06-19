@@ -3,7 +3,7 @@
 import threading
 import time
 
-from orcabridge.hashing.string_cachers import InMemoryCacher
+from orcapod.hashing.string_cachers import InMemoryCacher
 
 
 def test_basic_operations():

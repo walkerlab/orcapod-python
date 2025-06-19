@@ -11,7 +11,7 @@ This module tests the function type extraction functionality, covering:
 import pytest
 from collections.abc import Collection
 
-from orcabridge.types.inference import extract_function_data_types
+from orcapod.types.inference import extract_function_data_types
 
 
 class TestExtractFunctionDataTypes:
