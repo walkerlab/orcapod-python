@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from orcabridge.hashing.string_cachers import SQLiteCacher
+from orcapod.hashing.string_cachers import SQLiteCacher
 
 
 def test_basic_operations():

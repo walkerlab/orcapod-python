@@ -10,12 +10,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from orcabridge.hashing.file_hashers import (
+from orcapod.hashing.file_hashers import (
     BasicFileHasher,
     CachedFileHasher,
 )
-from orcabridge.hashing.string_cachers import InMemoryCacher
-from orcabridge.hashing.types import FileHasher, StringCacher
+from orcapod.hashing.string_cachers import InMemoryCacher
+from orcapod.hashing.types import FileHasher, StringCacher
 
 
 def verify_path_exists(rel_path):

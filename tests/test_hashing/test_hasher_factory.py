@@ -4,12 +4,12 @@
 import tempfile
 from pathlib import Path
 
-from orcabridge.hashing.file_hashers import (
+from orcapod.hashing.file_hashers import (
     BasicFileHasher,
     CachedFileHasher,
     PathLikeHasherFactory,
 )
-from orcabridge.hashing.string_cachers import FileCacher, InMemoryCacher
+from orcapod.hashing.string_cachers import FileCacher, InMemoryCacher
 
 
 class TestPathLikeHasherFactoryCreateFileHasher:

@@ -4,7 +4,7 @@
 
 import pytest
 
-from orcabridge.store.core import NoOpDataStore
+from orcapod.store.core import NoOpDataStore
 
 
 def test_noop_data_store_memoize():
@@ -44,7 +44,7 @@ def test_noop_data_store_retrieve_memoized():
 
 def test_noop_data_store_is_data_store_subclass():
     """Test that NoOpDataStore is a subclass of DataStore."""
-    from orcabridge.store.core import DataStore
+    from orcapod.store.core import DataStore
 
     store = NoOpDataStore()
     assert isinstance(store, DataStore)

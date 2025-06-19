@@ -4,8 +4,8 @@
 
 import pytest
 
-from orcabridge.hashing.file_hashers import DefaultPacketHasher
-from orcabridge.hashing.types import PathSetHasher
+from orcapod.hashing.file_hashers import DefaultPacketHasher
+from orcapod.hashing.types import PathSetHasher
 
 
 class MockPathSetHasher(PathSetHasher):

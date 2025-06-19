@@ -79,7 +79,7 @@ def demonstrate_redis_mocking():
             MockConnectionError,
         ),
     ):
-        from orcabridge.hashing.string_cachers import RedisCacher
+        from orcapod.hashing.string_cachers import RedisCacher
 
         # Create a mock Redis instance
         mock_redis = MockRedis()

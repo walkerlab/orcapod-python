@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_hashing/test_path_set_hasher.py
 """Tests for the PathSetHasher protocol implementation."""
 
 import os
@@ -9,9 +8,9 @@ from unittest.mock import patch
 
 import pytest
 
-import orcabridge.hashing.core
-from orcabridge.hashing.file_hashers import DefaultPathsetHasher
-from orcabridge.hashing.types import FileHasher
+import orcapod.hashing.core
+from orcapod.hashing.file_hashers import DefaultPathsetHasher
+from orcapod.hashing.types import FileHasher
 
 
 class MockFileHasher(FileHasher):
@@ -36,7 +35,7 @@ def create_temp_file(content="test content"):
 
 
 # Store original function for restoration
-original_hash_pathset = orcabridge.hashing.core.hash_pathset
+original_hash_pathset = orcapod.hashing.core.hash_pathset
 
 
 # Custom implementation of hash_pathset for tests that doesn't check for file existence
@@ -47,8 +46,8 @@ def mock_hash_pathset(
     from collections.abc import Collection
     from os import PathLike
 
-    from orcabridge.hashing.core import hash_to_hex
-    from orcabridge.utils.name import find_noncolliding_name
+    from orcapod.hashing.core import hash_to_hex
+    from orcapod.utils.name import find_noncolliding_name
 
     # If file_hasher is None, we'll need to handle it differently
     if file_hasher is None:
@@ -87,7 +86,7 @@ def mock_hash_pathset(
 @pytest.fixture(autouse=True)
 def patch_hash_pathset():
     """Patch the hash_pathset function in the hashing module for all tests."""
-    with patch("orcabridge.hashing.core.hash_pathset", side_effect=mock_hash_pathset):
+    with patch("orcapod.hashing.core.hash_pathset", side_effect=mock_hash_pathset):
         yield
 
 
@@ -226,7 +225,7 @@ def test_default_pathset_hasher_with_nonexistent_files():
 
         # Patch hash_pathset just for this test
         with patch(
-            "orcabridge.hashing.core.hash_pathset", side_effect=custom_hash_nonexistent
+            "orcapod.hashing.core.hash_pathset", side_effect=custom_hash_nonexistent
         ):
             result = pathset_hasher.hash_pathset(pathset)
 

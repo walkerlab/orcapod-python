@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 from unittest.mock import mock_open, patch
 
-from orcabridge.hashing.string_cachers import FileCacher
+from orcapod.hashing.string_cachers import FileCacher
 
 
 def test_basic_operations():

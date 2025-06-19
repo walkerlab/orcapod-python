@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from orcabridge.hashing.core import hash_file, hash_packet, hash_pathset
-from orcabridge.hashing.file_hashers import PathLikeHasherFactory
+from orcapod.hashing.core import hash_file, hash_packet, hash_pathset
+from orcapod.hashing.file_hashers import PathLikeHasherFactory
 
 
 def load_hash_lut():

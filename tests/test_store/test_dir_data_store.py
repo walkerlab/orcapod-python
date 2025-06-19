@@ -8,13 +8,13 @@ from pathlib import Path
 
 import pytest
 
-from orcabridge.hashing.types import (
+from orcapod.hashing.types import (
     CompositeFileHasher,
     FileHasher,
     PacketHasher,
     PathSetHasher,
 )
-from orcabridge.store.core import DirDataStore
+from orcapod.store.core import DirDataStore
 
 
 class MockFileHasher(FileHasher):
@@ -500,7 +500,7 @@ def test_dir_data_store_legacy_mode_compatibility(temp_dir, sample_files):
     output_packet = {"output_file": sample_files["output"]["output1"]}
 
     # Get the hash values directly for comparison
-    from orcabridge.hashing import hash_packet
+    from orcapod.hashing import hash_packet
 
     legacy_hash = hash_packet(packet, algorithm="sha256")
     assert store_default.packet_hasher is not None, (
@@ -611,8 +611,8 @@ def test_dir_data_store_hash_equivalence(temp_dir, sample_files):
     output_packet = {"output_file": sample_files["output"]["output1"]}
 
     # First compute hashes directly
-    from orcabridge.hashing import hash_packet
-    from orcabridge.hashing.defaults import get_default_composite_file_hasher
+    from orcapod.hashing import hash_packet
+    from orcapod.hashing.defaults import get_default_composite_file_hasher
 
     legacy_hash = hash_packet(packet, algorithm="sha256")
     default_hasher = get_default_composite_file_hasher(

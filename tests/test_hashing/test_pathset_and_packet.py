@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from orcabridge.hashing import hash_file, hash_packet, hash_pathset
+from orcapod.hashing import hash_file, hash_packet, hash_pathset
 
 logger = logging.getLogger(__name__)
 
