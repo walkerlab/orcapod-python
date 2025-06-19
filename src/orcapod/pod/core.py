@@ -186,6 +186,7 @@ class FunctionPod(Pod):
         function_hash_mode: Literal["signature", "content", "name", "custom"] = "name",
         custom_hash: int | None = None,
         label: str | None = None,
+        skip_computation: bool = False,
         force_computation: bool = False,
         skip_memoization_lookup: bool = False,
         skip_memoization: bool = False,
@@ -209,6 +210,7 @@ class FunctionPod(Pod):
         self.store_name = store_name or function_name
         self.function_hash_mode = function_hash_mode
         self.custom_hash = custom_hash
+        self.skip_computation = skip_computation
         self.force_computation = force_computation
         self.skip_memoization_lookup = skip_memoization_lookup
         self.skip_memoization = skip_memoization
@@ -276,6 +278,9 @@ class FunctionPod(Pod):
                     if not self.force_computation and memoized_packet is not None:
                         logger.info("Memoized packet found, skipping computation")
                         yield tag, memoized_packet
+                        continue
+                    if self.skip_computation:
+                        logger.info("Skipping computation as per configuration")
                         continue
                     values = self.function(**packet)
 
