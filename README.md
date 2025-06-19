@@ -1,5 +1,5 @@
-# orcabridge
-Prototype of Orcapod as implemented in Python with functions
+# Orcapod Python
+Orcapod's Python library for developing reproducbile scientific pipelines.
 
 ## Continuous Integration
 

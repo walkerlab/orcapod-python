@@ -3,8 +3,8 @@ requires = ["setuptools>=64", "wheel", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "orcabridge"
-description = "Function-based Oracapod Pipeline implementation in Python"
+name = "orcapod"
+description = "simple yet powerful pipeline library for building reproducible scientific pipeline"
 dynamic = ["version"]
 dependencies = [
     "xxhash",
@@ -27,7 +27,7 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/walkerlab/orcabridge"
+Homepage = "https://github.com/walkerlab/orcapod-python"
 
 [project.optional-dependencies]
 redis = ["redis>=6.2.0"]
@@ -37,7 +37,7 @@ redis = ["redis>=6.2.0"]
 where = ["src"]
 
 [tool.setuptools_scm]
-version_file = "src/orcabridge/_version.py"
+version_file = "src/orcapod/_version.py"
 
 [dependency-groups]
 dev = [
