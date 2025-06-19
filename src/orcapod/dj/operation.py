@@ -1,8 +1,8 @@
-from ..base import Operation
+from orcapod.core.base import Kernel
 from .stream import QueryStream
 
 
-class QueryOperation(Operation):
+class QueryOperation(Kernel):
     """
     A special type of operation that returns and works with
     QueryStreams

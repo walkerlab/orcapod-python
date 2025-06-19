@@ -303,6 +303,10 @@ class FunctionPod(Pod):
                     elif self.error_handling == "warn":
                         warnings.warn(f"Error processing packet {packet}: {e}")
                         continue
+                    else:
+                        raise ValueError(
+                            f"Unknown error handling mode: {self.error_handling} encountered while handling error:"
+                        ) from e
 
                 output_packet: Packet = {
                     k: v for k, v in zip(self.output_keys, output_values)
