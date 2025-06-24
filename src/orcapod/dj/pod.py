@@ -5,7 +5,7 @@ import datajoint as dj
 from datajoint import Schema
 from datajoint.table import Table
 
-from ..pod import FunctionPod, Pod
+from orcapod.core.pod import FunctionPod, Pod
 from ..utils.name import pascal_to_snake, snake_to_pascal
 from .mapper import JoinQuery
 from .operation import QueryOperation

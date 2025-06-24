@@ -8,7 +8,7 @@ from datajoint import Schema
 
 from orcapod.core.base import Kernel, Source
 from orcapod.core.operators import Operator, Merge
-from orcapod.pod import FunctionPod
+from orcapod.core.pod import FunctionPod
 from orcapod.core.tracker import GraphTracker
 
 from .mapper import convert_to_query_mapper

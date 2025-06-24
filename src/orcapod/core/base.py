@@ -2,7 +2,7 @@
 import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Collection, Iterator
-from typing import Any, TypeVar, Hashable
+from typing import Any
 
 
 from orcapod.hashing import HashableMixin
@@ -27,9 +27,10 @@ class Kernel(ABC, HashableMixin):
     for computational graph tracking.
     """
 
-    def __init__(self, label: str | None = None, **kwargs) -> None:
+    def __init__(self, label: str | None = None, skip_tracking: bool = False, **kwargs) -> None:
         super().__init__(**kwargs)
         self._label = label
+        self._skip_tracking = skip_tracking
 
     @property
     def label(self) -> str:
@@ -40,29 +41,51 @@ class Kernel(ABC, HashableMixin):
         if self._label:
             return self._label
         return self.__class__.__name__
-
+    
     @label.setter
     def label(self, label: str) -> None:
         self._label = label
 
+    def pre_forward_hook(
+        self, *streams: "SyncStream", **kwargs
+    ) -> tuple["SyncStream", ...]:
+        """
+        A hook that is called before the forward method is invoked.
+        This can be used to perform any pre-processing or validation on the input streams.
+        Subclasses can override this method to provide custom behavior.
+        """
+        return streams
+
+    def post_forward_hook(self, output_stream: "SyncStream", **kwargs) -> "SyncStream":
+        """
+        A hook that is called after the forward method is invoked.
+        This can be used to perform any post-processing on the output stream.
+        Subclasses can override this method to provide custom behavior.
+        """
+        return output_stream
+
+   
     def __call__(self, *streams: "SyncStream", **kwargs) -> "SyncStream":
         # Special handling of Source: trigger call on source if passed as stream
         normalized_streams = [
             stream() if isinstance(stream, Source) else stream for stream in streams
         ]
 
-        output_stream = self.forward(*normalized_streams, **kwargs)
+        pre_processed_streams = self.pre_forward_hook(*normalized_streams, **kwargs)
+        output_stream = self.forward(*pre_processed_streams, **kwargs)
+        post_processed_stream = self.post_forward_hook(output_stream, **kwargs)
         # create an invocation instance
-        invocation = Invocation(self, normalized_streams)
+        invocation = Invocation(self, pre_processed_streams)
         # label the output_stream with the invocation that produced the stream
-        output_stream.invocation = invocation
+        post_processed_stream.invocation = invocation
 
-        # register the invocation to all active trackers
-        active_trackers = Tracker.get_active_trackers()
-        for tracker in active_trackers:
-            tracker.record(invocation)
+        if not self._skip_tracking:
+            # register the invocation to all active trackers
+            active_trackers = Tracker.get_active_trackers()
+            for tracker in active_trackers:
+                tracker.record(invocation)
 
-        return output_stream
+        return post_processed_stream
 
     @abstractmethod
     def forward(self, *streams: "SyncStream") -> "SyncStream":
@@ -98,7 +121,7 @@ class Kernel(ABC, HashableMixin):
         logger.warning(
             f"Identity structure not implemented for {self.__class__.__name__}"
         )
-        return (self.__class__.__name__,) + tuple(streams)
+        return (self.__class__.__name__,) + streams
 
     def keys(
         self, *streams: "SyncStream", trigger_run: bool = False
@@ -365,6 +388,8 @@ class Stream(ABC, HashableMixin):
             tag_keys, packet_keys = self.invocation.keys()
             if tag_keys is not None and packet_keys is not None:
                 return tag_keys, packet_keys
+        if not trigger_run:
+            return None, None
         # otherwise, use the keys from the first packet in the stream
         # note that this may be computationally expensive
         tag, packet = next(iter(self))
@@ -386,6 +411,8 @@ class Stream(ABC, HashableMixin):
             tag_types, packet_types = self.invocation.types()
             if not trigger_run or (tag_types is not None and packet_types is not None):
                 return tag_types, packet_types
+        if not trigger_run:
+            return None, None
         # otherwise, use the keys from the first packet in the stream
         # note that this may be computationally expensive
         tag, packet = next(iter(self))
@@ -486,13 +513,6 @@ class SyncStream(Stream):
                 return False
             unique_tags.add(tag)
         return True
-
-
-class Operator(Kernel):
-    """
-    A Mapper is an operation that does NOT generate new file content.
-    It is used to control the flow of data in the pipeline without modifying or creating data content.
-    """
 
 
 class Source(Kernel, SyncStream):

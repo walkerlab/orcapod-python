@@ -45,6 +45,7 @@ class ArrowDataStore(Protocol):
         source_id: str,
         entry_id: str,
         arrow_data: pa.Table,
+        ignore_duplicate: bool = False,
     ) -> pa.Table: ...
 
     def get_record(

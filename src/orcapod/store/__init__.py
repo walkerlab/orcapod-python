@@ -1,5 +1,6 @@
 from .types import DataStore, ArrowDataStore
-from .core import DirDataStore, NoOpDataStore
+from .arrow_data_stores import MockArrowDataStore, SimpleInMemoryDataStore
+from .dict_data_stores import DirDataStore, NoOpDataStore
 from .safe_dir_data_store import SafeDirDataStore
 
 __all__ = [
@@ -8,4 +9,6 @@ __all__ = [
     "DirDataStore",
     "SafeDirDataStore",
     "NoOpDataStore",
+    "MockArrowDataStore",
+    "SimpleInMemoryDataStore",
 ]

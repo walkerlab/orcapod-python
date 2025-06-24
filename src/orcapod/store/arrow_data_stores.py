@@ -23,17 +23,15 @@ class MockArrowDataStore:
     def __init__(self):
         logger.info("Initialized MockArrowDataStore")
 
-    def add_record(self,
-        source_name: str,
-        source_id: str,
-        entry_id: str,
-        arrow_data: pa.Table) -> pa.Table:
+    def add_record(
+        self, source_name: str, source_id: str, entry_id: str, arrow_data: pa.Table
+    ) -> pa.Table:
         """Add a record to the mock store."""
         return arrow_data
 
-    def get_record(self, source_name: str,
-        source_id: str,
-        entry_id: str) -> pa.Table | None:
+    def get_record(
+        self, source_name: str, source_id: str, entry_id: str
+    ) -> pa.Table | None:
         """Get a specific record."""
         return None
 
@@ -76,7 +74,7 @@ class MockArrowDataStore:
             Arrow table containing all found records, or None if no records found
         """
         return None
-    
+
     def get_records_by_ids_as_polars(
         self,
         source_name: str,
@@ -88,21 +86,19 @@ class MockArrowDataStore:
         return None
 
 
-
-
-class InMemoryArrowDataStore:
+class SimpleInMemoryDataStore:
     """
-    In-memory Arrow data store for testing purposes.
+    In-memory Arrow data store, primarily to be used for testing purposes.
     This class simulates the behavior of ParquetArrowDataStore without actual file I/O.
     It is useful for unit tests where you want to avoid filesystem dependencies.
-    
+
     Uses dict of dict of Arrow tables for efficient storage and retrieval.
     """
 
     def __init__(self, duplicate_entry_behavior: str = "error"):
         """
         Initialize the InMemoryArrowDataStore.
-        
+
         Args:
             duplicate_entry_behavior: How to handle duplicate entry_ids:
                 - 'error': Raise ValueError when entry_id already exists
@@ -112,10 +108,12 @@ class InMemoryArrowDataStore:
         if duplicate_entry_behavior not in ["error", "overwrite"]:
             raise ValueError("duplicate_entry_behavior must be 'error' or 'overwrite'")
         self.duplicate_entry_behavior = duplicate_entry_behavior
-        
+
         # Store Arrow tables: {source_key: {entry_id: arrow_table}}
         self._in_memory_store: dict[str, dict[str, pa.Table]] = {}
-        logger.info(f"Initialized InMemoryArrowDataStore with duplicate_entry_behavior='{duplicate_entry_behavior}'")
+        logger.info(
+            f"Initialized InMemoryArrowDataStore with duplicate_entry_behavior='{duplicate_entry_behavior}'"
+        )
 
     def _get_source_key(self, source_name: str, source_id: str) -> str:
         """Generate key for source storage."""
@@ -127,40 +125,42 @@ class InMemoryArrowDataStore:
         source_id: str,
         entry_id: str,
         arrow_data: pa.Table,
+        ignore_duplicate: bool = False,
     ) -> pa.Table:
         """
         Add a record to the in-memory store.
-        
+
         Args:
             source_name: Name of the data source
             source_id: ID of the specific dataset within the source
             entry_id: Unique identifier for this record
             arrow_data: The Arrow table data to store
-            
+
         Returns:
-            The original arrow_data table
-            
+            arrow_data equivalent to having loaded the corresponding entry that was just saved
+
         Raises:
             ValueError: If entry_id already exists and duplicate_entry_behavior is 'error'
         """
         source_key = self._get_source_key(source_name, source_id)
-        
+
         # Initialize source if it doesn't exist
         if source_key not in self._in_memory_store:
             self._in_memory_store[source_key] = {}
-        
+
         local_data = self._in_memory_store[source_key]
-        
+
         # Check for duplicate entry
-        if entry_id in local_data and self.duplicate_entry_behavior == "error":
-            raise ValueError(
-                f"Entry '{entry_id}' already exists in {source_name}/{source_id}. "
-                f"Use duplicate_entry_behavior='overwrite' to allow updates."
-            )
-        
+        if entry_id in local_data:
+            if not ignore_duplicate and self.duplicate_entry_behavior == "error":
+                raise ValueError(
+                    f"Entry '{entry_id}' already exists in {source_name}/{source_id}. "
+                    f"Use duplicate_entry_behavior='overwrite' to allow updates."
+                )
+
         # Store the record
         local_data[entry_id] = arrow_data
-        
+
         action = "Updated" if entry_id in local_data else "Added"
         logger.debug(f"{action} record {entry_id} in {source_key}")
         return arrow_data
@@ -173,24 +173,29 @@ class InMemoryArrowDataStore:
         local_data = self._in_memory_store.get(source_key, {})
         return local_data.get(entry_id)
 
-    def get_all_records(self, source_name: str, source_id: str) -> pa.Table | None:
+    def get_all_records(
+        self, source_name: str, source_id: str, add_entry_id_column: bool | str = False
+    ) -> pa.Table | None:
         """Retrieve all records for a given source as a single table."""
         source_key = self._get_source_key(source_name, source_id)
         local_data = self._in_memory_store.get(source_key, {})
-        
+
         if not local_data:
             return None
 
         tables_with_keys = []
         for key, table in local_data.items():
             # Add entry_id column to each table
-            key_array = pa.array([key] * len(table), type=pa.string())
+            key_array = pa.array([key] * len(table), type=pa.large_string())
             table_with_key = table.add_column(0, "__entry_id", key_array)
             tables_with_keys.append(table_with_key)
 
         # Concatenate all tables
         if tables_with_keys:
-            return pa.concat_tables(tables_with_keys)
+            combined_table = pa.concat_tables(tables_with_keys)
+            if not add_entry_id_column:
+                combined_table = combined_table.drop(columns=["__entry_id"])
+            return combined_table
         return None
 
     def get_all_records_as_polars(
@@ -212,7 +217,7 @@ class InMemoryArrowDataStore:
     ) -> pa.Table | None:
         """
         Retrieve records by entry IDs as a single table.
-        
+
         Args:
             source_name: Name of the data source
             source_id: ID of the specific dataset within the source
@@ -226,7 +231,7 @@ class InMemoryArrowDataStore:
                 - str: Include entry ID column with custom name
             preserve_input_order: If True, return results in the same order as input entry_ids,
                 with null rows for missing entries. If False, return in storage order.
-        
+
         Returns:
             Arrow table containing all found records, or None if no records found
         """
@@ -250,18 +255,18 @@ class InMemoryArrowDataStore:
 
         source_key = self._get_source_key(source_name, source_id)
         local_data = self._in_memory_store.get(source_key, {})
-        
+
         if not local_data:
             return None
 
         # Collect matching tables
         found_tables = []
         found_entry_ids = []
-        
+
         if preserve_input_order:
             # Preserve input order, include nulls for missing entries
             first_table_schema = None
-            
+
             for entry_id in entry_ids_list:
                 if entry_id in local_data:
                     table = local_data[entry_id]
@@ -270,7 +275,7 @@ class InMemoryArrowDataStore:
                     table_with_key = table.add_column(0, "__entry_id", key_array)
                     found_tables.append(table_with_key)
                     found_entry_ids.append(entry_id)
-                    
+
                     # Store schema for creating null rows
                     if first_table_schema is None:
                         first_table_schema = table_with_key.schema
@@ -281,12 +286,14 @@ class InMemoryArrowDataStore:
                         null_data = {}
                         for field in first_table_schema:
                             if field.name == "__entry_id":
-                                null_data[field.name] = pa.array([entry_id], type=field.type)
+                                null_data[field.name] = pa.array(
+                                    [entry_id], type=field.type
+                                )
                             else:
                                 # Create null array with proper type
                                 null_array = pa.array([None], type=field.type)
                                 null_data[field.name] = null_array
-                        
+
                         null_table = pa.table(null_data, schema=first_table_schema)
                         found_tables.append(null_table)
                         found_entry_ids.append(entry_id)
@@ -315,12 +322,17 @@ class InMemoryArrowDataStore:
             # Remove the __entry_id column
             column_names = combined_table.column_names
             if "__entry_id" in column_names:
-                indices_to_keep = [i for i, name in enumerate(column_names) if name != "__entry_id"]
+                indices_to_keep = [
+                    i for i, name in enumerate(column_names) if name != "__entry_id"
+                ]
                 combined_table = combined_table.select(indices_to_keep)
         elif isinstance(add_entry_id_column, str):
             # Rename __entry_id to custom name
             schema = combined_table.schema
-            new_names = [add_entry_id_column if name == "__entry_id" else name for name in schema.names]
+            new_names = [
+                add_entry_id_column if name == "__entry_id" else name
+                for name in schema.names
+            ]
             combined_table = combined_table.rename_columns(new_names)
         # If add_entry_id_column is True, keep __entry_id as is
 
@@ -336,7 +348,7 @@ class InMemoryArrowDataStore:
     ) -> pl.LazyFrame | None:
         """
         Retrieve records by entry IDs as a single Polars LazyFrame.
-        
+
         Args:
             source_name: Name of the data source
             source_id: ID of the specific dataset within the source
@@ -350,7 +362,7 @@ class InMemoryArrowDataStore:
                 - str: Include entry ID column with custom name
             preserve_input_order: If True, return results in the same order as input entry_ids,
                 with null rows for missing entries. If False, return in storage order.
-        
+
         Returns:
             Polars LazyFrame containing all found records, or None if no records found
         """
@@ -358,42 +370,42 @@ class InMemoryArrowDataStore:
         arrow_result = self.get_records_by_ids(
             source_name, source_id, entry_ids, add_entry_id_column, preserve_input_order
         )
-        
+
         if arrow_result is None:
             return None
-            
+
         # Convert to Polars LazyFrame
         return pl.LazyFrame(arrow_result)
 
     def save_to_parquet(self, base_path: str | Path) -> None:
         """
         Save all data to Parquet files in a directory structure.
-        
+
         Directory structure: base_path/source_name/source_id/data.parquet
-        
+
         Args:
             base_path: Base directory path where to save the Parquet files
         """
         base_path = Path(base_path)
         base_path.mkdir(parents=True, exist_ok=True)
-        
+
         saved_count = 0
-        
+
         for source_key, local_data in self._in_memory_store.items():
             if not local_data:
                 continue
-                
+
             # Parse source_name and source_id from the key
             if ":" not in source_key:
                 logger.warning(f"Invalid source key format: {source_key}, skipping")
                 continue
-                
+
             source_name, source_id = source_key.split(":", 1)
-            
+
             # Create directory structure
             source_dir = base_path / source_name / source_id
             source_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Combine all tables for this source with entry_id column
             tables_with_keys = []
             for entry_id, table in local_data.items():
@@ -401,82 +413,89 @@ class InMemoryArrowDataStore:
                 key_array = pa.array([entry_id] * len(table), type=pa.string())
                 table_with_key = table.add_column(0, "__entry_id", key_array)
                 tables_with_keys.append(table_with_key)
-            
+
             # Concatenate all tables
             if tables_with_keys:
                 combined_table = pa.concat_tables(tables_with_keys)
-                
+
                 # Save as Parquet file
+                # TODO: perform safe "atomic" write
                 parquet_path = source_dir / "data.parquet"
                 import pyarrow.parquet as pq
+
                 pq.write_table(combined_table, parquet_path)
-                
+
                 saved_count += 1
-                logger.debug(f"Saved {len(combined_table)} records for {source_key} to {parquet_path}")
-        
+                logger.debug(
+                    f"Saved {len(combined_table)} records for {source_key} to {parquet_path}"
+                )
+
         logger.info(f"Saved {saved_count} sources to Parquet files in {base_path}")
 
     def load_from_parquet(self, base_path: str | Path) -> None:
         """
         Load data from Parquet files with the expected directory structure.
-        
+
         Expected structure: base_path/source_name/source_id/data.parquet
-        
+
         Args:
             base_path: Base directory path containing the Parquet files
         """
         base_path = Path(base_path)
-        
+
         if not base_path.exists():
             logger.warning(f"Base path {base_path} does not exist")
             return
-        
+
         # Clear existing data
         self._in_memory_store.clear()
-        
+
         loaded_count = 0
-        
+
         # Traverse directory structure: source_name/source_id/
         for source_name_dir in base_path.iterdir():
             if not source_name_dir.is_dir():
                 continue
-                
+
             source_name = source_name_dir.name
-            
+
             for source_id_dir in source_name_dir.iterdir():
                 if not source_id_dir.is_dir():
                     continue
-                    
+
                 source_id = source_id_dir.name
                 source_key = self._get_source_key(source_name, source_id)
-                
+
                 # Look for Parquet files in this directory
                 parquet_files = list(source_id_dir.glob("*.parquet"))
-                
+
                 if not parquet_files:
                     logger.debug(f"No Parquet files found in {source_id_dir}")
                     continue
-                
+
                 # Load all Parquet files and combine them
                 all_records = []
-                
+
                 for parquet_file in parquet_files:
                     try:
                         import pyarrow.parquet as pq
+
                         table = pq.read_table(parquet_file)
-                        
+
                         # Validate that __entry_id column exists
                         if "__entry_id" not in table.column_names:
-                            logger.warning(f"Parquet file {parquet_file} missing __entry_id column, skipping")
+                            logger.warning(
+                                f"Parquet file {parquet_file} missing __entry_id column, skipping"
+                            )
                             continue
-                            
+
                         all_records.append(table)
                         logger.debug(f"Loaded {len(table)} records from {parquet_file}")
-                        
+
                     except Exception as e:
                         logger.error(f"Failed to load Parquet file {parquet_file}: {e}")
                         continue
-                
+
                 # Process all records for this source
                 if all_records:
                     # Combine all tables
@@ -484,43 +503,52 @@ class InMemoryArrowDataStore:
                         combined_table = all_records[0]
                     else:
                         combined_table = pa.concat_tables(all_records)
-                    
+
                     # Split back into individual records by entry_id
                     local_data = {}
                     entry_ids = combined_table.column("__entry_id").to_pylist()
-                    
+
                     # Group records by entry_id
                     entry_id_groups = {}
                     for i, entry_id in enumerate(entry_ids):
                         if entry_id not in entry_id_groups:
                             entry_id_groups[entry_id] = []
                         entry_id_groups[entry_id].append(i)
-                    
+
                     # Extract each entry_id's records
                     for entry_id, indices in entry_id_groups.items():
                         # Take rows for this entry_id and remove __entry_id column
                         entry_table = combined_table.take(indices)
-                        
+
                         # Remove __entry_id column
                         column_names = entry_table.column_names
                         if "__entry_id" in column_names:
-                            indices_to_keep = [i for i, name in enumerate(column_names) if name != "__entry_id"]
+                            indices_to_keep = [
+                                i
+                                for i, name in enumerate(column_names)
+                                if name != "__entry_id"
+                            ]
                             entry_table = entry_table.select(indices_to_keep)
-                        
+
                         local_data[entry_id] = entry_table
-                    
+
                     self._in_memory_store[source_key] = local_data
                     loaded_count += 1
-                    
+
                     record_count = len(combined_table)
                     unique_entries = len(entry_id_groups)
-                    logger.debug(f"Loaded {record_count} records ({unique_entries} unique entries) for {source_key}")
-        
+                    logger.debug(
+                        f"Loaded {record_count} records ({unique_entries} unique entries) for {source_key}"
+                    )
+
         logger.info(f"Loaded {loaded_count} sources from Parquet files in {base_path}")
-        
+
         # Log summary of loaded data
-        total_records = sum(len(local_data) for local_data in self._in_memory_store.values())
+        total_records = sum(
+            len(local_data) for local_data in self._in_memory_store.values()
+        )
         logger.info(f"Total records loaded: {total_records}")
+
 
 @dataclass
 class RecordMetadata:
@@ -1634,7 +1662,7 @@ def demo_single_row_constraint():
             store.add_record(
                 "experiments", "dataset_A", valid_entries[0], overwrite_data
             )
-            print(f"✓ Overwrote existing record")
+            print("✓ Overwrote existing record")
 
             # Verify overwrite
             updated_record = store.get_record(
@@ -1648,7 +1676,7 @@ def demo_single_row_constraint():
             # Sync and show final stats
             store.force_sync()
             stats = store.get_stats()
-            print(f"\n=== Final Statistics ===")
+            print("\n=== Final Statistics ===")
             print(f"Total records: {stats['total_records']}")
             print(f"Loaded caches: {stats['loaded_source_caches']}")
             print(f"Dirty caches: {stats['dirty_caches']}")
@@ -1657,6 +1685,377 @@ def demo_single_row_constraint():
             store.shutdown()
 
     print("\n✓ Single-row constraint testing completed successfully!")
+
+
+class InMemoryPolarsDataStore:
+    """
+    In-memory Arrow data store using Polars DataFrames for efficient storage and retrieval.
+    This class provides the same interface as InMemoryArrowDataStore but uses Polars internally
+    for better performance with large datasets and complex queries.
+
+    Uses dict of Polars DataFrames for efficient storage and retrieval.
+    Each DataFrame contains all records for a source with an __entry_id column.
+    """
+
+    def __init__(self, duplicate_entry_behavior: str = "error"):
+        """
+        Initialize the InMemoryPolarsDataStore.
+
+        Args:
+            duplicate_entry_behavior: How to handle duplicate entry_ids:
+                - 'error': Raise ValueError when entry_id already exists
+                - 'overwrite': Replace existing entry with new data
+        """
+        # Validate duplicate behavior
+        if duplicate_entry_behavior not in ["error", "overwrite"]:
+            raise ValueError("duplicate_entry_behavior must be 'error' or 'overwrite'")
+        self.duplicate_entry_behavior = duplicate_entry_behavior
+
+        # Store Polars DataFrames: {source_key: polars_dataframe}
+        # Each DataFrame has an __entry_id column plus user data columns
+        self._in_memory_store: dict[str, pl.DataFrame] = {}
+        logger.info(
+            f"Initialized InMemoryPolarsDataStore with duplicate_entry_behavior='{duplicate_entry_behavior}'"
+        )
+
+    def _get_source_key(self, source_name: str, source_id: str) -> str:
+        """Generate key for source storage."""
+        return f"{source_name}:{source_id}"
+
+    def add_record(
+        self,
+        source_name: str,
+        source_id: str,
+        entry_id: str,
+        arrow_data: pa.Table,
+    ) -> pa.Table:
+        """
+        Add a record to the in-memory store.
+
+        Args:
+            source_name: Name of the data source
+            source_id: ID of the specific dataset within the source
+            entry_id: Unique identifier for this record
+            arrow_data: The Arrow table data to store
+
+        Returns:
+            arrow_data equivalent to having loaded the corresponding entry that was just saved
+
+        Raises:
+            ValueError: If entry_id already exists and duplicate_entry_behavior is 'error'
+        """
+        source_key = self._get_source_key(source_name, source_id)
+
+        # Convert Arrow table to Polars DataFrame and add entry_id column
+        polars_data = cast(pl.DataFrame, pl.from_arrow(arrow_data))
+
+        # Add __entry_id column
+        polars_data = polars_data.with_columns(pl.lit(entry_id).alias("__entry_id"))
+
+        # Check if source exists
+        if source_key not in self._in_memory_store:
+            # First record for this source
+            self._in_memory_store[source_key] = polars_data
+            logger.debug(f"Created new source {source_key} with entry {entry_id}")
+        else:
+            existing_df = self._in_memory_store[source_key]
+
+            # Check for duplicate entry
+            entry_exists = (
+                existing_df.filter(pl.col("__entry_id") == entry_id).shape[0] > 0
+            )
+
+            if entry_exists:
+                if self.duplicate_entry_behavior == "error":
+                    raise ValueError(
+                        f"Entry '{entry_id}' already exists in {source_name}/{source_id}. "
+                        f"Use duplicate_entry_behavior='overwrite' to allow updates."
+                    )
+                else:  # validity of value is checked in constructor so it must be "ovewrite"
+                    # Remove existing entry and add new one
+                    existing_df = existing_df.filter(pl.col("__entry_id") != entry_id)
+                    self._in_memory_store[source_key] = pl.concat(
+                        [existing_df, polars_data]
+                    )
+                    logger.debug(f"Overwrote entry {entry_id} in {source_key}")
+            else:
+                # Append new entry
+                try:
+                    self._in_memory_store[source_key] = pl.concat(
+                        [existing_df, polars_data]
+                    )
+                    logger.debug(f"Added entry {entry_id} to {source_key}")
+                except Exception as e:
+                    # Handle schema mismatch
+                    existing_cols = set(existing_df.columns) - {"__entry_id"}
+                    new_cols = set(polars_data.columns) - {"__entry_id"}
+
+                    if existing_cols != new_cols:
+                        raise ValueError(
+                            f"Schema mismatch for {source_key}. "
+                            f"Existing columns: {sorted(existing_cols)}, "
+                            f"New columns: {sorted(new_cols)}"
+                        ) from e
+                    else:
+                        raise e
+
+        return arrow_data
+
+    def get_record(
+        self, source_name: str, source_id: str, entry_id: str
+    ) -> pa.Table | None:
+        """Get a specific record."""
+        source_key = self._get_source_key(source_name, source_id)
+
+        if source_key not in self._in_memory_store:
+            return None
+
+        df = self._in_memory_store[source_key]
+
+        # Filter for the specific entry_id
+        filtered_df = df.filter(pl.col("__entry_id") == entry_id)
+
+        if filtered_df.shape[0] == 0:
+            return None
+
+        # Remove __entry_id column and convert to Arrow
+        result_df = filtered_df.drop("__entry_id")
+        return result_df.to_arrow()
+
+    def get_all_records(
+        self, source_name: str, source_id: str, add_entry_id_column: bool | str = False
+    ) -> pa.Table | None:
+        """Retrieve all records for a given source as a single table."""
+        df = self.get_all_records_as_polars(
+            source_name, source_id, add_entry_id_column=add_entry_id_column
+        )
+        return df.collect().to_arrow()
+
+    def get_all_records_as_polars(
+        self, source_name: str, source_id: str, add_entry_id_column: bool | str = False
+    ) -> pl.LazyFrame | None:
+        """Retrieve all records for a given source as a single Polars LazyFrame."""
+        source_key = self._get_source_key(source_name, source_id)
+
+        if source_key not in self._in_memory_store:
+            return None
+
+        df = self._in_memory_store[source_key]
+
+        if df.shape[0] == 0:
+            return None
+
+        # perform column selection lazily
+        df = df.lazy()
+
+        # Handle entry_id column based on parameter
+        if add_entry_id_column is False:
+            # Remove __entry_id column
+            result_df = df.drop("__entry_id")
+        elif add_entry_id_column is True:
+            # Keep __entry_id column as is
+            result_df = df
+        elif isinstance(add_entry_id_column, str):
+            # Rename __entry_id to custom name
+            result_df = df.rename({"__entry_id": add_entry_id_column})
+        else:
+            raise ValueError(
+                f"add_entry_id_column must be a bool or str but {add_entry_id_column} was given"
+            )
+
+        return result_df
+
+    def get_records_by_ids(
+        self,
+        source_name: str,
+        source_id: str,
+        entry_ids: list[str] | pl.Series | pa.Array,
+        add_entry_id_column: bool | str = False,
+        preserve_input_order: bool = False,
+    ) -> pa.Table | None:
+        """
+        Retrieve records by entry IDs as a single table.
+
+        Args:
+            source_name: Name of the data source
+            source_id: ID of the specific dataset within the source
+            entry_ids: Entry IDs to retrieve. Can be:
+                - list[str]: List of entry ID strings
+                - pl.Series: Polars Series containing entry IDs
+                - pa.Array: PyArrow Array containing entry IDs
+            add_entry_id_column: Control entry ID column inclusion:
+                - False: Don't include entry ID column (default)
+                - True: Include entry ID column as "__entry_id"
+                - str: Include entry ID column with custom name
+            preserve_input_order: If True, return results in the same order as input entry_ids,
+                with null rows for missing entries. If False, return in storage order.
+
+        Returns:
+            Arrow table containing all found records, or None if no records found
+        """
+        # Convert input to Polars Series
+        if isinstance(entry_ids, list):
+            if not entry_ids:
+                return None
+            entry_ids_series = pl.Series("entry_id", entry_ids)
+        elif isinstance(entry_ids, pl.Series):
+            if len(entry_ids) == 0:
+                return None
+            entry_ids_series = entry_ids
+        elif isinstance(entry_ids, pa.Array):
+            if len(entry_ids) == 0:
+                return None
+            entry_ids_series = pl.from_arrow(pa.table({"entry_id": entry_ids}))[
+                "entry_id"
+            ]
+        else:
+            raise TypeError(
+                f"entry_ids must be list[str], pl.Series, or pa.Array, got {type(entry_ids)}"
+            )
+
+        source_key = self._get_source_key(source_name, source_id)
+
+        if source_key not in self._in_memory_store:
+            return None
+
+        df = self._in_memory_store[source_key]
+
+        if preserve_input_order:
+            # Create DataFrame with input order and join to preserve order with nulls
+            ordered_df = pl.DataFrame({"__entry_id": entry_ids_series})
+            result_df = ordered_df.join(df, on="__entry_id", how="left")
+        else:
+            # Filter for matching entry_ids (storage order)
+            result_df = df.filter(pl.col("__entry_id").is_in(entry_ids_series))
+
+        if result_df.shape[0] == 0:
+            return None
+
+        # Handle entry_id column based on parameter
+        if add_entry_id_column is False:
+            # Remove __entry_id column
+            result_df = result_df.drop("__entry_id")
+        elif add_entry_id_column is True:
+            # Keep __entry_id column as is
+            pass
+        elif isinstance(add_entry_id_column, str):
+            # Rename __entry_id to custom name
+            result_df = result_df.rename({"__entry_id": add_entry_id_column})
+
+        return result_df.to_arrow()
+
+    def get_records_by_ids_as_polars(
+        self,
+        source_name: str,
+        source_id: str,
+        entry_ids: list[str] | pl.Series | pa.Array,
+        add_entry_id_column: bool | str = False,
+        preserve_input_order: bool = False,
+    ) -> pl.LazyFrame | None:
+        """
+        Retrieve records by entry IDs as a single Polars LazyFrame.
+
+        Args:
+            source_name: Name of the data source
+            source_id: ID of the specific dataset within the source
+            entry_ids: Entry IDs to retrieve. Can be:
+                - list[str]: List of entry ID strings
+                - pl.Series: Polars Series containing entry IDs
+                - pa.Array: PyArrow Array containing entry IDs
+            add_entry_id_column: Control entry ID column inclusion:
+                - False: Don't include entry ID column (default)
+                - True: Include entry ID column as "__entry_id"
+                - str: Include entry ID column with custom name
+            preserve_input_order: If True, return results in the same order as input entry_ids,
+                with null rows for missing entries. If False, return in storage order.
+
+        Returns:
+            Polars LazyFrame containing all found records, or None if no records found
+        """
+        # Get Arrow result and convert to Polars LazyFrame
+        arrow_result = self.get_records_by_ids(
+            source_name, source_id, entry_ids, add_entry_id_column, preserve_input_order
+        )
+
+        if arrow_result is None:
+            return None
+
+        # Convert to Polars LazyFrame
+        return pl.from_arrow(arrow_result).lazy()
+
+    def entry_exists(self, source_name: str, source_id: str, entry_id: str) -> bool:
+        """Check if a specific entry exists."""
+        source_key = self._get_source_key(source_name, source_id)
+
+        if source_key not in self._in_memory_store:
+            return False
+
+        df = self._in_memory_store[source_key]
+        return df.filter(pl.col("__entry_id") == entry_id).shape[0] > 0
+
+    def list_entries(self, source_name: str, source_id: str) -> set[str]:
+        """List all entry IDs for a specific source."""
+        source_key = self._get_source_key(source_name, source_id)
+
+        if source_key not in self._in_memory_store:
+            return set()
+
+        df = self._in_memory_store[source_key]
+        return set(df["__entry_id"].to_list())
+
+    def list_sources(self) -> set[tuple[str, str]]:
+        """List all (source_name, source_id) combinations."""
+        sources = set()
+        for source_key in self._in_memory_store.keys():
+            if ":" in source_key:
+                source_name, source_id = source_key.split(":", 1)
+                sources.add((source_name, source_id))
+        return sources
+
+    def clear_source(self, source_name: str, source_id: str) -> None:
+        """Clear all records for a specific source."""
+        source_key = self._get_source_key(source_name, source_id)
+        if source_key in self._in_memory_store:
+            del self._in_memory_store[source_key]
+            logger.debug(f"Cleared source {source_key}")
+
+    def clear_all(self) -> None:
+        """Clear all records from the store."""
+        self._in_memory_store.clear()
+        logger.info("Cleared all records from store")
+
+    def get_stats(self) -> dict[str, Any]:
+        """Get comprehensive statistics about the data store."""
+        total_records = 0
+        total_memory_mb = 0
+        source_stats = []
+
+        for source_key, df in self._in_memory_store.items():
+            record_count = df.shape[0]
+            total_records += record_count
+
+            # Estimate memory usage (rough approximation)
+            memory_bytes = df.estimated_size()
+            memory_mb = memory_bytes / (1024 * 1024)
+            total_memory_mb += memory_mb
+
+            source_stats.append(
+                {
+                    "source_key": source_key,
+                    "record_count": record_count,
+                    "column_count": df.shape[1] - 1,  # Exclude __entry_id
+                    "memory_mb": round(memory_mb, 2),
+                    "columns": [col for col in df.columns if col != "__entry_id"],
+                }
+            )
+
+        return {
+            "total_records": total_records,
+            "total_sources": len(self._in_memory_store),
+            "total_memory_mb": round(total_memory_mb, 2),
+            "duplicate_entry_behavior": self.duplicate_entry_behavior,
+            "source_details": source_stats,
+        }
 
 
 if __name__ == "__main__":

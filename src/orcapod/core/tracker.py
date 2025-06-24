@@ -1,5 +1,39 @@
-from orcapod.core.base import Invocation, Kernel, Tracker
+from orcapod.core.base import Invocation, Kernel, Tracker, SyncStream, TypeSpec
+from collections.abc import Collection
+from typing import Any
 
+class StubKernel(Kernel):
+    def __init__(self, stream: SyncStream, **kwargs):
+        super().__init__(skip_tracking=True, **kwargs)
+        self.stream = stream
+
+    def forward(self, *streams: SyncStream) -> SyncStream:
+        if len(streams) != 0:
+            raise ValueError(
+                "StubKernel does not support forwarding streams. "
+                "It generates its own stream from the file system."
+            )
+        return self.stream
+    
+    def identity_structure(self, *streams) -> Any:
+        if len(streams) != 0:
+            raise ValueError(
+                "StubKernel does not support forwarding streams. "
+                "It generates its own stream from the file system."
+            )
+         
+        return (self.__class__.__name__, self.stream)
+
+    def types(self, *streams: SyncStream, **kwargs) -> tuple[TypeSpec|None, TypeSpec|None]:
+        return self.stream.types()
+    
+    def keys(self, *streams: SyncStream, **kwargs) -> tuple[Collection[str]|None, Collection[str]|None]:
+        return self.stream.keys()
+    
+
+    
+
+        
 
 class GraphTracker(Tracker):
     """
@@ -44,6 +78,7 @@ class GraphTracker(Tracker):
 
     def generate_graph(self):
         import networkx as nx
+
         G = nx.DiGraph()
 
         # Add edges for each invocation
@@ -51,15 +86,20 @@ class GraphTracker(Tracker):
             for invocation in invocations:
                 for upstream in invocation.streams:
                     # if upstream.invocation is not in the graph, add it
-                    if upstream.invocation not in G:
-                        G.add_node(upstream.invocation)
-                    G.add_edge(upstream.invocation, invocation, stream=upstream)
+                    upstream_invocation = upstream.invocation
+                    if upstream_invocation is None:
+                        # If upstream is None, create a stub kernel
+                        upstream_invocation = Invocation(StubKernel(upstream, label="StubInput"), [])
+                    if upstream_invocation not in G:
+                        G.add_node(upstream_invocation)
+                    G.add_edge(upstream_invocation, invocation, stream=upstream)
 
         return G
 
     def draw_graph(self):
         import networkx as nx
         import matplotlib.pyplot as plt
+
         G = self.generate_graph()
         labels = self.generate_namemap()
 

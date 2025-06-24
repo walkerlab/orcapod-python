@@ -3,9 +3,9 @@ from collections.abc import Callable, Collection, Iterator
 from itertools import chain
 from typing import Any
 
-
-from orcapod.core.base import Operator, SyncStream
+from orcapod.types import Packet, Tag, TypeSpec
 from orcapod.hashing import function_content_hash, hash_function
+from orcapod.core.base import Kernel, SyncStream
 from orcapod.core.streams import SyncStreamFromGenerator
 from orcapod.utils.stream_utils import (
     batch_packet,
@@ -16,7 +16,12 @@ from orcapod.utils.stream_utils import (
     merge_typespecs,
 )
 
-from orcapod.types import Packet, Tag, TypeSpec
+
+class Operator(Kernel):
+    """
+    A Mapper is an operation that does NOT generate new file content.
+    It is used to control the flow of data in the pipeline without modifying or creating data content.
+    """
 
 
 class Repeat(Operator):
@@ -186,11 +191,42 @@ class Merge(Operator):
 
         return True
 
+def union_lists(left, right):
+    if left is None or right is None:
+        return None
+    output = list(left)
+    for item in right:
+        if item not in output:
+            output.append(item)
+    return output
+                  
 
 class Join(Operator):
     def identity_structure(self, *streams):
         # Join does not depend on the order of the streams -- convert it onto a set
         return (self.__class__.__name__, set(streams))
+
+    def keys(
+        self, *streams: SyncStream, trigger_run=False
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
+        """
+        Returns the types of the operation.
+        The first list contains the keys of the tags, and the second list contains the keys of the packets.
+        The keys are returned if it is feasible to do so, otherwise a tuple
+        (None, None) is returned to signify that the keys are not known.
+        """
+        if len(streams) != 2:
+            raise ValueError("Join operation requires exactly two streams")
+
+        left_stream, right_stream = streams
+        left_tag_keys, left_packet_keys = left_stream.keys(trigger_run=trigger_run)
+        right_tag_keys, right_packet_keys = right_stream.keys(trigger_run=trigger_run)
+
+        # TODO: do error handling when merge fails
+        joined_tag_keys = union_lists(left_tag_keys, right_tag_keys)
+        joined_packet_keys = union_lists(left_packet_keys, right_packet_keys)
+
+        return joined_tag_keys, joined_packet_keys
 
     def types(
         self, *streams: SyncStream, trigger_run=False
@@ -225,8 +261,10 @@ class Join(Operator):
         left_stream, right_stream = streams
 
         def generator() -> Iterator[tuple[Tag, Packet]]:
-            for left_tag, left_packet in left_stream:
-                for right_tag, right_packet in right_stream:
+            left_stream_buffered = list(left_stream)
+            right_stream_buffered = list(right_stream)
+            for left_tag, left_packet in left_stream_buffered:
+                for right_tag, right_packet in right_stream_buffered:
                     if (joined_tag := join_tags(left_tag, right_tag)) is not None:
                         if not check_packet_compatibility(left_packet, right_packet):
                             raise ValueError(

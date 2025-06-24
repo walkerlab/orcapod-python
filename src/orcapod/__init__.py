@@ -1,8 +1,8 @@
 from .core import operators, sources, streams
 from .core.streams import SyncStreamFromLists, SyncStreamFromGenerator
-from . import hashing, pod, store
+from . import hashing, store
 from .core.operators import Join, MapPackets, MapTags, packet, tag
-from .pod import FunctionPod, function_pod
+from .core.pod import FunctionPod, function_pod
 from .core.sources import GlobSource
 from .store import DirDataStore, SafeDirDataStore
 from .core.tracker import GraphTracker

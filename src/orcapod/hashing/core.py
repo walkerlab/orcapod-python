@@ -5,7 +5,7 @@ Stable Hashing Library
 A library for creating stable, content-based hashes that remain consistent across Python sessions,
 suitable for arbitrarily nested data structures and custom objects via HashableMixin.
 """
-
+WARN_NONE_IDENTITY=False
 import hashlib
 import inspect
 import json
@@ -175,11 +175,12 @@ class HashableMixin:
         # If no custom structure is provided, use the class name
         # We avoid using id() since it's not stable across sessions
         if structure is None:
-            logger.warning(
-                f"HashableMixin.content_hash called on {self.__class__.__name__} "
-                "instance that returned identity_structure() of None. "
-                "Using class name as default identity, which may not correctly reflect object uniqueness."
-            )
+            if WARN_NONE_IDENTITY:
+                logger.warning(
+                    f"HashableMixin.content_hash called on {self.__class__.__name__} "
+                    "instance that returned identity_structure() of None. "
+                    "Using class name as default identity, which may not correctly reflect object uniqueness."
+                )
             # Fall back to class name for consistent behavior
             return f"HashableMixin-DefaultIdentity-{self.__class__.__name__}"
 
@@ -205,11 +206,12 @@ class HashableMixin:
         # If no custom structure is provided, use the class name
         # We avoid using id() since it's not stable across sessions
         if structure is None:
-            logger.warning(
-                f"HashableMixin.content_hash_int called on {self.__class__.__name__} "
-                "instance without identity_structure() implementation. "
-                "Using class name as default identity, which may not correctly reflect object uniqueness."
-            )
+            if WARN_NONE_IDENTITY:
+                logger.warning(
+                    f"HashableMixin.content_hash_int called on {self.__class__.__name__} "
+                    "instance that returned identity_structure() of None. "
+                    "Using class name as default identity, which may not correctly reflect object uniqueness."
+                )
             # Use the same default identity as content_hash for consistency
             default_identity = (
                 f"HashableMixin-DefaultIdentity-{self.__class__.__name__}"
@@ -235,11 +237,12 @@ class HashableMixin:
         # If no custom structure is provided, use the class name
         # We avoid using id() since it's not stable across sessions
         if structure is None:
-            logger.warning(
-                f"HashableMixin.content_hash_uuid called on {self.__class__.__name__} "
-                "instance without identity_structure() implementation. "
-                "Using class name as default identity, which may not correctly reflect object uniqueness."
-            )
+            if WARN_NONE_IDENTITY:
+                logger.warning(
+                    f"HashableMixin.content_hash_uuid called on {self.__class__.__name__} "
+                    "instance without identity_structure() implementation. "
+                    "Using class name as default identity, which may not correctly reflect object uniqueness."
+                )
             # Use the same default identity as content_hash for consistency
             default_identity = (
                 f"HashableMixin-DefaultIdentity-{self.__class__.__name__}"

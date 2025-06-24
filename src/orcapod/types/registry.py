@@ -1,4 +1,4 @@
-from collections.abc import Callable, Collection, Sequence
+from collections.abc import Callable, Collection, Sequence, Mapping
 import logging
 from optparse import Values
 from typing import Any
@@ -156,9 +156,7 @@ class PacketConverter:
         self._check_key_consistency(packet_keys)
 
         # Convert each value
-        storage_packet: dict[str, Any] = (
-            packet.copy()
-        )  # Start with a copy of the packet
+        storage_packet: dict[str, Any] = dict(packet)  # Start with a copy of the packet
 
         for key, handler in self.keys_with_handlers:
             try:
@@ -168,7 +166,7 @@ class PacketConverter:
 
         return storage_packet
 
-    def _from_storage_packet(self, storage_packet: dict[str, Any]) -> Packet:
+    def _from_storage_packet(self, storage_packet: Mapping[str, Any]) -> Packet:
         """Convert storage packet back to Python packet.
 
         Args:
@@ -188,7 +186,7 @@ class PacketConverter:
         self._check_key_consistency(storage_keys)
 
         # Convert each value back to Python type
-        packet: Packet = storage_packet.copy()
+        packet: Packet = dict(storage_packet)
 
         for key, handler in self.keys_with_handlers:
             try:
