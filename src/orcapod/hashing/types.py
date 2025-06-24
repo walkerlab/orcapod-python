@@ -140,3 +140,5 @@ class FunctionInfoExtractor(Protocol):
         input_typespec: TypeSpec | None = None,
         output_typespec: TypeSpec | None = None,
     ) -> dict[str, Any]: ...
+
+

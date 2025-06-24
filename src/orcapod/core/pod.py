@@ -228,8 +228,9 @@ class FunctionPod(Pod):
         return f"FunctionPod:{self.function!r}"
 
     def __str__(self) -> str:
-        func_sig = get_function_signature(self.function)
-        return f"FunctionPod:{func_sig} ⇒ {self.output_keys}"
+        include_module = self.function.__module__ != "__main__"
+        func_sig = get_function_signature(self.function, name_override=self.function_name, include_module=include_module)
+        return f"FunctionPod:{func_sig}"
 
     def call(self, tag, packet) -> tuple[Tag, Packet | None]:
         if not self.is_active():

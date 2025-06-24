@@ -832,6 +832,7 @@ def get_function_signature(
     name_override: str | None = None,
     include_defaults: bool = True,
     include_module: bool = True,
+    output_names: Collection[str] | None = None
 ) -> str:
     """
     Get a stable string representation of a function's signature.
@@ -847,14 +848,14 @@ def get_function_signature(
     sig = inspect.signature(func)
 
     # Build the signature string
-    parts = []
+    parts = {}
 
     # Add module if requested
     if include_module and hasattr(func, "__module__"):
-        parts.append(f"module:{func.__module__}")
+        parts["module"] = func.__module__
 
     # Add function name
-    parts.append(f"name:{name_override or func.__name__}")
+    parts["name"] = name_override or func.__name__
 
     # Add parameters
     param_strs = []
@@ -864,13 +865,16 @@ def get_function_signature(
             param_str = param_str.split("=")[0].strip()
         param_strs.append(param_str)
 
-    parts.append(f"params:({', '.join(param_strs)})")
+    parts["params"] = f"({', '.join(param_strs)})"
 
     # Add return annotation if present
     if sig.return_annotation is not inspect.Signature.empty:
-        parts.append(f"returns:{sig.return_annotation}")
+        parts["returns"] = sig.return_annotation
 
-    return " ".join(parts)
+    fn_string = f"{parts["module"] + "." if "module" in parts else ""}{parts["name"]}{parts["params"]}"
+    if "returns" in parts:
+        fn_string = fn_string + f"-> {str(parts["returns"])}"
+    return fn_string
 
 
 def _is_in_string(line, pos):
