@@ -11,7 +11,7 @@ from orcapod.types.registry import TypeRegistry, PacketConverter
 import pyarrow as pa
 import polars as pl
 from orcapod.core.streams import SyncStreamFromGenerator
-from orcapod.utils.stream_utils import get_typespec, merge_typespecs
+from orcapod.utils.stream_utils import get_typespec, union_typespecs
 
 import logging
 logger = logging.getLogger(__name__)
@@ -184,30 +184,44 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         kernel: Kernel,
         input_streams: Collection[SyncStream],
         output_store: ArrowDataStore,
-        _object_hasher: ObjectHasher | None = None,
-        _arrow_hasher: ArrowHasher | None = None,
-        _registry: TypeRegistry | None = None,
+        kernel_hasher: ObjectHasher | None = None,
+        arrow_packet_hasher: ArrowHasher | None = None,
+        packet_type_registry: TypeRegistry | None = None,
         **kwargs,
     ) -> None:
         super().__init__(kernel, input_streams,**kwargs)
 
         self.output_store = output_store
+
+        # These are configurable but are not expected to be modified except for special circumstances
+        if kernel_hasher is None:
+            kernel_hasher = get_default_object_hasher()
+        self._kernel_hasher = kernel_hasher
+        if arrow_packet_hasher is None:
+            arrow_packet_hasher = get_default_arrow_hasher()
+        self._arrow_packet_hasher = arrow_packet_hasher
+        if packet_type_registry is None:
+            packet_type_registry = default_registry
+        self._packet_type_registry = packet_type_registry
+
+
+        self.source_info = self.label, self.kernel_hasher.hash_to_hex(self.kernel)
         self.tag_keys, self.packet_keys = self.keys(trigger_run=False)
         self.output_converter = None
 
-        # These are configurable but are not expected to be modified except for special circumstances
-        if _object_hasher is None:
-            _object_hasher = get_default_object_hasher()
-        self.object_hasher = _object_hasher
-        if _arrow_hasher is None:
-            _arrow_hasher = get_default_arrow_hasher()
-        self.arrow_hasher = _arrow_hasher
-        if _registry is None:
-            _registry = default_registry
-        self.registry = _registry
-        self.source_info = self.label, str(hash(self.kernel))
-
         self._cache_computed = False
+
+    @property
+    def kernel_hasher(self) -> ObjectHasher:
+        return self._kernel_hasher
+
+    @kernel_hasher.setter
+    def kernel_hasher(self, kernel_hasher: ObjectHasher | None = None):
+        if kernel_hasher is None:
+            kernel_hasher = get_default_object_hasher()
+        self._kernel_hasher = kernel_hasher
+        # hasher changed -- trigger recomputation of properties that depend on kernel hasher
+        self.update_cached_values()
 
 
     def forward(self, *streams: SyncStream, **kwargs) -> SyncStream:
@@ -224,7 +238,7 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
 
         tag_type, packet_type = output_stream.types(trigger_run=False)
         if tag_type is not None and packet_type is not None:
-            joined_type = merge_typespecs(tag_type, packet_type)
+            joined_type = union_typespecs(tag_type, packet_type)
             assert joined_type is not None, "Joined typespec should not be None"
             self.output_converter = PacketConverter(joined_type, registry=self.registry)
 
@@ -324,9 +338,9 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         skip_memoization: bool = False,
         skip_tag_record: bool = False,
         error_handling: Literal["raise", "ignore", "warn"] = "raise",
-        _object_hasher: ObjectHasher | None = None,
-        _arrow_hasher: ArrowHasher | None = None,
-        _registry: TypeRegistry | None = None,
+        object_hasher: ObjectHasher | None = None,
+        arrow_hasher: ArrowHasher | None = None,
+        registry: TypeRegistry | None = None,
         **kwargs,
     ) -> None:
         super().__init__(
@@ -344,28 +358,64 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         self.skip_tag_record = skip_tag_record
 
         # These are configurable but are not expected to be modified except for special circumstances
+        # Here I'm assigning to the hidden properties directly to avoid triggering setters
         if _object_hasher is None:
             _object_hasher = get_default_object_hasher()
-        self.object_hasher = _object_hasher
+        self._object_hasher = _object_hasher
         if _arrow_hasher is None:
             _arrow_hasher = get_default_arrow_hasher()
-        self.arrow_hasher = _arrow_hasher
+        self._arrow_hasher = _arrow_hasher
         if _registry is None:
             _registry = default_registry
-        self.registry = _registry
+        self._registry = _registry
 
-        # TODO: consider making this dynamic
+
+        # compute and cache properties and converters for efficiency
+        self.update_cached_values()
+        self._cache_computed = False
+
+    @property
+    def object_hasher(self) -> ObjectHasher:
+        return self._object_hasher
+
+    @object_hasher.setter
+    def object_hasher(self, object_hasher:ObjectHasher | None = None):
+        if object_hasher is None:
+            object_hasher = get_default_object_hasher()
+        self._object_hasher = object_hasher
+        # hasher changed -- trigger recomputation of properties that depend on object hasher
+        self.update_cached_values()
+
+    @property
+    def arrow_hasher(self) -> ArrowHasher:
+        return self._arrow_hasher
+
+    @arrow_hasher.setter
+    def arrow_hasher(self, arrow_hasher:ArrowHasher | None = None):
+        if arrow_hasher is None:
+            arrow_hasher = get_default_arrow_hasher()
+        self._arrow_hasher = arrow_hasher
+        # hasher changed -- trigger recomputation of properties that depend on arrow hasher
+        self.update_cached_values()
+
+    @property
+    def registry(self) -> TypeRegistry:
+        return self._registry
+
+    @registry.setter
+    def registry(self, registry: TypeRegistry | None = None):
+        if registry is None:
+            registry = default_registry
+        self._registry = registry
+        # registry changed -- trigger recomputation of properties that depend on registry
+        self.update_cached_values()
+
+    def update_cached_values(self) -> None:
         self.function_pod_hash = self.object_hasher.hash_to_hex(self.function_pod)
         self.tag_keys, self.output_keys = self.keys(trigger_run=False)
-
-
-        # prepare packet converters
-        input_typespec, output_typespec = self.function_pod.get_function_typespecs()
-
-        self.input_converter = PacketConverter(input_typespec, self.registry)
-        self.output_converter = PacketConverter(output_typespec, self.registry)
-
-        self._cache_computed = False
+        self.input_typespec, self.output_typespec = self.function_pod.get_function_typespecs()
+        self.input_converter = PacketConverter(self.input_typespec, self.registry)
+        self.output_converter = PacketConverter(self.output_typespec, self.registry)
 
     def reset_cache(self):
         self._cache_computed = False

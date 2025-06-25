@@ -43,7 +43,7 @@ def merge_dicts(left: dict[K, V], right: dict[K, V]) -> dict[K, V]:
     return merged
 
 
-def merge_typespecs(left: TypeSpec | None, right: TypeSpec | None) -> TypeSpec | None:
+def union_typespecs(left: TypeSpec | None, right: TypeSpec | None) -> TypeSpec | None:
     if left is None:
         return right
     if right is None:
@@ -57,6 +57,25 @@ def merge_typespecs(left: TypeSpec | None, right: TypeSpec | None) -> TypeSpec |
             else right_type
         )
     return merged
+
+def intersection_typespecs(left: TypeSpec | None, right: TypeSpec | None) -> TypeSpec | None:
+    """
+    Returns the intersection of two TypeSpecs, only returning keys that are present in both.
+    If a key is present in both TypeSpecs, the type must be the same.
+    """
+    if left is None or right is None:
+        return None
+    # Find common keys and ensure types match
+    common_keys = set(left.keys()).intersection(set(right.keys()))
+    intersection = {}
+    for key in common_keys:
+        try:
+            intersection[key] = get_compatible_type(left[key], right[key])
+        except TypeError:
+            # If types are not compatible, raise an error
+            raise TypeError(f"Type conflict for key '{key}': {left[key]} vs {right[key]}")
+        
+    return intersection
 
 
 def common_elements(*values) -> Collection[str]:
@@ -88,6 +107,20 @@ def join_tags(tag1: Mapping[K, V], tag2: Mapping[K, V]) -> dict[K, V] | None:
             joined_tag[k] = v
     return joined_tag
 
+def semijoin_tags(tag1: Mapping[K, V], tag2: Mapping[K, V], target_keys: Collection[K]|None = None) -> dict[K, V] | None:
+    """
+    Semijoin two tags. If the tags have the same key, the value must be the same or None will be returned.  If all shared
+    key's value match, tag1 would be returned
+    """
+    if target_keys is None:
+        target_keys = set(tag1.keys()).intersection(set(tag2.keys()))
+    if not target_keys:
+        return dict(tag1)
+
+    for key in target_keys:
+        if tag1[key] != tag2[key]:
+            return None
+    return dict(tag1)
 
 def check_packet_compatibility(packet1: Packet, packet2: Packet) -> bool:
     """

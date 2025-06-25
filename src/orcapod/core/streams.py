@@ -5,6 +5,7 @@ from orcapod.types import Packet, Tag, TypeSpec
 from copy import copy
 
 
+
 class SyncStreamFromLists(SyncStream):
     def __init__(
         self,

@@ -4,15 +4,15 @@ from .defaults import get_default_object_hasher
 from typing import Any
 
 
-class ContentHashableBase:
-    def __init__(self, object_hasher: ObjectHasher | None = None, label: str | None = None) -> None:
+class ContentIdentifiableBase:
+    def __init__(self, identity_structure_hasher: ObjectHasher | None = None, label: str | None = None) -> None:
         """
         Initialize the ContentHashable with an optional ObjectHasher.
 
         Args:
-            object_hasher (ObjectHasher | None): An instance of ObjectHasher to use for hashing.
+            identity_structure_hasher (ObjectHasher | None): An instance of ObjectHasher to use for hashing.
         """
-        self.object_hasher = object_hasher or get_default_object_hasher()
+        self.identity_structure_hasher = identity_structure_hasher or get_default_object_hasher()
         self._label = label
 
     @property
@@ -36,9 +36,12 @@ class ContentHashableBase:
         self._label = label
 
     def computed_label(self) -> str|None:
+        """
+        Compute a label for this object based on its content. If label is not explicitly set for this object
+        and computed_label returns a valid value, it will be used as label of this object.
+        """
         return None
     
-
 
     def identity_structure(self) -> Any:
         """
@@ -68,7 +71,7 @@ class ContentHashableBase:
             # If no identity structure is provided, use the default hash
             return super().__hash__()
 
-        return self.object_hasher.hash_to_int(structure)
+        return self.identity_structure_hasher.hash_to_int(structure)
     
     def __eq__(self, other: object) -> bool:
         """
@@ -80,7 +83,7 @@ class ContentHashableBase:
         Returns:
             bool: True if both objects have the same identity structure, False otherwise.
         """
-        if not isinstance(other, ContentHashableBase):
+        if not isinstance(other, ContentIdentifiableBase):
             return NotImplemented
 
         return self.identity_structure() == other.identity_structure()

@@ -24,7 +24,7 @@ from .types import (
     FunctionInfoExtractor,
     CompositeFileHasher,
 )
-from .content_hashable import ContentHashableBase
+from .content_hashable import ContentIdentifiableBase
 
 __all__ = [
     "FileHasher",
@@ -47,5 +47,5 @@ __all__ = [
     "get_default_composite_file_hasher",
     "get_default_object_hasher",
     "get_default_arrow_hasher",
-    "ContentHashableBase",
+    "ContentIdentifiableBase",
 ]
