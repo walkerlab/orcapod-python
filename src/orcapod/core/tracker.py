@@ -1,8 +1,37 @@
-from orcapod.core.base import Invocation, Kernel, Tracker, SyncStream, TypeSpec
-from collections.abc import Collection
+from orcapod.core.base import Invocation, Kernel, Tracker, SyncStream, Source
+from orcapod.types import Tag, Packet, TypeSpec
+from collections.abc import Collection, Iterator
 from typing import Any
 
-class StubKernel(Kernel):
+class StreamWrapper(SyncStream):
+    """
+    A wrapper for a SyncStream that allows it to be used as a Source.
+    This is useful for cases where you want to treat a stream as a source
+    without modifying the original stream.
+    """
+
+    def __init__(self, stream: SyncStream, **kwargs):
+        super().__init__(**kwargs)
+        self.stream = stream
+
+    def keys(self, *streams: SyncStream, **kwargs) -> tuple[Collection[str]|None, Collection[str]|None]:
+        return self.stream.keys(*streams, **kwargs)
+
+    def types(self, *streams: SyncStream, **kwargs) -> tuple[TypeSpec|None, TypeSpec|None]:
+        return self.stream.types(*streams, **kwargs)
+    
+    def computed_label(self) -> str | None:
+        return self.stream.label
+
+    def __iter__(self) -> Iterator[tuple[Tag, Packet]]:
+        """
+        Iterate over the stream, yielding tuples of (tags, packets).
+        """
+        yield from self.stream
+        
+    
+
+class StreamSource(Source):
     def __init__(self, stream: SyncStream, **kwargs):
         super().__init__(skip_tracking=True, **kwargs)
         self.stream = stream
@@ -10,15 +39,15 @@ class StubKernel(Kernel):
     def forward(self, *streams: SyncStream) -> SyncStream:
         if len(streams) != 0:
             raise ValueError(
-                "StubKernel does not support forwarding streams. "
+                "StreamSource does not support forwarding streams. "
                 "It generates its own stream from the file system."
             )
-        return self.stream
+        return StreamWrapper(self.stream)
     
     def identity_structure(self, *streams) -> Any:
         if len(streams) != 0:
             raise ValueError(
-                "StubKernel does not support forwarding streams. "
+                "StreamSource does not support forwarding streams. "
                 "It generates its own stream from the file system."
             )
          
@@ -29,11 +58,11 @@ class StubKernel(Kernel):
     
     def keys(self, *streams: SyncStream, **kwargs) -> tuple[Collection[str]|None, Collection[str]|None]:
         return self.stream.keys()
+
+    def computed_label(self) -> str | None:
+        return self.stream.label
     
 
-    
-
-        
 
 class GraphTracker(Tracker):
     """
@@ -89,7 +118,7 @@ class GraphTracker(Tracker):
                     upstream_invocation = upstream.invocation
                     if upstream_invocation is None:
                         # If upstream is None, create a stub kernel
-                        upstream_invocation = Invocation(StubKernel(upstream, label="StubInput"), [])
+                        upstream_invocation = Invocation(StreamSource(upstream), [])
                     if upstream_invocation not in G:
                         G.add_node(upstream_invocation)
                     G.add_edge(upstream_invocation, invocation, stream=upstream)

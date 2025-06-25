@@ -29,6 +29,7 @@ from typing import (
 )
 from uuid import UUID
 
+
 import xxhash
 
 from orcapod.types import Packet, PathSet
@@ -435,6 +436,11 @@ def process_structure(
     if isinstance(obj, HashableMixin):
         logger.debug(f"Processing HashableMixin instance of type {type(obj).__name__}")
         return obj.content_hash()
+    
+    from .content_hashable import ContentHashableBase
+    if isinstance(obj, ContentHashableBase):
+        logger.debug(f"Processing ContentHashableBase instance of type {type(obj).__name__}")
+        return process_structure(obj.identity_structure(), visited, function_info_extractor)
 
     # Handle basic types
     if isinstance(obj, (str, int, float, bool)):

@@ -1,15 +1,12 @@
 from collections import defaultdict
-from collections.abc import Collection, Iterator
-import json
+from collections.abc import Collection
 import logging
 import pickle
 import sys
 import time
-from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
 
-import pandas as pd
 
 from orcapod.core import Invocation, Kernel, SyncStream
 from orcapod.core.pod import FunctionPod
@@ -17,13 +14,7 @@ from orcapod.pipeline.wrappers import KernelNode, FunctionPodNode, Node
 
 from orcapod.hashing import hash_to_hex
 from orcapod.core.tracker import GraphTracker
-from orcapod.hashing import ObjectHasher, ArrowHasher
-from orcapod.types import TypeSpec, Tag, Packet
-from orcapod.core.streams import SyncStreamFromGenerator
 from orcapod.store import ArrowDataStore
-from orcapod.types.registry import PacketConverter, TypeRegistry
-from orcapod.types import default_registry
-from orcapod.utils.stream_utils import merge_typespecs, get_typespec
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +31,15 @@ class Pipeline(GraphTracker):
     Replaces the old Tracker with better persistence and view capabilities.
     """
 
-    def __init__(self, name: str, results_store: ArrowDataStore, pipeline_store: ArrowDataStore) -> None:
+    def __init__(self, name: str, results_store: ArrowDataStore, pipeline_store: ArrowDataStore, auto_compile:bool=True) -> None:
         super().__init__()
         self.name = name or f"pipeline_{id(self)}"
         self.results_store = results_store
         self.pipeline_store = pipeline_store
         self.labels_to_nodes = {}
+        self.auto_compile = auto_compile
+        self._dirty = False
+        self._ordered_nodes = []  # Track order of invocations
 
     # Core Pipeline Operations
     def save(self, path: Path | str) -> None:
@@ -77,6 +71,14 @@ class Pipeline(GraphTracker):
                 temp_path.unlink()
             raise
 
+    def record(self, invocation: Invocation) -> None:
+        """
+        Record an invocation in the pipeline.
+        This method is called automatically by the Kernel when an operation is invoked.
+        """
+        super().record(invocation)
+        self._dirty = True
+
     def wrap_invocation(
         self, kernel: Kernel, input_nodes: Collection[Node]
     ) -> Node:
@@ -93,6 +95,7 @@ class Pipeline(GraphTracker):
         proposed_labels = defaultdict(list)
         node_lut = {}
         edge_lut : dict[SyncStream, Node]= {}
+        ordered_nodes = []
         for invocation in nx.topological_sort(G):
             # map streams to the new streams based on Nodes
             input_nodes = [edge_lut[stream] for stream in invocation.streams]
@@ -100,11 +103,14 @@ class Pipeline(GraphTracker):
 
             # register the new node against the original invocation
             node_lut[invocation] = new_node
+            ordered_nodes.append(new_node)
             # register the new node in the proposed labels -- if duplicates occur, will resolve later
             proposed_labels[new_node.label].append(new_node)
 
             for edge in G.out_edges(invocation):
                 edge_lut[G.edges[edge]["stream"]] = new_node
+        
+        self._ordered_nodes = ordered_nodes
 
         # resolve duplicates in proposed_labels
         labels_to_nodes = {}
@@ -120,7 +126,14 @@ class Pipeline(GraphTracker):
                 labels_to_nodes[label] = nodes[0]
 
         self.labels_to_nodes = labels_to_nodes
+        self._dirty = False
         return node_lut, edge_lut, proposed_labels, labels_to_nodes
+
+    def __exit__(self, exc_type, exc_val, ext_tb):
+        super().__exit__(exc_type, exc_val, ext_tb)
+        if self.auto_compile:
+            self.compile()
+
 
     def __getattr__(self, item: str) -> Any:
         """Allow direct access to pipeline attributes"""
@@ -131,8 +144,21 @@ class Pipeline(GraphTracker):
     def __dir__(self):
         # Include both regular attributes and dynamic ones
         return list(super().__dir__()) + list(self.labels_to_nodes.keys())
-        
 
+    def run(self, full_sync:bool=False) -> None:
+        """
+        Run the pipeline, compiling it if necessary.
+        This method is a no-op if auto_compile is False.
+        """
+        if self.auto_compile and self._dirty:
+            self.compile()
+
+        # Run in topological order
+        for node in self._ordered_nodes:
+            if full_sync:
+                node.reset_cache()
+            node.flow()
+            
     @classmethod
     def load(cls, path: Path | str) -> "Pipeline":
         """Load complete pipeline state"""

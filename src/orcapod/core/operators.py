@@ -438,7 +438,12 @@ class MapPackets(Operator):
         stream = streams[0]
         tag_keys, packet_keys = stream.keys(trigger_run=trigger_run)
         if tag_keys is None or packet_keys is None:
-            return super().keys(trigger_run=trigger_run)
+            super_tag_keys, super_packet_keys =  super().keys(trigger_run=trigger_run)
+            tag_keys = tag_keys or super_tag_keys
+            packet_keys = packet_keys or super_packet_keys
+
+        if packet_keys is None:
+            return tag_keys, packet_keys
 
         if self.drop_unmapped:
             # If drop_unmapped is True, we only keep the keys that are in the mapping
@@ -464,7 +469,12 @@ class MapPackets(Operator):
         stream = streams[0]
         tag_types, packet_types = stream.types(trigger_run=trigger_run)
         if tag_types is None or packet_types is None:
-            return super().types(trigger_run=trigger_run)
+            super_tag_types, super_packet_types = super().types(trigger_run=trigger_run)
+            tag_types = tag_types or super_tag_types
+            packet_types = packet_types or super_packet_types
+
+        if packet_types is None:
+            return tag_types, packet_types
 
         if self.drop_unmapped:
             # If drop_unmapped is True, we only keep the keys that are in the mapping

@@ -126,13 +126,11 @@ class KernelInvocationWrapper(Kernel):
     def __str__(self):
         return f"{self.__class__.__name__}<{self.kernel}>"
 
-    @property
-    def label(self) -> str:
-        return self._label or self.kernel.label
-
-    @label.setter
-    def label(self, label: str) -> None:
-        self._label = label
+    def computed_label(self) -> str | None:
+        """
+        Return the label of the wrapped kernel.
+        """
+        return self.kernel.label
 
     def resolve_input_streams(self, *input_streams) -> Collection[SyncStream]:
         if input_streams:
@@ -207,7 +205,7 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         if _registry is None:
             _registry = default_registry
         self.registry = _registry
-        self.source_info = self.label, self.object_hasher.hash_to_hex(self.kernel)
+        self.source_info = self.label, str(hash(self.kernel))
 
         self._cache_computed = False
 

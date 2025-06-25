@@ -3,8 +3,9 @@ from .types import ObjectHasher
 from .defaults import get_default_object_hasher
 from typing import Any
 
+
 class ContentHashableBase:
-    def __init__(self, object_hasher: ObjectHasher | None = None) -> None:
+    def __init__(self, object_hasher: ObjectHasher | None = None, label: str | None = None) -> None:
         """
         Initialize the ContentHashable with an optional ObjectHasher.
 
@@ -12,6 +13,31 @@ class ContentHashableBase:
             object_hasher (ObjectHasher | None): An instance of ObjectHasher to use for hashing.
         """
         self.object_hasher = object_hasher or get_default_object_hasher()
+        self._label = label
+
+    @property
+    def label(self) -> str :
+        """
+        Get the label of this object.
+
+        Returns:
+            str | None: The label of the object, or None if not set.
+        """
+        return self._label or self.computed_label() or self.__class__.__name__
+
+    @label.setter
+    def label(self, label: str | None) -> None:
+        """
+        Set the label of this object.
+
+        Args:
+            label (str | None): The label to set for this object.
+        """
+        self._label = label
+
+    def computed_label(self) -> str|None:
+        return None
+    
 
 
     def identity_structure(self) -> Any:
@@ -38,6 +64,9 @@ class ContentHashableBase:
         """
         # Get the identity structure
         structure = self.identity_structure()
+        if structure is None:
+            # If no identity structure is provided, use the default hash
+            return super().__hash__()
 
         return self.object_hasher.hash_to_int(structure)
     
