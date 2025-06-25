@@ -261,8 +261,9 @@ class Join(Operator):
         left_stream, right_stream = streams
 
         def generator() -> Iterator[tuple[Tag, Packet]]:
-            left_stream_buffered = list(left_stream)
-            right_stream_buffered = list(right_stream)
+            # using list comprehension rather than list() to avoid call to __len__ which is expensive
+            left_stream_buffered = [e for e in left_stream]
+            right_stream_buffered = [e for e in right_stream]
             for left_tag, left_packet in left_stream_buffered:
                 for right_tag, right_packet in right_stream_buffered:
                     if (joined_tag := join_tags(left_tag, right_tag)) is not None:
