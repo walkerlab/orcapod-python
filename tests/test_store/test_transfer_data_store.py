@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_store/test_transfer_data_store.py
 """Tests for TransferDataStore."""
 
 import json

@@ -1,4 +1,4 @@
-# Collection of base classes for operations and streams in the orcabridge framework.
+# Collection of base classes for operations and streams in the orcapod framework.
 import threading
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Collection, Iterator
@@ -30,11 +30,12 @@ class Kernel(ABC, ContentIdentifiableBase):
     for computational graph tracking.
     """
 
-    def __init__(self, label: str | None = None, skip_tracking: bool = False, **kwargs) -> None:
+    def __init__(
+        self, label: str | None = None, skip_tracking: bool = False, **kwargs
+    ) -> None:
         super().__init__(**kwargs)
         self._label = label
         self._skip_tracking = skip_tracking
-
 
     def pre_forward_hook(
         self, *streams: "SyncStream", **kwargs
@@ -54,8 +55,9 @@ class Kernel(ABC, ContentIdentifiableBase):
         """
         return output_stream
 
-   
-    def __call__(self, *streams: "SyncStream", label:str|None = None, **kwargs) -> "SyncStream":
+    def __call__(
+        self, *streams: "SyncStream", label: str | None = None, **kwargs
+    ) -> "SyncStream":
         if label is not None:
             self.label = label
         # Special handling of Source: trigger call on source if passed as stream
@@ -305,7 +307,6 @@ class Stream(ABC, ContentIdentifiableBase):
             # use the invocation operation label
             return self.invocation.kernel.label
         return None
-    
 
     @property
     def invocation(self) -> Invocation | None:
@@ -433,7 +434,7 @@ class SyncStream(Stream):
         """
         return sum(1 for _ in self)
 
-    def join(self, other: "SyncStream", label:str|None=None) -> "SyncStream":
+    def join(self, other: "SyncStream", label: str | None = None) -> "SyncStream":
         """
         Returns a new stream that is the result of joining with the other stream.
         The join is performed on the tags of the packets in the streams.
@@ -455,7 +456,12 @@ class SyncStream(Stream):
             raise TypeError("other must be a SyncStream")
         return SemiJoin(label=label)(self, other)
 
-    def map(self, packet_map: dict | None = None, tag_map: dict | None = None, drop_unmapped:bool=True) -> "SyncStream":
+    def map(
+        self,
+        packet_map: dict | None = None,
+        tag_map: dict | None = None,
+        drop_unmapped: bool = True,
+    ) -> "SyncStream":
         """
         Returns a new stream that is the result of mapping the packets and tags in the stream.
         The mapping is applied to each packet in the stream and the resulting packets
@@ -464,6 +470,7 @@ class SyncStream(Stream):
         If tag_map is None, no mapping is applied to the tags.
         """
         from .operators import MapTags, MapPackets
+
         output = self
         if packet_map is not None:
             output = MapPackets(packet_map, drop_unmapped=drop_unmapped)(output)
@@ -472,7 +479,7 @@ class SyncStream(Stream):
 
         return output
 
-    def apply(self, transformer: 'dict | Operator') -> "SyncStream":
+    def apply(self, transformer: "dict | Operator") -> "SyncStream":
         """
         Returns a new stream that is the result of applying the mapping to the stream.
         The mapping is applied to each packet in the stream and the resulting packets
@@ -487,9 +494,7 @@ class SyncStream(Stream):
             return transformer(self)
 
         # Otherwise, do not know how to handle the transformer
-        raise TypeError(
-            "transformer must be a dictionary or an operator"
-        )
+        raise TypeError("transformer must be a dictionary or an operator")
 
     def __rshift__(
         self, transformer: dict | Callable[["SyncStream"], "SyncStream"]
@@ -520,7 +525,6 @@ class SyncStream(Stream):
         if not isinstance(other, SyncStream):
             raise TypeError("other must be a SyncStream")
         return Join()(self, other)
-
 
     def claims_unique_tags(self, *, trigger_run=False) -> bool | None:
         """

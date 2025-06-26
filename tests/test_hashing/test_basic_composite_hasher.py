@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_hashing/test_default_file_hasher.py
 """
 Test DefaultFileHasher functionality.
 

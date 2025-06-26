@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_store/test_dir_data_store.py
 """Tests for DirDataStore."""
 
 import json

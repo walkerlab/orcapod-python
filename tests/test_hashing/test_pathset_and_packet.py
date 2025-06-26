@@ -1,7 +1,6 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_hashing/test_pathset_and_packet.py
 """
-Test the hash_pathset and hash_packet functions from orcabridge.hashing.
+Test the hash_pathset and hash_packet functions from orcapod.hashing.
 
 This module contains tests to verify the correct behavior of hash_pathset and hash_packet
 functions with various input types and configurations.

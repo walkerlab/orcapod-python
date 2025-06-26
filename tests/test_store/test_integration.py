@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_store/test_integration.py
 """Integration tests for the store module."""
 
 import os

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_hashing/test_cached_file_hasher.py
 """Tests for CachedFileHasher implementation."""
 
 import json

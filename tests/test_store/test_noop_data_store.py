@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_store/test_noop_data_store.py
 """Tests for NoOpDataStore."""
 
 import pytest

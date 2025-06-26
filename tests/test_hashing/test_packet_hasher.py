@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_hashing/test_packet_hasher.py
 """Tests for the PacketHasher protocol implementation."""
 
 import pytest
