@@ -14,7 +14,9 @@ from orcapod.core.streams import SyncStreamFromGenerator
 from orcapod.utils.stream_utils import get_typespec, union_typespecs
 
 import logging
+
 logger = logging.getLogger(__name__)
+
 
 def tag_to_arrow_table_with_metadata(tag, metadata: dict | None = None):
     """
@@ -49,18 +51,23 @@ def tag_to_arrow_table_with_metadata(tag, metadata: dict | None = None):
 
     return table
 
-def get_columns_with_metadata(df: pl.DataFrame, key: str, value: str|None = None) -> list[str]:
+
+def get_columns_with_metadata(
+    df: pl.DataFrame, key: str, value: str | None = None
+) -> list[str]:
     """Get column names with specific metadata using list comprehension. If value is given, only
-    columns matching that specific value for the desginated metadata key will be returned. 
+    columns matching that specific value for the desginated metadata key will be returned.
     Otherwise, all columns that contains the key as metadata will be returned regardless of the value"""
     return [
-        col_name for col_name, dtype in df.schema.items()
-        if  hasattr(dtype, "metadata") and (value is None or getattr(dtype, "metadata") == value)
+        col_name
+        for col_name, dtype in df.schema.items()
+        if hasattr(dtype, "metadata")
+        and (value is None or getattr(dtype, "metadata") == value)
     ]
 
 
 class PolarsSource(Source):
-    def __init__(self, df: pl.DataFrame, tag_keys: Collection[str]|None = None):
+    def __init__(self, df: pl.DataFrame, tag_keys: Collection[str] | None = None):
         self.df = df
         self.tag_keys = tag_keys
 
@@ -74,7 +81,7 @@ class PolarsSource(Source):
 
 
 class PolarsStream(SyncStream):
-    def __init__(self, df: pl.DataFrame, tag_keys: Collection[str]|None = None):
+    def __init__(self, df: pl.DataFrame, tag_keys: Collection[str] | None = None):
         self.df = df
         if tag_keys is None:
             # extract tag_keys by picking columns with metadata source=tag
@@ -87,8 +94,15 @@ class PolarsStream(SyncStream):
             packet = {key: val for key, val in row.items() if key not in self.tag_keys}
             yield tag, packet
 
+
 class EmptyStream(SyncStream):
-    def __init__(self, tag_keys: Collection[str]|None = None, packet_keys: Collection[str]|None = None, tag_typespec: TypeSpec | None = None, packet_typespec:TypeSpec|None = None):
+    def __init__(
+        self,
+        tag_keys: Collection[str] | None = None,
+        packet_keys: Collection[str] | None = None,
+        tag_typespec: TypeSpec | None = None,
+        packet_typespec: TypeSpec | None = None,
+    ):
         if tag_keys is None and tag_typespec is not None:
             tag_keys = tag_typespec.keys()
         self.tag_keys = list(tag_keys) if tag_keys else []
@@ -100,10 +114,14 @@ class EmptyStream(SyncStream):
         self.tag_typespec = tag_typespec
         self.packet_typespec = packet_typespec
 
-    def keys(self, *streams: SyncStream, trigger_run: bool = False) -> tuple[Collection[str] | None, Collection[str] | None]:
+    def keys(
+        self, *streams: SyncStream, trigger_run: bool = False
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
         return self.tag_keys, self.packet_keys
 
-    def types(self, *streams: SyncStream, trigger_run: bool = False) -> tuple[TypeSpec | None, TypeSpec | None]:
+    def types(
+        self, *streams: SyncStream, trigger_run: bool = False
+    ) -> tuple[TypeSpec | None, TypeSpec | None]:
         return self.tag_typespec, self.packet_typespec
 
     def __iter__(self) -> Iterator[tuple[Tag, Packet]]:
@@ -111,14 +129,13 @@ class EmptyStream(SyncStream):
         return iter([])
 
 
-
-
 class KernelInvocationWrapper(Kernel):
-    def __init__(self, kernel: Kernel, input_streams: Collection[SyncStream], **kwargs) -> None:
+    def __init__(
+        self, kernel: Kernel, input_streams: Collection[SyncStream], **kwargs
+    ) -> None:
         super().__init__(**kwargs)
         self.kernel = kernel
         self.input_streams = list(input_streams)
-
 
     def __repr__(self):
         return f"{self.__class__.__name__}<{self.kernel!r}>"
@@ -163,7 +180,7 @@ class KernelInvocationWrapper(Kernel):
     ) -> bool | None:
         resolved_streams = self.resolve_input_streams(*streams)
         return self.kernel.claims_unique_tags(
-            *resolved_streams, trigger_run=trigger_run            
+            *resolved_streams, trigger_run=trigger_run
         )
 
 
@@ -189,7 +206,7 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         packet_type_registry: TypeRegistry | None = None,
         **kwargs,
     ) -> None:
-        super().__init__(kernel, input_streams,**kwargs)
+        super().__init__(kernel, input_streams, **kwargs)
 
         self.output_store = output_store
 
@@ -204,7 +221,6 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
             packet_type_registry = default_registry
         self._packet_type_registry = packet_type_registry
 
-
         self.source_info = self.label, self.kernel_hasher.hash_to_hex(self.kernel)
         self.tag_keys, self.packet_keys = self.keys(trigger_run=False)
         self.output_converter = None
@@ -212,7 +228,17 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         self._cache_computed = False
 
     @property
+    def arrow_hasher(self):
+        return self._arrow_packet_hasher
+
+    @property
+    def registry(self):
+        return self._packet_type_registry
+
+    @property
     def kernel_hasher(self) -> ObjectHasher:
+        if self._kernel_hasher is None:
+            return get_default_object_hasher()
         return self._kernel_hasher
 
     @kernel_hasher.setter
@@ -223,6 +249,10 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         # hasher changed -- trigger recomputation of properties that depend on kernel hasher
         self.update_cached_values()
 
+    def update_cached_values(self):
+        self.source_info = self.label, self.kernel_hasher.hash_to_hex(self.kernel)
+        self.tag_keys, self.packet_keys = self.keys(trigger_run=False)
+        self.output_converter = None
 
     def forward(self, *streams: SyncStream, **kwargs) -> SyncStream:
         if self._cache_computed:
@@ -233,7 +263,7 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
                 return EmptyStream(tag_keys=self.tag_keys, packet_keys=self.packet_keys)
 
         resolved_streams = self.resolve_input_streams(*streams)
-        
+
         output_stream = self.kernel.forward(*resolved_streams, **kwargs)
 
         tag_type, packet_type = output_stream.types(trigger_run=False)
@@ -279,10 +309,8 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
             return None
         return lazy_df.collect()
 
-
     def reset_cache(self):
         self._cache_computed = False
-
 
 
 class FunctionPodInvocationWrapper(KernelInvocationWrapper, Pod):
@@ -290,22 +318,22 @@ class FunctionPodInvocationWrapper(KernelInvocationWrapper, Pod):
     Convenience class to wrap a function pod, providing default pass-through
     implementations
     """
-    def __init__(self, function_pod: FunctionPod, input_streams: Collection[SyncStream], **kwargs):
 
+    def __init__(
+        self, function_pod: FunctionPod, input_streams: Collection[SyncStream], **kwargs
+    ):
         # note that this would be an alias to the self.kernel but here explicitly taken as function_pod
         # for better type hints
         # MRO will be KernelInvocationWrapper -> Pod -> Kernel
         super().__init__(function_pod, input_streams, **kwargs)
         self.function_pod = function_pod
 
-        
     def forward(self, *streams: SyncStream, **kwargs) -> SyncStream:
         resolved_streams = self.resolve_input_streams(*streams)
         return super().forward(*resolved_streams, **kwargs)
 
     def call(self, tag: Tag, packet: Packet) -> tuple[Tag, Packet | None]:
         return self.function_pod.call(tag, packet)
-
 
     # =============pass through methods/properties to the underlying function pod=============
 
@@ -320,10 +348,6 @@ class FunctionPodInvocationWrapper(KernelInvocationWrapper, Pod):
         Check if the function pod is active.
         """
         return self.function_pod.is_active()
-
-
-
-
 
 
 class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
@@ -359,16 +383,15 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
 
         # These are configurable but are not expected to be modified except for special circumstances
         # Here I'm assigning to the hidden properties directly to avoid triggering setters
-        if _object_hasher is None:
-            _object_hasher = get_default_object_hasher()
-        self._object_hasher = _object_hasher
-        if _arrow_hasher is None:
-            _arrow_hasher = get_default_arrow_hasher()
-        self._arrow_hasher = _arrow_hasher
-        if _registry is None:
-            _registry = default_registry
-        self._registry = _registry
-
+        if object_hasher is None:
+            object_hasher = get_default_object_hasher()
+        self._object_hasher = object_hasher
+        if arrow_hasher is None:
+            arrow_hasher = get_default_arrow_hasher()
+        self._arrow_hasher = arrow_hasher
+        if registry is None:
+            registry = default_registry
+        self._registry = registry
 
         # compute and cache properties and converters for efficiency
         self.update_cached_values()
@@ -379,7 +402,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         return self._object_hasher
 
     @object_hasher.setter
-    def object_hasher(self, object_hasher:ObjectHasher | None = None):
+    def object_hasher(self, object_hasher: ObjectHasher | None = None):
         if object_hasher is None:
             object_hasher = get_default_object_hasher()
         self._object_hasher = object_hasher
@@ -391,7 +414,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         return self._arrow_hasher
 
     @arrow_hasher.setter
-    def arrow_hasher(self, arrow_hasher:ArrowHasher | None = None):
+    def arrow_hasher(self, arrow_hasher: ArrowHasher | None = None):
         if arrow_hasher is None:
             arrow_hasher = get_default_arrow_hasher()
         self._arrow_hasher = arrow_hasher
@@ -413,7 +436,9 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
     def update_cached_values(self) -> None:
         self.function_pod_hash = self.object_hasher.hash_to_hex(self.function_pod)
         self.tag_keys, self.output_keys = self.keys(trigger_run=False)
-        self.input_typespec, self.output_typespec = self.function_pod.get_function_typespecs()
+        self.input_typespec, self.output_typespec = (
+            self.function_pod.get_function_typespecs()
+        )
         self.input_converter = PacketConverter(self.input_typespec, self.registry)
         self.output_converter = PacketConverter(self.output_typespec, self.registry)
 
@@ -435,14 +460,11 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
             else:
                 return EmptyStream(tag_keys=self.tag_keys, packet_keys=self.output_keys)
         logger.info(f"Computing and caching outputs for {self}")
-        return  super().forward(*streams, **kwargs)
-
+        return super().forward(*streams, **kwargs)
 
     def get_packet_key(self, packet: Packet) -> str:
         # TODO: reconsider the logic around input/output converter -- who should own this?
-        return self.arrow_hasher.hash_table(
-            self.input_converter.to_arrow_table(packet)
-        )
+        return self.arrow_hasher.hash_table(self.input_converter.to_arrow_table(packet))
 
     @property
     def source_info(self):
@@ -701,12 +723,12 @@ class Node(KernelInvocationWrapper, Source):
     def reset_cache(self) -> None: ...
 
 
-
 class KernelNode(Node, CachedKernelWrapper):
     """
     A node that wraps a Kernel and provides a Node interface.
     This is useful for creating nodes in a pipeline that can be executed.
     """
+
 
 class FunctionPodNode(Node, CachedFunctionPodWrapper):
     """

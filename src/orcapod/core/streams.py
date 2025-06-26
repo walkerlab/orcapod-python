@@ -5,7 +5,6 @@ from orcapod.types import Packet, Tag, TypeSpec
 from copy import copy
 
 
-
 class SyncStreamFromLists(SyncStream):
     def __init__(
         self,
@@ -50,16 +49,21 @@ class SyncStreamFromLists(SyncStream):
             super_tag_keys, super_packet_keys = super().keys(trigger_run=trigger_run)
             tag_keys = tag_keys or super_tag_keys
             packet_keys = packet_keys or super_packet_keys
-        
+
         # If the keys are already set, return them
         return tag_keys, packet_keys
-    
+
     def types(
         self, *, trigger_run: bool = False
     ) -> tuple[TypeSpec | None, TypeSpec | None]:
-        tag_typespec, packet_typespec = copy(self.tag_typespec), copy(self.packet_typespec)
+        tag_typespec, packet_typespec = (
+            copy(self.tag_typespec),
+            copy(self.packet_typespec),
+        )
         if tag_typespec is None or packet_typespec is None:
-            super_tag_typespec, super_packet_typespec = super().types(trigger_run=trigger_run)
+            super_tag_typespec, super_packet_typespec = super().types(
+                trigger_run=trigger_run
+            )
             tag_typespec = tag_typespec or super_tag_typespec
             packet_typespec = packet_typespec or super_packet_typespec
 
@@ -69,7 +73,6 @@ class SyncStreamFromLists(SyncStream):
     def __iter__(self) -> Iterator[tuple[Tag, Packet]]:
         yield from self.paired
 
-    
 
 class SyncStreamFromGenerator(SyncStream):
     """
@@ -87,9 +90,11 @@ class SyncStreamFromGenerator(SyncStream):
         self.tag_keys = tag_keys
         self.packet_keys = packet_keys
         self.generator_factory = generator_factory
+        self.check_consistency = False
 
     def __iter__(self) -> Iterator[tuple[Tag, Packet]]:
-        yield from self.generator_factory()
+        if not self.check_consistency:
+            yield from self.generator_factory()
 
     def keys(
         self, *, trigger_run: bool = False
