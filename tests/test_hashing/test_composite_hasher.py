@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from orcapod.hashing.core import hash_to_hex
+from orcapod.hashing.legacy_core import hash_to_hex
 from orcapod.hashing.file_hashers import BasicFileHasher, DefaultCompositeFileHasher
 from orcapod.hashing.types import FileHasher, PacketHasher, PathSetHasher
 

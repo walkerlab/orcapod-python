@@ -205,7 +205,7 @@ class SafeDirDataStore:
 
     def _get_output_dir(self, function_name, content_hash, packet):
         """Get the output directory for a specific packet"""
-        from orcapod.hashing.core import hash_dict
+        from orcapod.hashing.legacy_core import hash_dict
 
         packet_hash = hash_dict(packet)
         return self.store_dir / function_name / content_hash / str(packet_hash)

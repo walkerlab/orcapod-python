@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-import orcapod.hashing.core
+import orcapod.hashing.legacy_core
 from orcapod.hashing.file_hashers import DefaultPathsetHasher
 from orcapod.hashing.types import FileHasher
 
@@ -35,7 +35,7 @@ def create_temp_file(content="test content"):
 
 
 # Store original function for restoration
-original_hash_pathset = orcapod.hashing.core.hash_pathset
+original_hash_pathset = orcapod.hashing.legacy_core.hash_pathset
 
 
 # Custom implementation of hash_pathset for tests that doesn't check for file existence
@@ -46,7 +46,7 @@ def mock_hash_pathset(
     from collections.abc import Collection
     from os import PathLike
 
-    from orcapod.hashing.core import hash_to_hex
+    from orcapod.hashing.legacy_core import hash_to_hex
     from orcapod.utils.name import find_noncolliding_name
 
     # If file_hasher is None, we'll need to handle it differently
