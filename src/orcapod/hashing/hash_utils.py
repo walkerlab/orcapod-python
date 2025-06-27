@@ -165,6 +165,11 @@ def process_structure(
                 f"Function {obj} encountered during processing but FunctionInfoExtractor is missing"
             )
 
+    # handle data types
+    if isinstance(obj, type):
+        logger.debug(f"Processing class/type: {obj.__name__}")
+        return f"type:{obj.__class__.__module__}.{obj.__class__.__name__}"
+
     # For other objects, attempt to create deterministic representation only if force_hash=True
     class_name = obj.__class__.__name__
     module_name = obj.__class__.__module__
@@ -204,12 +209,12 @@ def process_structure(
                 # Remove memory addresses which look like '0x7f9a1c2b3d4e'
                 obj_repr = re.sub(r" at 0x[0-9a-f]+", " at 0xMEMADDR", obj_repr)
 
-            return f"{module_name}.{class_name}-{obj_repr}"
+            return f"{module_name}.{class_name}:{obj_repr}"
         except Exception as e:
             # Last resort - use class name only
             logger.warning(f"Failed to process object representation: {e}")
             try:
-                return f"Object-{obj.__class__.__module__}.{obj.__class__.__name__}"
+                return f"object:{obj.__class__.__module__}.{obj.__class__.__name__}"
             except AttributeError:
                 logger.error("Could not determine object class, using UnknownObject")
                 return "UnknownObject"
