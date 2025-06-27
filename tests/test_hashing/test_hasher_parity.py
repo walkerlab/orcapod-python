@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_hashing/test_hasher_parity.py
 """
 Test parity between DefaultFileHasher and core hashing functions.
 
