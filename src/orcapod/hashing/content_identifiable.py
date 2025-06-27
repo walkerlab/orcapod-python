@@ -1,22 +1,27 @@
-
 from .types import ObjectHasher
 from .defaults import get_default_object_hasher
 from typing import Any
 
 
 class ContentIdentifiableBase:
-    def __init__(self, identity_structure_hasher: ObjectHasher | None = None, label: str | None = None) -> None:
+    def __init__(
+        self,
+        identity_structure_hasher: ObjectHasher | None = None,
+        label: str | None = None,
+    ) -> None:
         """
         Initialize the ContentHashable with an optional ObjectHasher.
 
         Args:
             identity_structure_hasher (ObjectHasher | None): An instance of ObjectHasher to use for hashing.
         """
-        self.identity_structure_hasher = identity_structure_hasher or get_default_object_hasher()
+        self.identity_structure_hasher = (
+            identity_structure_hasher or get_default_object_hasher()
+        )
         self._label = label
 
     @property
-    def label(self) -> str :
+    def label(self) -> str:
         """
         Get the label of this object.
 
@@ -35,13 +40,12 @@ class ContentIdentifiableBase:
         """
         self._label = label
 
-    def computed_label(self) -> str|None:
+    def computed_label(self) -> str | None:
         """
         Compute a label for this object based on its content. If label is not explicitly set for this object
         and computed_label returns a valid value, it will be used as label of this object.
         """
         return None
-    
 
     def identity_structure(self) -> Any:
         """
@@ -55,7 +59,6 @@ class ContentIdentifiableBase:
             Any: A structure representing this object's content, or None to use default hash
         """
         return None
-
 
     def __hash__(self) -> int:
         """
@@ -72,7 +75,7 @@ class ContentIdentifiableBase:
             return super().__hash__()
 
         return self.identity_structure_hasher.hash_to_int(structure)
-    
+
     def __eq__(self, other: object) -> bool:
         """
         Equality check that compares the identity structures of two objects.
