@@ -29,6 +29,7 @@ class Identifiable(Protocol):
 class ObjectHasher(ABC):
     """Abstract class for general object hashing."""
 
+    # TODO: consider more explicitly stating types of objects accepted
     @abstractmethod
     def hash(self, obj: Any) -> bytes:
         """
@@ -81,7 +82,7 @@ class ObjectHasher(ABC):
 class FileHasher(Protocol):
     """Protocol for file-related hashing."""
 
-    def hash_file(self, file_path: PathLike) -> str: ...
+    def hash_file(self, file_path: PathLike) -> bytes: ...
 
 
 # Higher-level operations that compose file hashing
@@ -89,12 +90,7 @@ class FileHasher(Protocol):
 class PathSetHasher(Protocol):
     """Protocol for hashing pathsets (files, directories, collections)."""
 
-    def hash_pathset(self, pathset: PathSet) -> str: ...
-
-
-@runtime_checkable
-class SemanticHasher(Protocol):
-    pass
+    def hash_pathset(self, pathset: PathSet) -> bytes: ...
 
 
 @runtime_checkable
@@ -142,3 +138,10 @@ class FunctionInfoExtractor(Protocol):
     ) -> dict[str, Any]: ...
 
 
+class SemanticTypeHasher(Protocol):
+    """Abstract base class for semantic type-specific hashers."""
+
+    @abstractmethod
+    def hash_column(self, column: pa.Array) -> list[bytes]:
+        """Hash a column with this semantic type and return the hash bytes."""
+        pass

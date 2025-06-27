@@ -1,4 +1,5 @@
-from orcapod.hashing.core import hash_file, hash_pathset, hash_packet
+from orcapod.hashing import legacy_core
+from orcapod.hashing.hash_utils import hash_file
 from orcapod.hashing.types import (
     FileHasher,
     PathSetHasher,
@@ -8,8 +9,6 @@ from orcapod.hashing.types import (
 from orcapod.types import Packet, PathLike, PathSet
 
 
-# Completely unnecessary to inherit from FileHasher, but this
-# allows for type checking based on isinstance
 class BasicFileHasher:
     """Basic implementation for file hashing."""
 
@@ -21,7 +20,7 @@ class BasicFileHasher:
         self.algorithm = algorithm
         self.buffer_size = buffer_size
 
-    def hash_file(self, file_path: PathLike) -> str:
+    def hash_file(self, file_path: PathLike) -> bytes:
         return hash_file(
             file_path, algorithm=self.algorithm, buffer_size=self.buffer_size
         )
@@ -38,18 +37,38 @@ class CachedFileHasher:
         self.file_hasher = file_hasher
         self.string_cacher = string_cacher
 
-    def hash_file(self, file_path: PathLike) -> str:
+    def hash_file(self, file_path: PathLike) -> bytes:
         cache_key = f"file:{file_path}"
         cached_value = self.string_cacher.get_cached(cache_key)
         if cached_value is not None:
-            return cached_value
+            return bytes.fromhex(cached_value)
 
         value = self.file_hasher.hash_file(file_path)
-        self.string_cacher.set_cached(cache_key, value)
+        self.string_cacher.set_cached(cache_key, value.hex())
         return value
 
 
-class DefaultPathsetHasher:
+# ----------------Legacy implementations for backward compatibility-----------------
+
+
+class LegacyFileHasher:
+    def __init__(
+        self,
+        algorithm: str = "sha256",
+        buffer_size: int = 65536,
+    ):
+        self.algorithm = algorithm
+        self.buffer_size = buffer_size
+
+    def hash_file(self, file_path: PathLike) -> bytes:
+        return bytes.fromhex(
+            legacy_core.hash_file(
+                file_path, algorithm=self.algorithm, buffer_size=self.buffer_size
+            ),
+        )
+
+
+class LegacyPathsetHasher:
     """Default pathset hasher that composes file hashing."""
 
     def __init__(
@@ -60,16 +79,21 @@ class DefaultPathsetHasher:
         self.file_hasher = file_hasher
         self.char_count = char_count
 
-    def hash_pathset(self, pathset: PathSet) -> str:
+    def _hash_file_to_hex(self, file_path: PathLike) -> str:
+        return self.file_hasher.hash_file(file_path).hex()
+
+    def hash_pathset(self, pathset: PathSet) -> bytes:
         """Hash a pathset using the injected file hasher."""
-        return hash_pathset(
-            pathset,
-            char_count=self.char_count,
-            file_hasher=self.file_hasher.hash_file,  # Inject the method
+        return bytes.fromhex(
+            legacy_core.hash_pathset(
+                pathset,
+                char_count=self.char_count,
+                file_hasher=self._hash_file_to_hex,  # Inject the method
+            )
         )
 
 
-class DefaultPacketHasher:
+class LegacyPacketHasher:
     """Default packet hasher that composes pathset hashing."""
 
     def __init__(
@@ -82,19 +106,22 @@ class DefaultPacketHasher:
         self.char_count = char_count
         self.prefix = prefix
 
+    def _hash_pathset_to_hex(self, pathset: PathSet):
+        return self.pathset_hasher.hash_pathset(pathset).hex()
+
     def hash_packet(self, packet: Packet) -> str:
         """Hash a packet using the injected pathset hasher."""
-        hash_str = hash_packet(
+        hash_str = legacy_core.hash_packet(
             packet,
             char_count=self.char_count,
             prefix_algorithm=False,  # Will apply prefix on our own
-            pathset_hasher=self.pathset_hasher.hash_pathset,  # Inject the method
+            pathset_hasher=self._hash_pathset_to_hex,  # Inject the method
         )
         return f"{self.prefix}-{hash_str}" if self.prefix else hash_str
 
 
 # Convenience composite implementation
-class DefaultCompositeFileHasher:
+class LegacyCompositeFileHasher:
     """Composite hasher that implements all interfaces."""
 
     def __init__(
@@ -104,15 +131,15 @@ class DefaultCompositeFileHasher:
         packet_prefix: str = "",
     ):
         self.file_hasher = file_hasher
-        self.pathset_hasher = DefaultPathsetHasher(self.file_hasher, char_count)
-        self.packet_hasher = DefaultPacketHasher(
+        self.pathset_hasher = LegacyPathsetHasher(self.file_hasher, char_count)
+        self.packet_hasher = LegacyPacketHasher(
             self.pathset_hasher, char_count, packet_prefix
         )
 
-    def hash_file(self, file_path: PathLike) -> str:
+    def hash_file(self, file_path: PathLike) -> bytes:
         return self.file_hasher.hash_file(file_path)
 
-    def hash_pathset(self, pathset: PathSet) -> str:
+    def hash_pathset(self, pathset: PathSet) -> bytes:
         return self.pathset_hasher.hash_pathset(pathset)
 
     def hash_packet(self, packet: Packet) -> str:
@@ -120,7 +147,7 @@ class DefaultCompositeFileHasher:
 
 
 # Factory for easy construction
-class PathLikeHasherFactory:
+class LegacyPathLikeHasherFactory:
     """Factory for creating various hasher combinations."""
 
     @staticmethod
@@ -132,7 +159,7 @@ class PathLikeHasherFactory:
         """Create a basic composite hasher."""
         file_hasher = BasicFileHasher(algorithm, buffer_size)
         # use algorithm as the prefix for the packet hasher
-        return DefaultCompositeFileHasher(
+        return LegacyCompositeFileHasher(
             file_hasher, char_count, packet_prefix=algorithm
         )
 
@@ -146,7 +173,7 @@ class PathLikeHasherFactory:
         """Create a composite hasher with file caching."""
         basic_file_hasher = BasicFileHasher(algorithm, buffer_size)
         cached_file_hasher = CachedFileHasher(basic_file_hasher, string_cacher)
-        return DefaultCompositeFileHasher(
+        return LegacyCompositeFileHasher(
             cached_file_hasher, char_count, packet_prefix=algorithm
         )
 
