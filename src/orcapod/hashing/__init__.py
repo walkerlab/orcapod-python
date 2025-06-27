@@ -1,4 +1,4 @@
-from .core import (
+from .legacy_core import (
     HashableMixin,
     function_content_hash,
     get_function_signature,
@@ -24,7 +24,7 @@ from .types import (
     FunctionInfoExtractor,
     CompositeFileHasher,
 )
-from .content_hashable import ContentIdentifiableBase
+from .content_identifiable import ContentIdentifiableBase
 
 __all__ = [
     "FileHasher",

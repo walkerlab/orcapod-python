@@ -5,7 +5,8 @@ Stable Hashing Library
 A library for creating stable, content-based hashes that remain consistent across Python sessions,
 suitable for arbitrarily nested data structures and custom objects via HashableMixin.
 """
-WARN_NONE_IDENTITY=False
+
+WARN_NONE_IDENTITY = False
 import hashlib
 import inspect
 import json
@@ -436,11 +437,16 @@ def process_structure(
     if isinstance(obj, HashableMixin):
         logger.debug(f"Processing HashableMixin instance of type {type(obj).__name__}")
         return obj.content_hash()
-    
-    from .content_hashable import ContentIdentifiableBase
+
+    from .content_identifiable import ContentIdentifiableBase
+
     if isinstance(obj, ContentIdentifiableBase):
-        logger.debug(f"Processing ContentHashableBase instance of type {type(obj).__name__}")
-        return process_structure(obj.identity_structure(), visited, function_info_extractor)
+        logger.debug(
+            f"Processing ContentHashableBase instance of type {type(obj).__name__}"
+        )
+        return process_structure(
+            obj.identity_structure(), visited, function_info_extractor
+        )
 
     # Handle basic types
     if isinstance(obj, (str, int, float, bool)):
@@ -838,7 +844,7 @@ def get_function_signature(
     name_override: str | None = None,
     include_defaults: bool = True,
     include_module: bool = True,
-    output_names: Collection[str] | None = None
+    output_names: Collection[str] | None = None,
 ) -> str:
     """
     Get a stable string representation of a function's signature.
@@ -877,9 +883,9 @@ def get_function_signature(
     if sig.return_annotation is not inspect.Signature.empty:
         parts["returns"] = sig.return_annotation
 
-    fn_string = f"{parts["module"] + "." if "module" in parts else ""}{parts["name"]}{parts["params"]}"
+    fn_string = f"{parts['module'] + '.' if 'module' in parts else ''}{parts['name']}{parts['params']}"
     if "returns" in parts:
-        fn_string = fn_string + f"-> {str(parts["returns"])}"
+        fn_string = fn_string + f"-> {str(parts['returns'])}"
     return fn_string
 
 
