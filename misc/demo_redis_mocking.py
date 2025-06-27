@@ -72,10 +72,10 @@ def demonstrate_redis_mocking():
 
     # Patch the Redis availability and exceptions
     with (
-        patch("orcabridge.hashing.string_cachers.REDIS_AVAILABLE", True),
-        patch("orcabridge.hashing.string_cachers.redis.RedisError", MockRedisError),
+        patch("orcapod.hashing.string_cachers.REDIS_AVAILABLE", True),
+        patch("orcapod.hashing.string_cachers.redis.RedisError", MockRedisError),
         patch(
-            "orcabridge.hashing.string_cachers.redis.ConnectionError",
+            "orcapod.hashing.string_cachers.redis.ConnectionError",
             MockConnectionError,
         ),
     ):

@@ -1,4 +1,3 @@
-# src/orcabridge/types.py
 from .core import Tag, Packet, TypeSpec, PathLike, PathSet, PodFunction
 from .registry import TypeRegistry
 from .handlers import PathHandler, UUIDHandler, DateTimeHandler
