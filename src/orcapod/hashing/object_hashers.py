@@ -1,5 +1,31 @@
+from polars import Object
 from .types import FunctionInfoExtractor, ObjectHasher
-from .core import legacy_hash
+from .legacy_core import legacy_hash
+from .hash_utils import hash_object
+
+
+class DefaultObjectHasher(ObjectHasher):
+    """
+    Default object hasher used throughout the codebase.
+    """
+
+    def __init__(
+        self,
+        function_info_extractor: FunctionInfoExtractor | None = None,
+    ):
+        self.function_info_extractor = function_info_extractor
+
+    def hash(self, obj: object) -> bytes:
+        """
+        Hash an object to a byte representation.
+
+        Args:
+            obj (object): The object to hash.
+
+        Returns:
+            bytes: The byte representation of the hash.
+        """
+        return hash_object(obj, function_info_extractor=self.function_info_extractor)
 
 
 class LegacyObjectHasher(ObjectHasher):
@@ -13,7 +39,6 @@ class LegacyObjectHasher(ObjectHasher):
 
     def __init__(
         self,
-        char_count: int | None = 32,
         function_info_extractor: FunctionInfoExtractor | None = None,
     ):
         """
@@ -22,7 +47,6 @@ class LegacyObjectHasher(ObjectHasher):
         Args:
             function_info_extractor (FunctionInfoExtractor | None): Optional extractor for function information. This must be provided if an object containing function information is to be hashed.
         """
-        self.char_count = char_count
         self.function_info_extractor = function_info_extractor
 
     def hash(self, obj: object) -> bytes:
