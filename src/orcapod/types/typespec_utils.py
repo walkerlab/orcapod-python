@@ -1,8 +1,7 @@
 # Library of functions for working with TypeSpecs and for extracting TypeSpecs from a function's signature
 
-
-from collections.abc import Callable, Collection, Sequence
-from typing import get_origin, get_args
+from collections.abc import Callable, Collection, Sequence, Mapping
+from typing import get_origin, get_args, Any
 from .core import TypeSpec
 import inspect
 import logging
@@ -213,3 +212,57 @@ def extract_function_typespecs(
                 f"Type for return item '{key}' is not specified in output_types and has no type annotation in function signature."
             )
     return param_info, inferred_output_types
+
+
+
+def get_typespec_from_dict(dict: Mapping) -> TypeSpec:
+    """
+    Returns a TypeSpec for the given dictionary.
+    The TypeSpec is a mapping from field name to Python type.
+    """
+    return {key: type(value) for key, value in dict.items()}
+
+
+def get_compatible_type(type1: Any, type2: Any) -> Any:
+    if type1 is type2:
+        return type1
+    if issubclass(type1, type2):
+        return type2
+    if issubclass(type2, type1):
+        return type1
+    raise TypeError(f"Types {type1} and {type2} are not compatible")
+
+
+def union_typespecs(left: TypeSpec | None, right: TypeSpec | None) -> TypeSpec | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    # Merge the two TypeSpecs but raise an error if conflicts in types are found
+    merged = dict(left)
+    for key, right_type in right.items():
+        merged[key] = (
+            get_compatible_type(merged[key], right_type)
+            if key in merged
+            else right_type
+        )
+    return merged
+
+def intersection_typespecs(left: TypeSpec | None, right: TypeSpec | None) -> TypeSpec | None:
+    """
+    Returns the intersection of two TypeSpecs, only returning keys that are present in both.
+    If a key is present in both TypeSpecs, the type must be the same.
+    """
+    if left is None or right is None:
+        return None
+    # Find common keys and ensure types match
+    common_keys = set(left.keys()).intersection(set(right.keys()))
+    intersection = {}
+    for key in common_keys:
+        try:
+            intersection[key] = get_compatible_type(left[key], right[key])
+        except TypeError:
+            # If types are not compatible, raise an error
+            raise TypeError(f"Type conflict for key '{key}': {left[key]} vs {right[key]}")
+        
+    return intersection

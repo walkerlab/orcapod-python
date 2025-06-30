@@ -10,8 +10,7 @@ from orcapod.hashing import get_default_object_hasher
 
 from orcapod.hashing import ContentIdentifiableBase
 from orcapod.types import Packet, Tag, TypeSpec
-from orcapod.utils.stream_utils import get_typespec
-
+from orcapod.types.typespec import get_typespec_from_dict
 import logging
 
 
@@ -151,7 +150,7 @@ class Kernel(ABC, ContentIdentifiableBase):
             return None, None
 
         tag, packet = next(iter(self(*streams)))
-        return get_typespec(tag), get_typespec(packet)
+        return get_typespec_from_dict(tag), get_typespec_from_dict(packet)
 
     def claims_unique_tags(
         self, *streams: "SyncStream", trigger_run: bool = False
@@ -391,7 +390,7 @@ class Stream(ABC, ContentIdentifiableBase):
         # otherwise, use the keys from the first packet in the stream
         # note that this may be computationally expensive
         tag, packet = next(iter(self))
-        return tag_types or get_typespec(tag), packet_types or get_typespec(packet)
+        return tag_types or get_typespec_from_dict(tag), packet_types or get_typespec_from_dict(packet)
 
     def claims_unique_tags(self, *, trigger_run=False) -> bool | None:
         """

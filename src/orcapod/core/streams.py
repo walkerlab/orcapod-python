@@ -1,7 +1,7 @@
 from collections.abc import Callable, Collection, Iterator
 
 from orcapod.core.base import SyncStream
-from orcapod.types import Packet, Tag, TypeSpec
+from orcapod.types import Packet, PacketLike, Tag, TypeSpec
 from copy import copy
 
 
@@ -9,8 +9,8 @@ class SyncStreamFromLists(SyncStream):
     def __init__(
         self,
         tags: Collection[Tag] | None = None,
-        packets: Collection[Packet] | None = None,
-        paired: Collection[tuple[Tag, Packet]] | None = None,
+        packets: Collection[PacketLike] | None = None,
+        paired: Collection[tuple[Tag, PacketLike]] | None = None,
         tag_keys: list[str] | None = None,
         packet_keys: list[str] | None = None,
         tag_typespec: TypeSpec | None = None,
@@ -33,9 +33,9 @@ class SyncStreamFromLists(SyncStream):
                 raise ValueError(
                     "tags and packets must have the same length if both are provided"
                 )
-            self.paired = list(zip(tags, packets))
+            self.paired = list((t, Packet(v)) for t, v in zip(tags, packets))
         elif paired is not None:
-            self.paired = list(paired)
+            self.paired = list((t, Packet(v)) for t, v in paired)
         else:
             raise ValueError(
                 "Either tags and packets or paired must be provided to SyncStreamFromLists"

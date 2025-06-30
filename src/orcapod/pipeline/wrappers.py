@@ -2,68 +2,22 @@ from orcapod.core.pod import Pod, FunctionPod
 from orcapod.core import SyncStream, Source, Kernel
 from orcapod.store import ArrowDataStore
 from orcapod.types import Tag, Packet, TypeSpec, default_registry
-from orcapod.types.typespec import extract_function_typespecs
+from orcapod.types.typespec_utils import get_typespec_from_dict, union_typespecs, extract_function_typespecs
+from orcapod.types.semantic_type_registry import create_arrow_table_with_meta
 from orcapod.hashing import ObjectHasher, ArrowHasher
 from orcapod.hashing.defaults import get_default_object_hasher, get_default_arrow_hasher
 from typing import Any, Literal
 from collections.abc import Collection, Iterator
-from orcapod.types.registry import TypeRegistry, PacketConverter
+from orcapod.types.semantic_type_registry import TypeRegistry
+from orcapod.types.packet_converter import PacketConverter
 import pyarrow as pa
 import polars as pl
 from orcapod.core.streams import SyncStreamFromGenerator
-from orcapod.utils.stream_utils import get_typespec, union_typespecs
 
 import logging
 
 logger = logging.getLogger(__name__)
 
-
-def tag_to_arrow_table_with_metadata(tag, metadata: dict | None = None):
-    """
-    Convert a tag dictionary to PyArrow table with metadata on each column.
-
-    Args:
-        tag: Dictionary with string keys and any Python data type values
-        metadata_key: The metadata key to add to each column
-        metadata_value: The metadata value to indicate this column came from tag
-    """
-    if metadata is None:
-        metadata = {}
-
-    # First create the table to infer types
-    temp_table = pa.Table.from_pylist([tag])
-
-    # Create new fields with metadata
-    fields_with_metadata = []
-    for field in temp_table.schema:
-        # Add metadata to each field
-        field_metadata = metadata
-        new_field = pa.field(
-            field.name, field.type, nullable=field.nullable, metadata=field_metadata
-        )
-        fields_with_metadata.append(new_field)
-
-    # Create schema with metadata
-    schema_with_metadata = pa.schema(fields_with_metadata)
-
-    # Create the final table with the metadata-enriched schema
-    table = pa.Table.from_pylist([tag], schema=schema_with_metadata)
-
-    return table
-
-
-def get_columns_with_metadata(
-    df: pl.DataFrame, key: str, value: str | None = None
-) -> list[str]:
-    """Get column names with specific metadata using list comprehension. If value is given, only
-    columns matching that specific value for the desginated metadata key will be returned.
-    Otherwise, all columns that contains the key as metadata will be returned regardless of the value"""
-    return [
-        col_name
-        for col_name, dtype in df.schema.items()
-        if hasattr(dtype, "metadata")
-        and (value is None or getattr(dtype, "metadata") == value)
-    ]
 
 
 class PolarsSource(Source):
@@ -81,18 +35,15 @@ class PolarsSource(Source):
 
 
 class PolarsStream(SyncStream):
-    def __init__(self, df: pl.DataFrame, tag_keys: Collection[str] | None = None):
+    def __init__(self, df: pl.DataFrame, tag_keys: Collection[str]):
         self.df = df
-        if tag_keys is None:
-            # extract tag_keys by picking columns with metadata source=tag
-            tag_keys = get_columns_with_metadata(df, "source", "tag")
         self.tag_keys = tag_keys
 
     def __iter__(self) -> Iterator[tuple[Tag, Packet]]:
         for row in self.df.iter_rows(named=True):
             tag = {key: row[key] for key in self.tag_keys}
             packet = {key: val for key, val in row.items() if key not in self.tag_keys}
-            yield tag, packet
+            yield tag, Packet(packet)
 
 
 class EmptyStream(SyncStream):
@@ -266,26 +217,44 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
 
         output_stream = self.kernel.forward(*resolved_streams, **kwargs)
 
-        tag_type, packet_type = output_stream.types(trigger_run=False)
-        if tag_type is not None and packet_type is not None:
-            joined_type = union_typespecs(tag_type, packet_type)
+        tag_typespec, packet_typespec = output_stream.types(trigger_run=False)
+        if tag_typespec is not None and packet_typespec is not None:
+            joined_type = union_typespecs(tag_typespec, packet_typespec)
             assert joined_type is not None, "Joined typespec should not be None"
-            self.output_converter = PacketConverter(joined_type, registry=self.registry)
+            all_type = dict(joined_type)
+            for k in packet_typespec:
+                all_type[f'_source_{k}'] = str
+            # 
+            self.output_converter = PacketConverter(all_type, registry=self.registry)
 
         # Cache the output stream of the underlying kernel
-        # This is a no-op if the output stream is already cached
+        # If an entry with same tag and packet already exists in the output store,
+        # it will not be added again, thus avoiding duplicates.
         def generator() -> Iterator[tuple[Tag, Packet]]:
             logger.info(f"Computing and caching outputs for {self}")
             for tag, packet in output_stream:
                 merged_info = {**tag, **packet}
+                # add entries for source_info
+                for k, v in packet.source_info.items():
+                    merged_info[f'_source_{k}'] = v
+
                 if self.output_converter is None:
-                    joined_type = get_typespec(merged_info)
+                    # TODO: cleanup logic here
+                    joined_type = get_typespec_from_dict(merged_info)
                     assert joined_type is not None, "Joined typespec should not be None"
+                    all_type = dict(joined_type)
+                    for k in packet:
+                        all_type[f'_source_{k}'] = str
                     self.output_converter = PacketConverter(
-                        joined_type, registry=self.registry
+                        all_type, registry=self.registry
                     )
 
+                # add entries for source_info
+                for k, v in packet.source_info.items():
+                    merged_info[f'_source_{k}'] = v
+
                 output_table = self.output_converter.to_arrow_table(merged_info)
+                # TODO: revisit this logic
                 output_id = self.arrow_hasher.hash_table(output_table)
                 if not self.output_store.get_record(*self.source_info, output_id):
                     self.output_store.add_record(
@@ -463,7 +432,6 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         return super().forward(*streams, **kwargs)
 
     def get_packet_key(self, packet: Packet) -> str:
-        # TODO: reconsider the logic around input/output converter -- who should own this?
         return self.arrow_hasher.hash_table(self.input_converter.to_arrow_table(packet))
 
     @property
@@ -473,23 +441,25 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
     def is_memoized(self, packet: Packet) -> bool:
         return self.retrieve_memoized(packet) is not None
 
-    def add_tag_record(self, tag: Tag, packet: Packet) -> Tag:
+    def add_pipeline_record(self, tag: Tag, packet: Packet) -> Tag:
         """
         Record the tag for the packet in the record store.
         This is used to keep track of the tags associated with memoized packets.
         """
-        return self._add_tag_record_with_packet_key(tag, self.get_packet_key(packet))
+        return self._add_pipeline_record_with_packet_key(tag, self.get_packet_key(packet), packet.source_info)
 
-    def _add_tag_record_with_packet_key(self, tag: Tag, packet_key: str) -> Tag:
+    def _add_pipeline_record_with_packet_key(self, tag: Tag, packet_key: str, packet_source_info: dict[str, str | None]) -> Tag:
         if self.tag_store is None:
             raise ValueError("Recording of tag requires tag_store but none provided")
 
-        tag = dict(tag)  # ensure we don't modify the original tag
-        tag["__packet_key"] = packet_key
+        combined_info = dict(tag)  # ensure we don't modify the original tag
+        combined_info["__packet_key"] = packet_key
+        for k, v in packet_source_info.items():
+            combined_info[f'__{k}_source'] = v
 
         # TODO: consider making this more efficient
         # convert tag to arrow table - columns are labeled with metadata source=tag
-        table = tag_to_arrow_table_with_metadata(tag, {"source": "tag"})
+        table = create_arrow_table_with_meta(combined_info, {"source": "tag"})
 
         entry_hash = self.arrow_hasher.hash_table(table)
 
@@ -553,8 +523,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         # consider simpler alternative
         packets = self.output_converter.from_arrow_table(
             self.output_store.add_record(
-                self.function_pod.function_name,
-                self.function_pod_hash,
+                *self.source_info,
                 packet_key,
                 self.output_converter.to_arrow_table(output_packet),
             )
@@ -563,7 +532,13 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         assert len(packets) == 1, (
             f"Memoizing single packet returned {len(packets)} packets!"
         )
-        return packets[0]
+        packet = packets[0]
+        # TODO: reconsider the right place to attach this information
+        # attach provenance information
+        packet_source_id = ":".join(self.source_info + (packet_key,))
+        source_info = {k: f'{packet_source_id}:{k}' for k in packet}
+        return Packet(packet, source_info=source_info)
+
 
     def call(self, tag: Tag, packet: Packet) -> tuple[Tag, Packet | None]:
         packet_key = ""
@@ -603,7 +578,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
 
         # result was successfully computed -- save the tag
         if not self.skip_tag_record and self.tag_store is not None:
-            self._add_tag_record_with_packet_key(tag, packet_key)
+            self._add_pipeline_record_with_packet_key(tag, packet_key, packet.source_info)
 
         return tag, output_packet
 

@@ -16,7 +16,7 @@ from .defaults import (
     get_default_arrow_hasher,
 )
 from .types import (
-    FileHasher,
+    FileContentHasher,
     PacketHasher,
     ArrowHasher,
     ObjectHasher,
@@ -27,7 +27,7 @@ from .types import (
 from .content_identifiable import ContentIdentifiableBase
 
 __all__ = [
-    "FileHasher",
+    "FileContentHasher",
     "PacketHasher",
     "ArrowHasher",
     "StringCacher",

@@ -1,4 +1,4 @@
-from .types import SemanticTypeHasher, FileHasher
+from orcapod.hashing.types import SemanticTypeHasher, FileContentHasher, StringCacher
 import os
 import hashlib
 import pyarrow as pa
@@ -7,7 +7,13 @@ import pyarrow as pa
 class PathHasher(SemanticTypeHasher):
     """Hasher for Path semantic type columns - hashes file contents."""
 
-    def __init__(self, file_hasher: FileHasher, handle_missing: str = "error"):
+    def __init__(
+        self,
+        file_hasher: FileContentHasher,
+        handle_missing: str = "error",
+        string_cacher: StringCacher | None = None,
+        cache_key_prefix: str = "path_hasher",
+    ):
         """
         Initialize PathHasher.
 
@@ -17,10 +23,19 @@ class PathHasher(SemanticTypeHasher):
         """
         self.file_hasher = file_hasher
         self.handle_missing = handle_missing
+        self.cacher = string_cacher
+        self.cache_key_prefix = cache_key_prefix
 
     def _hash_file_content(self, file_path: str) -> str:
         """Hash the content of a single file and return hex string."""
         import os
+
+        # if cacher exists, check if the hash is cached
+        if self.cacher:
+            cache_key = f"{self.cache_key_prefix}:{file_path}"
+            cached_hash = self.cacher.get_cached(cache_key)
+            if cached_hash is not None:
+                return cached_hash
 
         try:
             if not os.path.exists(file_path):
@@ -31,7 +46,13 @@ class PathHasher(SemanticTypeHasher):
                 elif self.handle_missing == "null_hash":
                     return hashlib.sha256(b"<FILE_NOT_FOUND>").hexdigest()
 
-            return self.file_hasher.hash_file(file_path).hex()
+            hashed_value = self.file_hasher.hash_file(file_path).hex()
+            if self.cacher:
+                # Cache the computed hash
+                self.cacher.set_cached(
+                    f"{self.cache_key_prefix}:{file_path}", hashed_value
+                )
+            return hashed_value
 
         except (IOError, OSError, PermissionError) as e:
             if self.handle_missing == "error":
@@ -62,3 +83,11 @@ class PathHasher(SemanticTypeHasher):
 
         # Return new array with content hashes instead of paths
         return pa.array(content_hashes)
+
+    def set_cacher(self, cacher: StringCacher) -> None:
+        """
+        Add a string cacher for caching hash values.
+        This is a no-op for PathHasher since it hashes file contents directly.
+        """
+        # PathHasher does not use string caching, so this is a no-op
+        self.cacher = cacher

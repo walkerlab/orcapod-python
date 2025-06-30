@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 """Tests for TransferDataStore."""
 
-import json
 from pathlib import Path
 
 import pytest

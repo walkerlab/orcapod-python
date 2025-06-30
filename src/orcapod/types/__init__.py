@@ -1,12 +1,13 @@
-from .core import Tag, Packet, TypeSpec, PathLike, PathSet, PodFunction
-from .registry import TypeRegistry
-from .handlers import PathHandler, UUIDHandler, DateTimeHandler
-from . import handlers
-from . import typespec
+from .core import Tag, PathLike, PathSet, PodFunction, TypeSpec
+from .packets import Packet
+from .semantic_type_registry import SemanticTypeRegistry
+from .semantic_type_handlers import PathHandler, UUIDHandler, DateTimeHandler
+from . import semantic_type_handlers
+from . import typespec_utils
 
 
 # Create default registry and register handlers
-default_registry = TypeRegistry()
+default_registry = SemanticTypeRegistry()
 
 # Register with semantic names - registry extracts supported types automatically
 default_registry.register("path", PathHandler())
@@ -19,10 +20,11 @@ __all__ = [
     "default_registry",
     "Tag",
     "Packet",
+    "PacketLike"
     "TypeSpec",
     "PathLike",
     "PathSet",
     "PodFunction",
-    "handlers",
-    "typespec",
+    "semantic_type_handlers",
+    "typespec_utils",
 ]

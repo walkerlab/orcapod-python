@@ -1,7 +1,7 @@
 from orcapod.hashing import legacy_core
 from orcapod.hashing.hash_utils import hash_file
 from orcapod.hashing.types import (
-    FileHasher,
+    FileContentHasher,
     PathSetHasher,
     StringCacher,
     CompositeFileHasher,
@@ -31,7 +31,7 @@ class CachedFileHasher:
 
     def __init__(
         self,
-        file_hasher: FileHasher,
+        file_hasher: FileContentHasher,
         string_cacher: StringCacher,
     ):
         self.file_hasher = file_hasher
@@ -73,7 +73,7 @@ class LegacyPathsetHasher:
 
     def __init__(
         self,
-        file_hasher: FileHasher,
+        file_hasher: FileContentHasher,
         char_count: int | None = 32,
     ):
         self.file_hasher = file_hasher
@@ -126,7 +126,7 @@ class LegacyCompositeFileHasher:
 
     def __init__(
         self,
-        file_hasher: FileHasher,
+        file_hasher: FileContentHasher,
         char_count: int | None = 32,
         packet_prefix: str = "",
     ):
@@ -151,27 +151,27 @@ class LegacyPathLikeHasherFactory:
     """Factory for creating various hasher combinations."""
 
     @staticmethod
-    def create_basic_composite(
+    def create_basic_legacy_composite(
         algorithm: str = "sha256",
         buffer_size: int = 65536,
         char_count: int | None = 32,
     ) -> CompositeFileHasher:
         """Create a basic composite hasher."""
-        file_hasher = BasicFileHasher(algorithm, buffer_size)
+        file_hasher = LegacyFileHasher(algorithm, buffer_size)
         # use algorithm as the prefix for the packet hasher
         return LegacyCompositeFileHasher(
             file_hasher, char_count, packet_prefix=algorithm
         )
 
     @staticmethod
-    def create_cached_composite(
+    def create_cached_legacy_composite(
         string_cacher: StringCacher,
         algorithm: str = "sha256",
         buffer_size: int = 65536,
         char_count: int | None = 32,
     ) -> CompositeFileHasher:
         """Create a composite hasher with file caching."""
-        basic_file_hasher = BasicFileHasher(algorithm, buffer_size)
+        basic_file_hasher = LegacyFileHasher(algorithm, buffer_size)
         cached_file_hasher = CachedFileHasher(basic_file_hasher, string_cacher)
         return LegacyCompositeFileHasher(
             cached_file_hasher, char_count, packet_prefix=algorithm
@@ -182,7 +182,7 @@ class LegacyPathLikeHasherFactory:
         string_cacher: StringCacher | None = None,
         algorithm: str = "sha256",
         buffer_size: int = 65536,
-    ) -> FileHasher:
+    ) -> FileContentHasher:
         """Create just a file hasher, optionally with caching."""
         basic_hasher = BasicFileHasher(algorithm, buffer_size)
         if string_cacher is None:

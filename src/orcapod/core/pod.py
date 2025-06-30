@@ -8,8 +8,8 @@ from typing import (
 )
 
 from orcapod.types import Packet, Tag, TypeSpec, default_registry
-from orcapod.types.typespec import extract_function_typespecs
-from orcapod.types.registry import PacketConverter
+from orcapod.types.typespec_utils import extract_function_typespecs
+from orcapod.types.semantic_type_registry import PacketConverter
 
 from orcapod.hashing import (
     FunctionInfoExtractor,
@@ -258,7 +258,7 @@ class FunctionPod(Pod):
                 f"Number of output keys {len(self.output_keys)}:{self.output_keys} does not match number of values returned by function {len(output_values)}"
             )
 
-        output_packet: Packet = {k: v for k, v in zip(self.output_keys, output_values)}
+        output_packet: Packet = Packet({k: v for k, v in zip(self.output_keys, output_values)})
         return tag, output_packet
 
     def identity_structure(self, *streams) -> Any:

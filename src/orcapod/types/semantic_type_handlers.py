@@ -9,7 +9,7 @@ from datetime import datetime, date, time
 class PathHandler:
     """Handler for pathlib.Path objects, stored as strings."""
 
-    def python_types(self) -> type:
+    def python_type(self) -> type:
         return Path
 
     def storage_type(self) -> pa.DataType:
@@ -25,7 +25,7 @@ class PathHandler:
 class UUIDHandler:
     """Handler for UUID objects, stored as strings."""
 
-    def python_types(self) -> type:
+    def python_type(self) -> type:
         return UUID
 
     def storage_type(self) -> pa.DataType:
@@ -41,7 +41,7 @@ class UUIDHandler:
 class DecimalHandler:
     """Handler for Decimal objects, stored as strings."""
 
-    def python_types(self) -> type:
+    def python_type(self) -> type:
         return Decimal
 
     def storage_type(self) -> pa.DataType:
@@ -61,7 +61,7 @@ class SimpleMappingHandler:
         self._python_type = python_type
         self._arrow_type = arrow_type
 
-    def python_types(self) -> type:
+    def python_type(self) -> type:
         return self._python_type
 
     def storage_type(self) -> pa.DataType:
@@ -80,7 +80,7 @@ class DirectArrowHandler:
     def __init__(self, arrow_type: pa.DataType):
         self._arrow_type = arrow_type
 
-    def python_types(self) -> type:
+    def python_type(self) -> type:
         return self._arrow_type
 
     def storage_type(self) -> pa.DataType:
@@ -96,7 +96,7 @@ class DirectArrowHandler:
 class DateTimeHandler:
     """Handler for datetime objects."""
 
-    def python_types(self) -> tuple[type, ...]:
+    def python_type(self) -> type:
         return (datetime, date, time)  # Handles multiple related types
 
     def storage_type(self) -> pa.DataType:

@@ -78,7 +78,7 @@ class GlobSource(Source):
 
         def generator() -> Iterator[tuple[Tag, Packet]]:
             for file in Path(self.file_path).glob(self.pattern):
-                yield self.tag_function(file), {self.name: str(file)}
+                yield self.tag_function(file), Packet({self.name: str(file)})
 
         return SyncStreamFromGenerator(generator)
 

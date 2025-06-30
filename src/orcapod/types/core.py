@@ -1,18 +1,9 @@
-from typing import Protocol, Any, TypeAlias
+from typing import Protocol, Any, TypeAlias, TypeVar, Generic
 import pyarrow as pa
 from dataclasses import dataclass
 import os
 from collections.abc import Collection, Mapping
 
-
-# TODO: reconsider the need for this dataclass as its information is superfluous
-# to the registration of the handler into the registry.
-@dataclass
-class TypeInfo:
-    python_type: type
-    arrow_type: pa.DataType
-    semantic_type: str | None  # name under which the type is registered
-    handler: "TypeHandler"
 
 
 DataType: TypeAlias = type
@@ -21,8 +12,6 @@ TypeSpec: TypeAlias = Mapping[
     str, DataType
 ]  # Mapping of parameter names to their types
 
-
-SUPPORTED_PYTHON_TYPES = (str, int, float, bool, bytes)
 
 # Convenience alias for anything pathlike
 PathLike = str | os.PathLike
@@ -45,14 +34,8 @@ ExtendedSupportedPythonData: TypeAlias = SupportedNativePythonData | PathLike
 
 # Extended data values that can be stored in packets
 # Either the original PathSet or one of our supported simple data types
-DataValue: TypeAlias = PathSet | SupportedNativePythonData | Collection["DataValue"]
+DataValue: TypeAlias = PathSet | SupportedNativePythonData | None | Collection["DataValue"]
 
-
-# a packet is a mapping from string keys to data values
-Packet: TypeAlias = Mapping[str, DataValue]
-
-# a batch is a tuple of a tag and a list of packets
-Batch: TypeAlias = tuple[Tag, Collection[Packet]]
 
 
 class PodFunction(Protocol):
@@ -68,7 +51,7 @@ class PodFunction(Protocol):
 
 
 class TypeHandler(Protocol):
-    """Protocol for handling conversion between Python types and underlying Arrow
+    """Protocol for handling conversion between Python type and Arrow
     data types used for storage.
 
     The handler itself IS the definition of a semantic type. The semantic type
@@ -78,11 +61,11 @@ class TypeHandler(Protocol):
     and focus purely on conversion logic.
     """
 
-    def python_types(self) -> type | tuple[type, ...]:
+    def python_type(self) -> type:
         """Return the Python type(s) this handler can process.
 
         Returns:
-            Single Type or tuple of Types this handler supports
+            Python type the handler supports
 
         Examples:
             - PathHandler: return Path
@@ -91,7 +74,7 @@ class TypeHandler(Protocol):
         """
         ...
 
-    def storage_type(self) -> pa.DataType:
+    def storage_type(self) -> type:
         """Return the Arrow DataType instance for schema definition."""
         ...
 

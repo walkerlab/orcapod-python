@@ -79,7 +79,7 @@ class ObjectHasher(ABC):
 
 
 @runtime_checkable
-class FileHasher(Protocol):
+class FileContentHasher(Protocol):
     """Protocol for file-related hashing."""
 
     def hash_file(self, file_path: PathLike) -> bytes: ...
@@ -104,7 +104,7 @@ class PacketHasher(Protocol):
 class ArrowHasher(Protocol):
     """Protocol for hashing arrow packets."""
 
-    def hash_table(self, table: pa.Table) -> str: ...
+    def hash_table(self, table: pa.Table, add_prefix: bool = True) -> str: ...
 
 
 @runtime_checkable
@@ -118,7 +118,7 @@ class StringCacher(Protocol):
 
 # Combined interface for convenience (optional)
 @runtime_checkable
-class CompositeFileHasher(FileHasher, PathSetHasher, PacketHasher, Protocol):
+class CompositeFileHasher(FileContentHasher, PathSetHasher, PacketHasher, Protocol):
     """Combined interface for all file-related hashing operations."""
 
     pass
@@ -142,6 +142,14 @@ class SemanticTypeHasher(Protocol):
     """Abstract base class for semantic type-specific hashers."""
 
     @abstractmethod
-    def hash_column(self, column: pa.Array) -> list[bytes]:
+    def hash_column(
+        self,
+        column: pa.Array,
+    ) -> pa.Array:
         """Hash a column with this semantic type and return the hash bytes."""
+        pass
+
+    @abstractmethod
+    def set_cacher(self, cacher: StringCacher) -> None:
+        """Add a string cacher for caching hash values."""
         pass

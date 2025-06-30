@@ -4,6 +4,7 @@ from itertools import chain
 from typing import Any
 
 from orcapod.types import Packet, Tag, TypeSpec
+from orcapod.types.typespec_utils import union_typespecs, intersection_typespecs
 from orcapod.hashing import function_content_hash, hash_function
 from orcapod.core.base import Kernel, SyncStream, Operator
 from orcapod.core.streams import SyncStreamFromGenerator
@@ -11,11 +12,8 @@ from orcapod.utils.stream_utils import (
     batch_packet,
     batch_tags,
     check_packet_compatibility,
-    intersection_typespecs,
     join_tags,
     semijoin_tags,
-    union_typespecs,
-    intersection_typespecs,
     fill_missing
 )
 
@@ -268,7 +266,7 @@ class Join(Operator):
                             raise ValueError(
                                 f"Packets are not compatible: {left_packet} and {right_packet}"
                             )
-                        yield joined_tag, {**left_packet, **right_packet}
+                        yield joined_tag, Packet({**left_packet, **right_packet})
 
         return SyncStreamFromGenerator(generator)
 
@@ -307,7 +305,7 @@ class FirstMatch(Operator):
                             )
                         # match is found - remove the packet from the inner stream
                         inner_stream.pop(idx)
-                        yield joined_tag, {**outer_packet, **inner_packet}
+                        yield joined_tag, Packet({**outer_packet, **inner_packet})
                         # if enough matches found, move onto the next outer stream packet
                         break
 
@@ -402,11 +400,11 @@ class MapPackets(Operator):
         def generator():
             for tag, packet in stream:
                 if self.drop_unmapped:
-                    packet = {
+                    packet = Packet({
                         v: packet[k] for k, v in self.key_map.items() if k in packet
-                    }
+                    })
                 else:
-                    packet = {self.key_map.get(k, k): v for k, v in packet.items()}
+                    packet = Packet({self.key_map.get(k, k): v for k, v in packet.items()})
                 yield tag, packet
 
         return SyncStreamFromGenerator(generator)
@@ -861,9 +859,9 @@ class GroupBy(Operator):
                     if k not in new_tag:
                         new_tag[k] = [t.get(k, None) for t, _ in packets]
                 # combine all packets into a single packet
-                combined_packet: Packet = {
+                combined_packet: Packet = Packet({
                     k: [p.get(k, None) for _, p in packets] for k in packet_keys
-                }
+                })
                 yield new_tag, combined_packet
 
         return SyncStreamFromGenerator(generator)
