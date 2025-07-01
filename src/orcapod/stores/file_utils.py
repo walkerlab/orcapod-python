@@ -7,7 +7,7 @@ import logging
 import os
 from pathlib import Path
 
-from orcapod.types import PathLike, PathSet, Packet
+from orcapod.types import PathLike, PathSet, PacketLike
 from collections.abc import Collection, Callable
 
 
@@ -369,8 +369,8 @@ def redirect_open(
 
 
 def virtual_mount(
-    packet: Packet,
-) -> tuple[Packet, dict[str, str], dict[str, str]]:
+    packet: PacketLike,
+) -> tuple[PacketLike, dict[str, str], dict[str, str]]:
     """
     Visit all pathset within the packet, and convert them to alternative path
     representation. By default, full path is mapped to the file name. If two or
