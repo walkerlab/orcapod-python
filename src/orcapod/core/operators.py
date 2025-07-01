@@ -262,11 +262,7 @@ class Join(Operator):
             for left_tag, left_packet in left_stream_buffered:
                 for right_tag, right_packet in right_stream_buffered:
                     if (joined_tag := join_tags(left_tag, right_tag)) is not None:
-                        if not check_packet_compatibility(left_packet, right_packet):
-                            raise ValueError(
-                                f"Packets are not compatible: {left_packet} and {right_packet}"
-                            )
-                        yield joined_tag, Packet({**left_packet, **right_packet})
+                        yield joined_tag, left_packet.join(right_packet)
 
         return SyncStreamFromGenerator(generator)
 
@@ -399,13 +395,7 @@ class MapPackets(Operator):
 
         def generator():
             for tag, packet in stream:
-                if self.drop_unmapped:
-                    packet = Packet({
-                        v: packet[k] for k, v in self.key_map.items() if k in packet
-                    })
-                else:
-                    packet = Packet({self.key_map.get(k, k): v for k, v in packet.items()})
-                yield tag, packet
+                yield tag, packet.map_keys(self.key_map, self.drop_unmapped)
 
         return SyncStreamFromGenerator(generator)
 

@@ -46,7 +46,54 @@ class Packet(dict[str, DataValue]):
         for k, v in self.source_info.items():
             composite[f"_source_info_{k}"] = v
         return composite
+    
+    def map_keys(self, mapping: Mapping[str, str], drop_unmapped: bool=False) -> 'Packet':
+        """
+        Map the keys of the packet using the provided mapping.
 
+        Args:
+            mapping: A dictionary mapping old keys to new keys.
+
+        Returns:
+            A new Packet with keys mapped according to the provided mapping.
+        """
+        if drop_unmapped:
+            new_content = {
+                v: self[k] for k, v in mapping.items() if k in self
+            }
+            new_typespec = {
+                v: self.typespec[k] for k, v in mapping.items() if k in self.typespec
+            }
+            new_source_info = {
+                v: self.source_info[k] for k, v in mapping.items() if k in self.source_info
+            }
+        else:
+            new_content = {mapping.get(k, k): v for k, v in self.items()}
+            new_typespec = {mapping.get(k, k): v for k, v in self.typespec.items()}
+            new_source_info = {mapping.get(k, k): v for k, v in self.source_info.items()}
+
+        return Packet(new_content, typespec=new_typespec, source_info=new_source_info)
+    
+    def join(self, other: 'Packet') -> 'Packet':
+        """
+        Join another packet to this one, merging their keys and values.
+
+        Args:
+            other: Another Packet to join with this one.
+
+        Returns:
+            A new Packet with keys and values from both packets.
+        """
+        # make sure there is no key collision
+        if not set(self.keys()).isdisjoint(other.keys()):
+            raise ValueError(f"Key collision detected: packets {self} and {other} have overlapping keys"
+                             " and cannot be joined without losing information.")
+
+        new_content = {**self, **other}
+        new_typespec = {**self.typespec, **other.typespec}
+        new_source_info = {**self.source_info, **other.source_info}
+        
+        return Packet(new_content, typespec=new_typespec, source_info=new_source_info)
 
 
 # a batch is a tuple of a tag and a list of packets
