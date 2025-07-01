@@ -4,10 +4,6 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Collection, Iterator
 from typing import Any
 
-
-from orcapod.hashing import HashableMixin, ObjectHasher
-from orcapod.hashing import get_default_object_hasher
-
 from orcapod.hashing import ContentIdentifiableBase
 from orcapod.types import Packet, Tag, TypeSpec
 from orcapod.types.typespec_utils import get_typespec_from_dict

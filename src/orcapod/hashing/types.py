@@ -43,7 +43,13 @@ class ObjectHasher(ABC):
         """
         ...
 
-    def hash_to_hex(self, obj: Any, char_count: int | None = None) -> str:
+    @abstractmethod
+    def get_hasher_id(self) -> str: 
+        """
+        Returns a unique identifier/name assigned to the hasher
+        """
+
+    def hash_to_hex(self, obj: Any, char_count: int | None = None, prefix_hasher_id:bool=False) -> str:
         hash_bytes = self.hash(obj)
         hex_str = hash_bytes.hex()
 
@@ -53,7 +59,9 @@ class ObjectHasher(ABC):
                 raise ValueError(
                     f"Cannot truncate to {char_count} chars, hash only has {len(hex_str)}"
                 )
-            return hex_str[:char_count]
+            hex_str = hex_str[:char_count]
+        if prefix_hasher_id:
+            hex_str = self.get_hasher_id() + ":" + hex_str
         return hex_str
 
     def hash_to_int(self, obj: Any, hexdigits: int = 16) -> int:
@@ -74,7 +82,6 @@ class ObjectHasher(ABC):
         self, obj: Any, namespace: uuid.UUID = uuid.NAMESPACE_OID
     ) -> uuid.UUID:
         """Convert hash to proper UUID5."""
-        # Use the hex representation as input to UUID5
         return uuid.uuid5(namespace, self.hash(obj))
 
 
@@ -88,8 +95,9 @@ class FileContentHasher(Protocol):
 @runtime_checkable
 class ArrowHasher(Protocol):
     """Protocol for hashing arrow packets."""
+    def get_hasher_id(self) -> str: ...
 
-    def hash_table(self, table: pa.Table, add_prefix: bool = True) -> str: ...
+    def hash_table(self, table: pa.Table, prefix_hasher_id: bool = True) -> str: ...
 
 
 @runtime_checkable

@@ -149,7 +149,6 @@ class KernelInvocationWrapper(Kernel):
     def output_iterator_completion_hook(self) -> None: ...
 
 
-
 class CachedKernelWrapper(KernelInvocationWrapper, Source):
     """
     A Kernel wrapper that wraps a kernel and stores the outputs of the kernel.
@@ -216,7 +215,7 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         self.update_cached_values()
 
     def update_cached_values(self):
-        self.source_info = self.store_path_prefix + (self.label, self.kernel_hasher.hash_to_hex(self.kernel))
+        self.source_info = self.store_path_prefix + (self.label, self.kernel_hasher.hash_to_hex(self.kernel, prefix_hasher_id=True))
         self.tag_keys, self.packet_keys = self.keys(trigger_run=False)
         self.tag_typespec, self.packet_typespec = self.types(trigger_run=False)
         if self.tag_typespec is None or self.packet_typespec is None:
@@ -271,7 +270,7 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         merged_info = {**tag, **packet.get_composite()}
         output_table = self.output_converter.from_python_packet_to_arrow_table(merged_info)
         # TODO: revisit this logic
-        output_id = self.arrow_hasher.hash_table(output_table)
+        output_id = self.arrow_hasher.hash_table(output_table, prefix_hasher_id=True)
         if not self.output_store.get_record(self.source_info, output_id):
             self.output_store.add_record(
                 self.source_info,
@@ -425,13 +424,18 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         self.update_cached_values()
 
     def update_cached_values(self) -> None:
-        self.function_pod_hash = self.object_hasher.hash_to_hex(self.function_pod)
+        self.function_pod_hash = self.object_hasher.hash_to_hex(self.function_pod, prefix_hasher_id=True)
+        self.input_typespec, self.output_typespec = self.function_pod.get_function_typespecs()
         self.tag_keys, self.output_keys = self.keys(trigger_run=False)
+        
+        
+
         if self.tag_keys is None or self.output_keys is None:
             raise ValueError(
                 "Currently, cached function pod wrapper can only work with function pods that have keys defined."
             )
-        self.all_keys = tuple(self.tag_keys) + tuple(self.output_keys)
+        self.tag_keys = tuple(self.tag_keys)
+        self.output_keys = tuple(self.output_keys)
         self.tag_typespec, self.output_typespec = self.types(trigger_run=False)
         if self.tag_typespec is None or self.output_typespec is None:
             raise ValueError(
@@ -475,7 +479,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         return super().forward(*streams, **kwargs)
 
     def get_packet_key(self, packet: Packet) -> str:
-        return self.arrow_hasher.hash_table(self.input_converter.from_python_packet_to_arrow_table(packet))
+        return self.arrow_hasher.hash_table(self.input_converter.from_python_packet_to_arrow_table(packet), prefix_hasher_id=True)
 
     @property
     def source_info(self):
@@ -502,7 +506,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
 
         table = self.tag_record_converter.from_python_packet_to_arrow_table(combined_info)
 
-        entry_hash = self.arrow_hasher.hash_table(table)
+        entry_hash = self.arrow_hasher.hash_table(table, prefix_hasher_id=True)
 
         # TODO: add error handling
         # check if record already exists:
@@ -658,8 +662,8 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
             ["__packet_key"]
         )
         if not keep_hidden_fields:
-            pl_df = pl_df.select(self.all_keys)
-        return pl_df
+            pl_df = pl_df.select(self.tag_keys + self.output_keys)
+        return pl_df.lazy()
 
     @property
     def df(self) -> pl.DataFrame | None:

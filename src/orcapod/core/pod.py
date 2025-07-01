@@ -13,8 +13,8 @@ from orcapod.types.packets import PacketConverter
 
 from orcapod.hashing import (
     FunctionInfoExtractor,
-    get_function_signature,
 )
+from orcapod.hashing.legacy_core import get_function_signature
 from orcapod.core import Kernel
 from orcapod.core.operators import Join
 from orcapod.core.streams import (

@@ -4,16 +4,21 @@ from .legacy_core import legacy_hash
 from .hash_utils import hash_object
 
 
-class DefaultObjectHasher(ObjectHasher):
+class BasicObjectHasher(ObjectHasher):
     """
     Default object hasher used throughout the codebase.
     """
 
     def __init__(
         self,
+        hasher_id: str,
         function_info_extractor: FunctionInfoExtractor | None = None,
     ):
+        self._hasher_id = hasher_id
         self.function_info_extractor = function_info_extractor
+
+    def get_hasher_id(self) -> str:
+        return self._hasher_id
 
     def hash(self, obj: object) -> bytes:
         """

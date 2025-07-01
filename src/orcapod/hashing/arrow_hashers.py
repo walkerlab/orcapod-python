@@ -73,7 +73,6 @@ class SemanticArrowHasher:
 
         This is a no-op for SemanticArrowHasher since it hashes column contents directly.
         """
-        # SemanticArrowHasher does not use string caching, so this is a no-op
         if semantic_type in self.semantic_type_hashers:
             self.semantic_type_hashers[semantic_type].set_cacher(cacher)
         else:
@@ -179,7 +178,7 @@ class SemanticArrowHasher:
 
         return buffer.getvalue()
 
-    def hash_table(self, table: pa.Table, add_prefix: bool = True) -> str:
+    def hash_table(self, table: pa.Table, prefix_hasher_id: bool = True) -> str:
         """
         Compute stable hash of Arrow table.
 
@@ -208,7 +207,7 @@ class SemanticArrowHasher:
         hasher.update(serialized_bytes)
 
         hash_str = hasher.hexdigest()
-        if add_prefix:
+        if prefix_hasher_id:
             hash_str = f"{self.get_hasher_id()}:{hash_str}"
 
         return hash_str

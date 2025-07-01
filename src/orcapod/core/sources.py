@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from orcapod.core.base import Source
-from orcapod.hashing import hash_function
+from orcapod.hashing.legacy_core import hash_function
 from orcapod.core.streams import SyncStream, SyncStreamFromGenerator
 from orcapod.types import Packet, Tag
 

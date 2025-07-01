@@ -5,7 +5,6 @@ from typing import Any
 
 from orcapod.types import Packet, Tag, TypeSpec
 from orcapod.types.typespec_utils import union_typespecs, intersection_typespecs
-from orcapod.hashing import function_content_hash, hash_function
 from orcapod.core.base import Kernel, SyncStream, Operator
 from orcapod.core.streams import SyncStreamFromGenerator
 from orcapod.utils.stream_utils import (

@@ -4,7 +4,7 @@ import shutil
 from os import PathLike
 from pathlib import Path
 
-from orcapod.hashing import hash_packet
+from orcapod.hashing.legacy_core import hash_packet
 from orcapod.hashing.types import LegacyPacketHasher
 from orcapod.hashing.defaults import get_default_composite_file_hasher
 from orcapod.stores.types import DataStore

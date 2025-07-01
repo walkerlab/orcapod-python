@@ -9,11 +9,11 @@ from orcapod.hashing.types import (
 from orcapod.hashing.file_hashers import BasicFileHasher, LegacyPathLikeHasherFactory
 from orcapod.hashing.string_cachers import InMemoryCacher
 from orcapod.hashing.object_hashers import ObjectHasher
-from orcapod.hashing.object_hashers import DefaultObjectHasher, LegacyObjectHasher
+from orcapod.hashing.object_hashers import LegacyObjectHasher
 from orcapod.hashing.function_info_extractors import FunctionInfoExtractorFactory
 from orcapod.hashing.arrow_hashers import SemanticArrowHasher
 from orcapod.hashing.semantic_type_hashers import PathHasher
-from orcapod.hashing.versioned_hashers import get_versioned_semantic_arrow_hasher
+from orcapod.hashing.versioned_hashers import get_versioned_semantic_arrow_hasher, get_versioned_object_hasher
 
 
 def get_default_arrow_hasher(
@@ -36,6 +36,21 @@ def get_default_arrow_hasher(
     return arrow_hasher
 
 
+def get_default_object_hasher() -> ObjectHasher:
+    object_hasher = get_versioned_object_hasher()
+    return object_hasher
+    
+
+
+def get_legacy_object_hasher() -> ObjectHasher:
+    function_info_extractor = (
+        FunctionInfoExtractorFactory.create_function_info_extractor(
+            strategy="signature"
+        )
+    )
+    return LegacyObjectHasher(function_info_extractor=function_info_extractor)
+
+
 def get_default_composite_file_hasher(with_cache=True) -> LegacyCompositeFileHasher:
     if with_cache:
         # use unlimited caching
@@ -48,21 +63,3 @@ def get_default_composite_file_hasher_with_cacher(cacher=None) -> LegacyComposit
     if cacher is None:
         cacher = InMemoryCacher(max_size=None)
     return LegacyPathLikeHasherFactory.create_cached_legacy_composite(cacher)
-
-
-def get_default_object_hasher() -> ObjectHasher:
-    function_info_extractor = (
-        FunctionInfoExtractorFactory.create_function_info_extractor(
-            strategy="signature"
-        )
-    )
-    return DefaultObjectHasher(function_info_extractor=function_info_extractor)
-
-
-def get_legacy_object_hasher() -> ObjectHasher:
-    function_info_extractor = (
-        FunctionInfoExtractorFactory.create_function_info_extractor(
-            strategy="signature"
-        )
-    )
-    return LegacyObjectHasher(function_info_extractor=function_info_extractor)
