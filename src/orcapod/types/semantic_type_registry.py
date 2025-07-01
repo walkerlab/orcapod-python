@@ -1,11 +1,6 @@
-from collections.abc import Callable, Collection, Sequence, Mapping
 import logging
-from optparse import Values
-from typing import Any, get_origin, get_args
-from types import UnionType
 import pyarrow as pa
-from orcapod.types.packets import Packet, PacketLike
-from .core import TypeHandler, TypeSpec
+from .core import TypeHandler
 from dataclasses import dataclass
 
 # This mapping is expected to be stable
@@ -77,16 +72,21 @@ class SemanticTypeRegistry:
         """Get Python type for a semantic type."""
         return self._semantic_to_python_lut.get(semantic_type)
 
-
+    def lookup_handler_info(self, python_type: type) -> tuple[TypeHandler, str] | None:
+        """Lookup handler info for a Python type."""
+        for registered_type, (handler, semantic_type) in self._handlers.items():
+            if issubclass(python_type, registered_type):
+                return (handler, semantic_type)
+        return None
     
     def get_semantic_type(self, python_type: type) -> str | None:
         """Get semantic type for a Python type."""
-        handler_info = self._handlers.get(python_type)
+        handler_info = self.lookup_handler_info(python_type)
         return handler_info[1] if handler_info else None
     
     def get_handler(self, python_type: type) -> TypeHandler | None:
         """Get handler for a Python type."""
-        handler_info = self._handlers.get(python_type)
+        handler_info = self.lookup_handler_info(python_type)
         return handler_info[0] if handler_info else None
 
     def get_handler_by_semantic_type(self, semantic_type: str) -> TypeHandler | None:
@@ -110,7 +110,10 @@ class SemanticTypeRegistry:
     
     def __contains__(self, python_type: type) -> bool:
         """Check if a Python type is registered."""
-        return python_type in self._handlers
+        for registered_type in self._handlers:
+            if issubclass(python_type, registered_type):
+                return True
+        return False
 
 
 

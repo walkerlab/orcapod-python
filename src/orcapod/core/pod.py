@@ -9,7 +9,7 @@ from typing import (
 
 from orcapod.types import Packet, Tag, TypeSpec, default_registry
 from orcapod.types.typespec_utils import extract_function_typespecs
-from orcapod.types.semantic_type_registry import PacketConverter
+from orcapod.types.packets import PacketConverter
 
 from orcapod.hashing import (
     FunctionInfoExtractor,

@@ -39,27 +39,37 @@ def arrow_to_python_type(arrow_type: pa.DataType) -> type:
 
 
 
-# class PythonSchema(dict[str, type]):
-#     """
-#     A schema for Python data types, mapping string keys to Python types.
+class PythonSchema(dict[str, type]):
+    """
+    A schema for Python data types, mapping string keys to Python types.
     
-#     This is used to define the expected structure of data packets in OrcaPod.
+    This is used to define the expected structure of data packets in OrcaPod.
     
-#     Attributes
-#     ----------
-#     keys : str
-#         The keys of the schema.
-#     values : type
-#         The types corresponding to each key.
+    Attributes
+    ----------
+    keys : str
+        The keys of the schema.
+    values : type
+        The types corresponding to each key.
     
-#     Examples
-#     --------
-#     >>> schema = PythonSchema(name=str, age=int)
-#     >>> print(schema)
-#     {'name': <class 'str'>, 'age': <class 'int'>}
-#     """
+    Examples
+    --------
+    >>> schema = PythonSchema(name=str, age=int)
+    >>> print(schema)
+    {'name': <class 'str'>, 'age': <class 'int'>}
+    """
+    @property
+    def with_source_info(self) -> dict[str, type]:
+        """
+        Get the schema with source info fields included.
+        
+        Returns
+        -------
+        dict[str, type|None]
+            A new schema including source info fields.
+        """
+        return {**self, **{f'_source_info_{k}': str for k in self.keys()}}
 
-PythonSchema = TypeSpec
 
 
 class SemanticSchema(dict[str, tuple[type, str|None]]):
@@ -112,10 +122,42 @@ class SemanticSchema(dict[str, tuple[type, str|None]]):
             The semantic type associated with the key, or None if not found.
         """
         return self.get(key, (None, None))[1]
+    
+    @property
+    def storage_schema(self) -> PythonSchema:
+        """
+        Get the storage schema, which is a PythonSchema representation of the semantic schema.
+        
+        Returns
+        -------
+        PythonSchema
+            A new schema mapping keys to Python types.
+        """
+        return PythonSchema({k: v[0] for k, v in self.items()})
+
+    
+    @property
+    def storage_schema_with_source_info(self) -> dict[str, type]:
+        """
+        Get the storage schema with source info fields included.
+        
+        Returns
+        -------
+        dict[str, type]
+            A new schema including source info fields.
+        
+        Examples
+        --------
+        >>> semantic_schema = SemanticSchema(name=(str, 'name'), age=(int, None))
+        >>> storage_schema = semantic_schema.storage_schema_with_source_info
+        >>> print(storage_schema)
+        {'name': <class 'str'>, 'age': <class 'int'>, '_source_info_name': <class 'str'>, '_source_info_age': <class 'str'>}
+        """
+        return self.storage_schema.with_source_info
 
 
-def from_python_schema_to_semantic_schema(
-    python_schema: PythonSchema,
+def from_typespec_to_semantic_schema(
+    typespec: TypeSpec,
     semantic_type_registry: SemanticTypeRegistry,
 ) -> SemanticSchema:
     """
@@ -123,8 +165,8 @@ def from_python_schema_to_semantic_schema(
     
     Parameters
     ----------
-    python_schema : PythonSchema
-        The schema to convert, mapping keys to Python types.
+    typespec : TypeSpec
+        The typespec to convert, mapping keys to Python types.
     semantic_type_registry : SemanticTypeRegistry
         The registry containing semantic type information.
     
@@ -135,13 +177,13 @@ def from_python_schema_to_semantic_schema(
     
     Examples
     --------
-    >>> python_schema = PythonSchema(name=str, age=int)
-    >>> semantic_schema = from_python_schema_to_semantic_schema(python_schema, registry)
+    >>> typespec: TypeSpec = dict(name=str, age=int)
+    >>> semantic_schema = from_typespec_to_semanticn_schema(typespec, registry)
     >>> print(semantic_schema)
     {'name': (<class 'str'>, None), 'age': (<class 'int'>, None)}
     """
     semantic_schema = {}
-    for key, python_type in python_schema.items():
+    for key, python_type in typespec.items():
         if python_type in semantic_type_registry:
             type_info = semantic_type_registry.get_type_info(python_type)
             assert type_info is not None, f"Type {python_type} should be found in the registry as `in` returned True"
@@ -176,13 +218,13 @@ def from_semantic_schema_to_python_schema(
     >>> print(python_schema)
     {'name': <class 'str'>, 'age': <class 'int'>}
     """
-    python_schema = {}
+    python_schema_content = {}
     for key, (python_type, semantic_type) in semantic_schema.items():
         if semantic_type is not None:
             # If the semantic type is registered, use the corresponding Python type
             python_type = semantic_type_registry.get_python_type(semantic_type)
-        python_schema[key] = python_type
-    return python_schema
+        python_schema_content[key] = python_type
+    return PythonSchema(python_schema_content)
 
 def from_semantic_schema_to_arrow_schema(
     semantic_schema: SemanticSchema,
@@ -223,7 +265,6 @@ def from_semantic_schema_to_arrow_schema(
 
 def from_arrow_schema_to_semantic_schema(
     arrow_schema: pa.Schema,
-    semantic_type_registry: SemanticTypeRegistry | None = None,
 ) -> SemanticSchema:
     """
     Convert an Arrow schema to a semantic schema.
@@ -253,15 +294,39 @@ def from_arrow_schema_to_semantic_schema(
             continue
         semantic_type = field.metadata.get(b'semantic_type', None)
         semantic_type = semantic_type.decode() if semantic_type else None
-        if semantic_type:
-            if semantic_type_registry is None:
-                raise ValueError("Semantic type registry must be provided for semantic types")
-            python_type = semantic_type_registry.get_python_type(semantic_type)
-            if python_type is None:
-                raise ValueError(f"Semantic type '{semantic_type}' is not registered in the registry")
-        else:
-            python_type = arrow_to_python_type(field.type)
-
+        python_type = arrow_to_python_type(field.type)
         semantic_schema[field.name] = (python_type, semantic_type)
     return SemanticSchema(semantic_schema)
 
+def from_typespec_to_arrow_schema(typespec: TypeSpec,
+    semantic_type_registry: SemanticTypeRegistry, include_source_info: bool = True) -> pa.Schema:
+    semantic_schema = from_typespec_to_semantic_schema(typespec, semantic_type_registry)
+    return from_semantic_schema_to_arrow_schema(semantic_schema, include_source_info=include_source_info)
+
+
+def from_arrow_schema_to_python_schema(
+    arrow_schema: pa.Schema,
+    semantic_type_registry: SemanticTypeRegistry,
+) -> PythonSchema:
+    """
+    Convert an Arrow schema to a Python schema.
+    
+    Parameters
+    ----------
+    arrow_schema : pa.Schema
+        The schema to convert, containing fields with metadata.
+    
+    Returns
+    -------
+    PythonSchema
+        A new schema mapping keys to Python types.
+    
+    Examples
+    --------
+    >>> arrow_schema = pa.schema([pa.field('name', pa.string()), pa.field('age', pa.int64())])
+    >>> python_schema = from_arrow_schema_to_python_schema(arrow_schema)
+    >>> print(python_schema)
+    {'name': <class 'str'>, 'age': <class 'int'>}
+    """
+    semantic_schema = from_arrow_schema_to_semantic_schema(arrow_schema)
+    return from_semantic_schema_to_python_schema(semantic_schema, semantic_type_registry)

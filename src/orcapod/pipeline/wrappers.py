@@ -1,15 +1,14 @@
 from orcapod.core.pod import Pod, FunctionPod
 from orcapod.core import SyncStream, Source, Kernel
 from orcapod.store import ArrowDataStore
-from orcapod.types import Tag, Packet, TypeSpec, default_registry
+from orcapod.types import Tag, Packet, PacketLike, TypeSpec, default_registry
 from orcapod.types.typespec_utils import get_typespec_from_dict, union_typespecs, extract_function_typespecs
-from orcapod.types.semantic_type_registry import create_arrow_table_with_meta
+from orcapod.types.semantic_type_registry import SemanticTypeRegistry
+from orcapod.types import packets, schemas
 from orcapod.hashing import ObjectHasher, ArrowHasher
 from orcapod.hashing.defaults import get_default_object_hasher, get_default_arrow_hasher
 from typing import Any, Literal
 from collections.abc import Collection, Iterator
-from orcapod.types.semantic_type_registry import TypeRegistry
-from orcapod.types.packet_converter import PacketConverter
 import pyarrow as pa
 import polars as pl
 from orcapod.core.streams import SyncStreamFromGenerator
@@ -18,12 +17,15 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+def get_tag_typespec(tag: Tag) -> dict[str, type]:
+    return {k: str for k in tag}
 
 
 class PolarsSource(Source):
-    def __init__(self, df: pl.DataFrame, tag_keys: Collection[str] | None = None):
+    def __init__(self, df: pl.DataFrame, tag_keys: Collection[str], packet_keys: Collection[str]|None = None):
         self.df = df
         self.tag_keys = tag_keys
+        self.packet_keys = packet_keys
 
     def forward(self, *streams: SyncStream, **kwargs) -> SyncStream:
         if len(streams) != 0:
@@ -31,19 +33,25 @@ class PolarsSource(Source):
                 "PolarsSource does not support forwarding streams. "
                 "It generates its own stream from the DataFrame."
             )
-        return PolarsStream(self.df, self.tag_keys)
+        return PolarsStream(self.df, self.tag_keys, self.packet_keys)
 
 
 class PolarsStream(SyncStream):
-    def __init__(self, df: pl.DataFrame, tag_keys: Collection[str]):
+    def __init__(self, df: pl.DataFrame, tag_keys: Collection[str], packet_keys: Collection[str] | None = None):
         self.df = df
-        self.tag_keys = tag_keys
+        self.tag_keys = tuple(tag_keys)
+        self.packet_keys = tuple(packet_keys) if packet_keys is not None else None
 
     def __iter__(self) -> Iterator[tuple[Tag, Packet]]:
-        for row in self.df.iter_rows(named=True):
+        df = self.df
+        # if self.packet_keys is not None:
+        #     df = df.select(self.tag_keys + self.packet_keys)
+        for row in df.iter_rows(named=True):
             tag = {key: row[key] for key in self.tag_keys}
-            packet = {key: val for key, val in row.items() if key not in self.tag_keys}
-            yield tag, Packet(packet)
+            packet = {key: val for key, val in row.items() if key not in self.tag_keys and not key.startswith("_source_info_")}
+            # TODO: revisit and fix this rather hacky implementation
+            source_info = {key.removeprefix("_source_info_"):val for key, val in row.items() if key.startswith("_source_info_")}
+            yield tag, Packet(packet, source_info=source_info)
 
 
 class EmptyStream(SyncStream):
@@ -134,6 +142,13 @@ class KernelInvocationWrapper(Kernel):
             *resolved_streams, trigger_run=trigger_run
         )
 
+    
+    
+    def post_call(self, tag: Tag, packet: Packet) -> None: ...
+
+    def output_iterator_completion_hook(self) -> None: ...
+
+
 
 class CachedKernelWrapper(KernelInvocationWrapper, Source):
     """
@@ -154,7 +169,7 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         output_store: ArrowDataStore,
         kernel_hasher: ObjectHasher | None = None,
         arrow_packet_hasher: ArrowHasher | None = None,
-        packet_type_registry: TypeRegistry | None = None,
+        packet_type_registry: SemanticTypeRegistry | None = None,
         **kwargs,
     ) -> None:
         super().__init__(kernel, input_streams, **kwargs)
@@ -172,9 +187,7 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
             packet_type_registry = default_registry
         self._packet_type_registry = packet_type_registry
 
-        self.source_info = self.label, self.kernel_hasher.hash_to_hex(self.kernel)
-        self.tag_keys, self.packet_keys = self.keys(trigger_run=False)
-        self.output_converter = None
+        self.update_cached_values()
 
         self._cache_computed = False
 
@@ -203,29 +216,36 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
     def update_cached_values(self):
         self.source_info = self.label, self.kernel_hasher.hash_to_hex(self.kernel)
         self.tag_keys, self.packet_keys = self.keys(trigger_run=False)
-        self.output_converter = None
+        self.tag_typespec, self.packet_typespec = self.types(trigger_run=False)
+        if self.tag_typespec is None or self.packet_typespec is None:
+            raise ValueError("Currently, cached kernel wrapper can only work with kernels that have typespecs defined.")
+        # TODO: clean up and make it unnecessary to convert packet typespec
+        packet_schema = schemas.PythonSchema(self.packet_typespec)
+        joined_typespec = union_typespecs(self.tag_typespec, packet_schema.with_source_info)
+        if joined_typespec is None:
+            raise ValueError(
+                "Joined typespec should not be None. "
+                "This may happen if the tag typespec and packet typespec are incompatible."
+            )
+        # Add any additional fields to the output converter here
+        self.output_converter = packets.PacketConverter(joined_typespec, registry=self.registry, include_source_info=False)
 
+        
     def forward(self, *streams: SyncStream, **kwargs) -> SyncStream:
         if self._cache_computed:
             logger.info(f"Returning cached outputs for {self}")
             if self.df is not None:
-                return PolarsStream(self.df, tag_keys=self.tag_keys)
+                if self.tag_keys is None:
+                    raise ValueError(
+                        "CachedKernelWrapper has no tag keys defined, cannot return PolarsStream"
+                    )
+                source_info_sig = ':'.join(self.source_info)
+                return PolarsStream(self.df, tag_keys=self.tag_keys, packet_keys=self.packet_keys)
             else:
                 return EmptyStream(tag_keys=self.tag_keys, packet_keys=self.packet_keys)
 
         resolved_streams = self.resolve_input_streams(*streams)
-
         output_stream = self.kernel.forward(*resolved_streams, **kwargs)
-
-        tag_typespec, packet_typespec = output_stream.types(trigger_run=False)
-        if tag_typespec is not None and packet_typespec is not None:
-            joined_type = union_typespecs(tag_typespec, packet_typespec)
-            assert joined_type is not None, "Joined typespec should not be None"
-            all_type = dict(joined_type)
-            for k in packet_typespec:
-                all_type[f'_source_{k}'] = str
-            # 
-            self.output_converter = PacketConverter(all_type, registry=self.registry)
 
         # Cache the output stream of the underlying kernel
         # If an entry with same tag and packet already exists in the output store,
@@ -233,39 +253,37 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         def generator() -> Iterator[tuple[Tag, Packet]]:
             logger.info(f"Computing and caching outputs for {self}")
             for tag, packet in output_stream:
-                merged_info = {**tag, **packet}
-                # add entries for source_info
-                for k, v in packet.source_info.items():
-                    merged_info[f'_source_{k}'] = v
-
-                if self.output_converter is None:
-                    # TODO: cleanup logic here
-                    joined_type = get_typespec_from_dict(merged_info)
-                    assert joined_type is not None, "Joined typespec should not be None"
-                    all_type = dict(joined_type)
-                    for k in packet:
-                        all_type[f'_source_{k}'] = str
-                    self.output_converter = PacketConverter(
-                        all_type, registry=self.registry
-                    )
-
-                # add entries for source_info
-                for k, v in packet.source_info.items():
-                    merged_info[f'_source_{k}'] = v
-
-                output_table = self.output_converter.to_arrow_table(merged_info)
-                # TODO: revisit this logic
-                output_id = self.arrow_hasher.hash_table(output_table)
-                if not self.output_store.get_record(*self.source_info, output_id):
-                    self.output_store.add_record(
-                        *self.source_info,
-                        output_id,
-                        output_table,
-                    )
+                self.post_call(tag, packet)
                 yield tag, packet
-            self._cache_computed = True
+            self.output_iterator_completion_hook()
+
+        logger.info(f"Results cached for {self}")
+        self._cache_computed = True
 
         return SyncStreamFromGenerator(generator)
+
+    def post_call(self, tag: Tag, packet: Packet) -> None:
+        # Cache the output stream of the underlying kernel
+        # If an entry with same tag and packet already exists in the output store,
+        # it will not be added again, thus avoiding duplicates.
+        merged_info = {**tag, **packet.get_composite()}
+        output_table = self.output_converter.from_python_packet_to_arrow_table(merged_info)
+        # TODO: revisit this logic
+        output_id = self.arrow_hasher.hash_table(output_table)
+        if not self.output_store.get_record(*self.source_info, output_id):
+            self.output_store.add_record(
+                *self.source_info,
+                output_id,
+                output_table,
+            )
+
+    def output_iterator_completion_hook(self) -> None:
+        """
+        Hook to be called when the generator is completed.
+        """
+        logger.info(f"Results cached for {self}")
+        self._cache_computed = True
+
 
     @property
     def lazy_df(self) -> pl.LazyFrame | None:
@@ -333,7 +351,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         error_handling: Literal["raise", "ignore", "warn"] = "raise",
         object_hasher: ObjectHasher | None = None,
         arrow_hasher: ArrowHasher | None = None,
-        registry: TypeRegistry | None = None,
+        registry: SemanticTypeRegistry | None = None,
         **kwargs,
     ) -> None:
         super().__init__(
@@ -391,11 +409,11 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         self.update_cached_values()
 
     @property
-    def registry(self) -> TypeRegistry:
+    def registry(self) -> SemanticTypeRegistry:
         return self._registry
 
     @registry.setter
-    def registry(self, registry: TypeRegistry | None = None):
+    def registry(self, registry: SemanticTypeRegistry | None = None):
         if registry is None:
             registry = default_registry
         self._registry = registry
@@ -405,11 +423,29 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
     def update_cached_values(self) -> None:
         self.function_pod_hash = self.object_hasher.hash_to_hex(self.function_pod)
         self.tag_keys, self.output_keys = self.keys(trigger_run=False)
+        if self.tag_keys is None or self.output_keys is None:
+            raise ValueError(
+                "Currently, cached function pod wrapper can only work with function pods that have keys defined."
+            )
+        self.all_keys = tuple(self.tag_keys) + tuple(self.output_keys)
+        self.tag_typespec, self.output_typespec = self.types(trigger_run=False)
+        if self.tag_typespec is None or self.output_typespec is None:
+            raise ValueError(
+                "Currently, cached function pod wrapper can only work with function pods that have typespecs defined."
+            )
         self.input_typespec, self.output_typespec = (
             self.function_pod.get_function_typespecs()
         )
-        self.input_converter = PacketConverter(self.input_typespec, self.registry)
-        self.output_converter = PacketConverter(self.output_typespec, self.registry)
+
+        self.input_converter = packets.PacketConverter(self.input_typespec, self.registry, include_source_info=False)
+        self.output_converter = packets.PacketConverter(self.output_typespec, self.registry, include_source_info=True)
+
+        input_packet_source_typespec = {f'_source_info_{k}': str for k in self.input_typespec}
+
+        # prepare typespec for tag record: __packet_key, tag, input packet source_info,
+        tag_record_typespec = {"__packet_key": str, **self.tag_typespec, **input_packet_source_typespec}
+        self.tag_record_converter = packets.PacketConverter(tag_record_typespec, self.registry, include_source_info=False)
+
 
     def reset_cache(self):
         self._cache_computed = False
@@ -425,14 +461,17 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         if self._cache_computed:
             logger.info(f"Returning cached outputs for {self}")
             if self.df is not None:
-                return PolarsStream(self.df, self.tag_keys)
+                if self.tag_keys is None:
+                    raise ValueError("Tag keys are not set, cannot return PolarsStream")
+                
+                return PolarsStream(self.df, self.tag_keys, packet_keys=self.output_keys)
             else:
                 return EmptyStream(tag_keys=self.tag_keys, packet_keys=self.output_keys)
         logger.info(f"Computing and caching outputs for {self}")
         return super().forward(*streams, **kwargs)
 
     def get_packet_key(self, packet: Packet) -> str:
-        return self.arrow_hasher.hash_table(self.input_converter.to_arrow_table(packet))
+        return self.arrow_hasher.hash_table(self.input_converter.from_python_packet_to_arrow_table(packet))
 
     @property
     def source_info(self):
@@ -455,11 +494,9 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         combined_info = dict(tag)  # ensure we don't modify the original tag
         combined_info["__packet_key"] = packet_key
         for k, v in packet_source_info.items():
-            combined_info[f'__{k}_source'] = v
+            combined_info[f'_source_info_{k}'] = v
 
-        # TODO: consider making this more efficient
-        # convert tag to arrow table - columns are labeled with metadata source=tag
-        table = create_arrow_table_with_meta(combined_info, {"source": "tag"})
+        table = self.tag_record_converter.from_python_packet_to_arrow_table(combined_info)
 
         entry_hash = self.arrow_hasher.hash_table(table)
 
@@ -492,7 +529,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         )
         if arrow_table is None:
             return None
-        packets = self.function_pod.output_converter.from_arrow_table(arrow_table)
+        packets = self.output_converter.from_arrow_table_to_python_packets(arrow_table)
         # since memoizing single packet, it should only contain one packet
         assert len(packets) == 1, (
             f"Memoizing single packet return {len(packets)} packets!"
@@ -509,10 +546,10 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         Returns the memoized packet.
         """
         logger.debug("Memoizing packet")
-        return self._memoize_with_packet_key(self.get_packet_key(packet), output_packet)
+        return self._memoize_with_packet_key(self.get_packet_key(packet), output_packet.get_composite())
 
     def _memoize_with_packet_key(
-        self, packet_key: str, output_packet: Packet
+        self, packet_key: str, output_packet: PacketLike
     ) -> Packet:
         """
         Memoize the output packet in the data store, looking up by packet key.
@@ -521,11 +558,11 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         logger.debug(f"Memoizing packet with key {packet_key}")
         # TODO: this logic goes through the entire store and retrieve cycle with two conversions
         # consider simpler alternative
-        packets = self.output_converter.from_arrow_table(
+        packets = self.output_converter.from_arrow_table_to_python_packets(
             self.output_store.add_record(
                 *self.source_info,
                 packet_key,
-                self.output_converter.to_arrow_table(output_packet),
+                self.output_converter.from_python_packet_to_arrow_table(output_packet),
             )
         )
         # since passed in a single packet, it should only return a single packet
@@ -535,9 +572,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         packet = packets[0]
         # TODO: reconsider the right place to attach this information
         # attach provenance information
-        packet_source_id = ":".join(self.source_info + (packet_key,))
-        source_info = {k: f'{packet_source_id}:{k}' for k in packet}
-        return Packet(packet, source_info=source_info)
+        return Packet(packet)
 
 
     def call(self, tag: Tag, packet: Packet) -> tuple[Tag, Packet | None]:
@@ -567,6 +602,10 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
             if output_packet is not None and not self.skip_memoization:
                 # output packet may be modified by the memoization process
                 # e.g. if the output is a file, the path may be changed
+                  # add source info to the output packet
+                source_info = {k: '-'.join(self.source_info) + "-" + packet_key for k in output_packet.source_info}
+                # TODO: fix and make this not access protected field directly
+                output_packet.source_info = source_info
                 output_packet = self._memoize_with_packet_key(packet_key, output_packet)  # type: ignore
 
         if output_packet is None:
@@ -593,7 +632,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
             return data.drop("__packet_key") if data is not None else None
         return data
 
-    def get_all_entries_with_tags(self) -> pl.LazyFrame | None:
+    def get_all_entries_with_tags(self, keep_hidden_fields: bool = False) -> pl.LazyFrame | None:
         """
         Retrieve all entries from the tag store with their associated tags.
         Returns a DataFrame with columns for tag and packet key.
@@ -612,9 +651,12 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         if result_packets is None:
             return None
 
-        return pl.concat([tag_records, result_packets], how="horizontal").drop(
+        pl_df = pl.concat([tag_records, result_packets], how="horizontal").drop(
             ["__packet_key"]
         )
+        if not keep_hidden_fields:
+            pl_df = pl_df.select(self.all_keys)
+        return pl_df
 
     @property
     def df(self) -> pl.DataFrame | None:

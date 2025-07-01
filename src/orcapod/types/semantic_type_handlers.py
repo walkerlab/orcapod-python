@@ -12,8 +12,8 @@ class PathHandler:
     def python_type(self) -> type:
         return Path
 
-    def storage_type(self) -> pa.DataType:
-        return pa.string()
+    def storage_type(self) -> type:
+        return str
 
     def python_to_storage(self, value: Path) -> str:
         return str(value)
@@ -28,8 +28,8 @@ class UUIDHandler:
     def python_type(self) -> type:
         return UUID
 
-    def storage_type(self) -> pa.DataType:
-        return pa.string()
+    def storage_type(self) -> type:
+        return str
 
     def python_to_storage(self, value: UUID) -> str:
         return str(value)
@@ -44,8 +44,8 @@ class DecimalHandler:
     def python_type(self) -> type:
         return Decimal
 
-    def storage_type(self) -> pa.DataType:
-        return pa.string()
+    def storage_type(self) -> type:
+        return str
 
     def python_to_storage(self, value: Decimal) -> str:
         return str(value)
@@ -57,34 +57,14 @@ class DecimalHandler:
 class SimpleMappingHandler:
     """Handler for basic types that map directly to Arrow."""
 
-    def __init__(self, python_type: type, arrow_type: pa.DataType):
+    def __init__(self, python_type: type):
         self._python_type = python_type
-        self._arrow_type = arrow_type
 
     def python_type(self) -> type:
         return self._python_type
 
-    def storage_type(self) -> pa.DataType:
-        return self._arrow_type
-
-    def python_to_storage(self, value: Any) -> Any:
-        return value  # Direct mapping
-
-    def storage_to_python(self, value: Any) -> Any:
-        return value  # Direct mapping
-
-
-class DirectArrowHandler:
-    """Handler for types that map directly to Arrow without conversion."""
-
-    def __init__(self, arrow_type: pa.DataType):
-        self._arrow_type = arrow_type
-
-    def python_type(self) -> type:
-        return self._arrow_type
-
-    def storage_type(self) -> pa.DataType:
-        return self._arrow_type
+    def storage_type(self) -> type:
+        return self._python_type
 
     def python_to_storage(self, value: Any) -> Any:
         return value  # Direct mapping
@@ -97,10 +77,10 @@ class DateTimeHandler:
     """Handler for datetime objects."""
 
     def python_type(self) -> type:
-        return (datetime, date, time)  # Handles multiple related types
+        return datetime
 
-    def storage_type(self) -> pa.DataType:
-        return pa.timestamp("us")  # Store everything as timestamp
+    def storage_type(self) -> type:
+        return datetime
 
     def python_to_storage(self, value: datetime | date | time) -> Any:
         if isinstance(value, datetime):

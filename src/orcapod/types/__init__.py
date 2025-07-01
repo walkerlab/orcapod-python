@@ -1,5 +1,5 @@
 from .core import Tag, PathLike, PathSet, PodFunction, TypeSpec
-from .packets import Packet
+from .packets import Packet, PacketLike
 from .semantic_type_registry import SemanticTypeRegistry
 from .semantic_type_handlers import PathHandler, UUIDHandler, DateTimeHandler
 from . import semantic_type_handlers
@@ -20,7 +20,7 @@ __all__ = [
     "default_registry",
     "Tag",
     "Packet",
-    "PacketLike"
+    "PacketLike",
     "TypeSpec",
     "PathLike",
     "PathSet",

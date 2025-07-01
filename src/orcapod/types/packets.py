@@ -36,6 +36,16 @@ class Packet(dict[str, DataValue]):
     @property
     def source_info(self) -> dict[str, str | None]:
         return {key: self._source_info.get(key, None) for key in self.keys()}
+    
+    @source_info.setter
+    def source_info(self, source_info: Mapping[str, str | None]):
+        self._source_info = {key: value for key, value in source_info.items() if value is not None}
+
+    def get_composite(self) -> PacketLike:
+        composite = self.copy()
+        for k, v in self.source_info.items():
+            composite[f"_source_info_{k}"] = v
+        return composite
 
 
 
@@ -69,15 +79,20 @@ class SemanticPacket(dict[str, Any]):
             source_info = {}
         self.source_info = source_info
 
+    def get_composite(self) -> dict[str, Any]:
+        composite = self.copy()
+        for k, v in self.source_info.items():
+            composite[f"_source_info_{k}"] = v
+        return composite
 
 
 class PacketConverter:
-    def __init__(self, python_schema: schemas.PythonSchema, registry: SemanticTypeRegistry, include_source_info: bool = True):
-        self.python_schema = python_schema
+    def __init__(self, typespec: TypeSpec, registry: SemanticTypeRegistry, include_source_info: bool = True):
+        self.typespec = typespec
         self.registry = registry
 
-        self.semantic_schema = schemas.from_python_schema_to_semantic_schema(
-            python_schema, registry
+        self.semantic_schema = schemas.from_typespec_to_semantic_schema(
+            typespec, registry
         )
 
         self.include_source_info = include_source_info
@@ -90,7 +105,7 @@ class PacketConverter:
 
         self.key_handlers: dict[str, TypeHandler] = {}
 
-        self.expected_key_set = set(self.python_schema.keys())
+        self.expected_key_set = set(self.typespec.keys())
 
         for key, (_, semantic_type) in self.semantic_schema.items():
             if semantic_type is None:
@@ -168,16 +183,11 @@ class PacketConverter:
         Returns:
             Arrow table representation of the packet
         """
-        arrays = []
-        for field in self.arrow_schema:
-            value = semantic_packet.get(field.name, None)
-            arrays.append(pa.array([value], type=field.type))
-
         if self.include_source_info:
-            for field, value in semantic_packet.source_info.items():
-                arrays.append(pa.array([value], type=pa.large_string()))
+            return pa.Table.from_pylist([semantic_packet.get_composite()], schema=self.arrow_schema)
+        else:
+            return pa.Table.from_pylist([semantic_packet], schema=self.arrow_schema)
 
-        return pa.Table.from_arrays(arrays, schema=self.arrow_schema)
 
     def from_arrow_table_to_semantic_packets(self, arrow_table: pa.Table) -> Collection[SemanticPacket]:
         """Convert an Arrow table to a semantic packet.
@@ -198,8 +208,8 @@ class PacketConverter:
         semantic_packets = []
         for all_packet_content in semantic_packets_contents:
             packet_content = {k: v for k, v in all_packet_content.items() if k in self.expected_key_set}
-            source_info = {k.strip('_source_info_'): v for k, v in all_packet_content.items() if k.startswith('_source_info_')}
-            semantic_packets.append(SemanticPacket(packet_content, _semantic_schema=self.semantic_schema, _source_info=source_info))
+            source_info = {k.removeprefix('_source_info_'): v for k, v in all_packet_content.items() if k.startswith('_source_info_')}
+            semantic_packets.append(SemanticPacket(packet_content, semantic_schema=self.semantic_schema, source_info=source_info))
 
         return semantic_packets
 
@@ -213,7 +223,7 @@ class PacketConverter:
             Python packet representation of the semantic packet
         """
         # Validate packet keys
-        python_packet = Packet(semantic_packet, typespec=self.python_schema, source_info=semantic_packet.source_info)
+        python_packet = Packet(semantic_packet, typespec=self.typespec, source_info=semantic_packet.source_info)
         packet_keys = set(python_packet.keys())
         self._check_key_consistency(packet_keys)
 

@@ -10,7 +10,7 @@ from orcapod.hashing import get_default_object_hasher
 
 from orcapod.hashing import ContentIdentifiableBase
 from orcapod.types import Packet, Tag, TypeSpec
-from orcapod.types.typespec import get_typespec_from_dict
+from orcapod.types.typespec_utils import get_typespec_from_dict
 import logging
 
 
