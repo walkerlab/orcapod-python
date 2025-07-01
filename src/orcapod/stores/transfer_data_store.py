@@ -14,7 +14,9 @@ class TransferDataStore(DataStore):
         self.source_store = source_store
         self.target_store = target_store
 
-    def transfer(self, function_name: str, content_hash: str, packet: PacketLike) -> PacketLike:
+    def transfer(
+        self, function_name: str, content_hash: str, packet: PacketLike
+    ) -> PacketLike:
         """
         Transfer a memoized packet from the source store to the target store.
         """

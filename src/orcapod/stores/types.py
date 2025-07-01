@@ -48,15 +48,15 @@ class ArrowDataStore(Protocol):
     ) -> pa.Table: ...
 
     def get_record(
-        self, source_path: tuple[str,...], entry_id: str
+        self, source_path: tuple[str, ...], entry_id: str
     ) -> pa.Table | None: ...
 
-    def get_all_records(self, source_path: tuple[str,...]) -> pa.Table | None:
+    def get_all_records(self, source_path: tuple[str, ...]) -> pa.Table | None:
         """Retrieve all records for a given source as a single table."""
         ...
 
     def get_all_records_as_polars(
-        self, source_path: tuple[str,...]
+        self, source_path: tuple[str, ...]
     ) -> pl.LazyFrame | None:
         """Retrieve all records for a given source as a single Polars DataFrame."""
         ...

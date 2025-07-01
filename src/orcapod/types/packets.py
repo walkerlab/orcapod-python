@@ -12,16 +12,17 @@ PacketLike: TypeAlias = Mapping[str, DataValue]
 
 class Packet(dict[str, DataValue]):
     def __init__(
-        self, 
+        self,
         obj: PacketLike | None = None,
-        typespec: TypeSpec | None = None, 
-        source_info: dict[str, str|None] | None = None
+        typespec: TypeSpec | None = None,
+        source_info: dict[str, str | None] | None = None,
     ):
         if obj is None:
             obj = {}
         super().__init__(obj)
         if typespec is None:
             from orcapod.types.typespec_utils import get_typespec_from_dict
+
             typespec = get_typespec_from_dict(self)
         self._typespec = typespec
         if source_info is None:
@@ -36,18 +37,22 @@ class Packet(dict[str, DataValue]):
     @property
     def source_info(self) -> dict[str, str | None]:
         return {key: self._source_info.get(key, None) for key in self.keys()}
-    
+
     @source_info.setter
     def source_info(self, source_info: Mapping[str, str | None]):
-        self._source_info = {key: value for key, value in source_info.items() if value is not None}
+        self._source_info = {
+            key: value for key, value in source_info.items() if value is not None
+        }
 
     def get_composite(self) -> PacketLike:
         composite = self.copy()
         for k, v in self.source_info.items():
             composite[f"_source_info_{k}"] = v
         return composite
-    
-    def map_keys(self, mapping: Mapping[str, str], drop_unmapped: bool=False) -> 'Packet':
+
+    def map_keys(
+        self, mapping: Mapping[str, str], drop_unmapped: bool = False
+    ) -> "Packet":
         """
         Map the keys of the packet using the provided mapping.
 
@@ -58,23 +63,25 @@ class Packet(dict[str, DataValue]):
             A new Packet with keys mapped according to the provided mapping.
         """
         if drop_unmapped:
-            new_content = {
-                v: self[k] for k, v in mapping.items() if k in self
-            }
+            new_content = {v: self[k] for k, v in mapping.items() if k in self}
             new_typespec = {
                 v: self.typespec[k] for k, v in mapping.items() if k in self.typespec
             }
             new_source_info = {
-                v: self.source_info[k] for k, v in mapping.items() if k in self.source_info
+                v: self.source_info[k]
+                for k, v in mapping.items()
+                if k in self.source_info
             }
         else:
             new_content = {mapping.get(k, k): v for k, v in self.items()}
             new_typespec = {mapping.get(k, k): v for k, v in self.typespec.items()}
-            new_source_info = {mapping.get(k, k): v for k, v in self.source_info.items()}
+            new_source_info = {
+                mapping.get(k, k): v for k, v in self.source_info.items()
+            }
 
         return Packet(new_content, typespec=new_typespec, source_info=new_source_info)
-    
-    def join(self, other: 'Packet') -> 'Packet':
+
+    def join(self, other: "Packet") -> "Packet":
         """
         Join another packet to this one, merging their keys and values.
 
@@ -86,13 +93,15 @@ class Packet(dict[str, DataValue]):
         """
         # make sure there is no key collision
         if not set(self.keys()).isdisjoint(other.keys()):
-            raise ValueError(f"Key collision detected: packets {self} and {other} have overlapping keys"
-                             " and cannot be joined without losing information.")
+            raise ValueError(
+                f"Key collision detected: packets {self} and {other} have overlapping keys"
+                " and cannot be joined without losing information."
+            )
 
         new_content = {**self, **other}
         new_typespec = {**self.typespec, **other.typespec}
         new_source_info = {**self.source_info, **other.source_info}
-        
+
         return Packet(new_content, typespec=new_typespec, source_info=new_source_info)
 
 
@@ -103,23 +112,30 @@ Batch: TypeAlias = tuple[Tag, Collection[Packet]]
 class SemanticPacket(dict[str, Any]):
     """
     A packet that conforms to a semantic schema, mapping string keys to values.
-    
+
     This is used to represent data packets in OrcaPod with semantic types.
-    
+
     Attributes
     ----------
     keys : str
         The keys of the packet.
     values : Any
         The values corresponding to each key.
-    
+
     Examples
     --------
     >>> packet = SemanticPacket(name='Alice', age=30)
     >>> print(packet)
     {'name': 'Alice', 'age': 30}
     """
-    def __init__(self, *args, semantic_schema: schemas.SemanticSchema | None = None, source_info: dict[str, str|None] | None = None, **kwargs):
+
+    def __init__(
+        self,
+        *args,
+        semantic_schema: schemas.SemanticSchema | None = None,
+        source_info: dict[str, str | None] | None = None,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.schema = semantic_schema
         if source_info is None:
@@ -134,7 +150,12 @@ class SemanticPacket(dict[str, Any]):
 
 
 class PacketConverter:
-    def __init__(self, typespec: TypeSpec, registry: SemanticTypeRegistry, include_source_info: bool = True):
+    def __init__(
+        self,
+        typespec: TypeSpec,
+        registry: SemanticTypeRegistry,
+        include_source_info: bool = True,
+    ):
         self.typespec = typespec
         self.registry = registry
 
@@ -147,8 +168,6 @@ class PacketConverter:
         self.arrow_schema = schemas.from_semantic_schema_to_arrow_schema(
             self.semantic_schema, include_source_info=self.include_source_info
         )
-
-
 
         self.key_handlers: dict[str, TypeHandler] = {}
 
@@ -178,7 +197,9 @@ class PacketConverter:
 
             raise KeyError(f"Keys don't match expected keys. {'; '.join(error_parts)}")
 
-    def from_python_packet_to_semantic_packet(self, python_packet: PacketLike) -> SemanticPacket:
+    def from_python_packet_to_semantic_packet(
+        self, python_packet: PacketLike
+    ) -> SemanticPacket:
         """Convert a Python packet to a semantic packet.
 
         Args:
@@ -193,22 +214,22 @@ class PacketConverter:
             ValueError: If conversion fails
         """
         # Validate packet keys
-        semantic_packet = SemanticPacket(python_packet, semantic_schema=self.semantic_schema, source_info=getattr(python_packet, "source_info", None))
+        semantic_packet = SemanticPacket(
+            python_packet,
+            semantic_schema=self.semantic_schema,
+            source_info=getattr(python_packet, "source_info", None),
+        )
         self._check_key_consistency(set(semantic_packet.keys()))
 
         # convert from storage to Python types for semantic types
         for key, handler in self.key_handlers.items():
             try:
-                semantic_packet[key] = handler.python_to_storage(
-                    semantic_packet[key]
-                )
+                semantic_packet[key] = handler.python_to_storage(semantic_packet[key])
             except Exception as e:
                 raise ValueError(f"Failed to convert value for '{key}': {e}") from e
 
         return semantic_packet
 
-        
-    
     def from_python_packet_to_arrow_table(self, python_packet: PacketLike) -> pa.Table:
         """Convert a Python packet to an Arrow table.
 
@@ -221,7 +242,9 @@ class PacketConverter:
         semantic_packet = self.from_python_packet_to_semantic_packet(python_packet)
         return self.from_semantic_packet_to_arrow_table(semantic_packet)
 
-    def from_semantic_packet_to_arrow_table(self, semantic_packet: SemanticPacket) -> pa.Table:
+    def from_semantic_packet_to_arrow_table(
+        self, semantic_packet: SemanticPacket
+    ) -> pa.Table:
         """Convert a semantic packet to an Arrow table.
 
         Args:
@@ -231,12 +254,15 @@ class PacketConverter:
             Arrow table representation of the packet
         """
         if self.include_source_info:
-            return pa.Table.from_pylist([semantic_packet.get_composite()], schema=self.arrow_schema)
+            return pa.Table.from_pylist(
+                [semantic_packet.get_composite()], schema=self.arrow_schema
+            )
         else:
             return pa.Table.from_pylist([semantic_packet], schema=self.arrow_schema)
 
-
-    def from_arrow_table_to_semantic_packets(self, arrow_table: pa.Table) -> Collection[SemanticPacket]:
+    def from_arrow_table_to_semantic_packets(
+        self, arrow_table: pa.Table
+    ) -> Collection[SemanticPacket]:
         """Convert an Arrow table to a semantic packet.
 
         Args:
@@ -249,18 +275,34 @@ class PacketConverter:
         # schema matches what's expected
         if not arrow_table.schema.equals(self.arrow_schema):
             raise ValueError("Arrow table schema does not match expected schema")
-        
+
         semantic_packets_contents = arrow_table.to_pylist()
-        
+
         semantic_packets = []
         for all_packet_content in semantic_packets_contents:
-            packet_content = {k: v for k, v in all_packet_content.items() if k in self.expected_key_set}
-            source_info = {k.removeprefix('_source_info_'): v for k, v in all_packet_content.items() if k.startswith('_source_info_')}
-            semantic_packets.append(SemanticPacket(packet_content, semantic_schema=self.semantic_schema, source_info=source_info))
+            packet_content = {
+                k: v
+                for k, v in all_packet_content.items()
+                if k in self.expected_key_set
+            }
+            source_info = {
+                k.removeprefix("_source_info_"): v
+                for k, v in all_packet_content.items()
+                if k.startswith("_source_info_")
+            }
+            semantic_packets.append(
+                SemanticPacket(
+                    packet_content,
+                    semantic_schema=self.semantic_schema,
+                    source_info=source_info,
+                )
+            )
 
         return semantic_packets
 
-    def from_semantic_packet_to_python_packet(self, semantic_packet: SemanticPacket) -> Packet:
+    def from_semantic_packet_to_python_packet(
+        self, semantic_packet: SemanticPacket
+    ) -> Packet:
         """Convert a semantic packet to a Python packet.
 
         Args:
@@ -270,18 +312,20 @@ class PacketConverter:
             Python packet representation of the semantic packet
         """
         # Validate packet keys
-        python_packet = Packet(semantic_packet, typespec=self.typespec, source_info=semantic_packet.source_info)
+        python_packet = Packet(
+            semantic_packet,
+            typespec=self.typespec,
+            source_info=semantic_packet.source_info,
+        )
         packet_keys = set(python_packet.keys())
         self._check_key_consistency(packet_keys)
 
         for key, handler in self.key_handlers.items():
             try:
-                python_packet[key] = handler.storage_to_python(
-                    python_packet[key]
-                )
+                python_packet[key] = handler.storage_to_python(python_packet[key])
             except Exception as e:
                 raise ValueError(f"Failed to convert value for '{key}': {e}") from e
-            
+
         return python_packet
 
     def from_arrow_table_to_python_packets(self, arrow_table: pa.Table) -> list[Packet]:
@@ -294,5 +338,6 @@ class PacketConverter:
             List of Python packets converted from the Arrow table
         """
         semantic_packets = self.from_arrow_table_to_semantic_packets(arrow_table)
-        return [self.from_semantic_packet_to_python_packet(sp) for sp in semantic_packets]
-
+        return [
+            self.from_semantic_packet_to_python_packet(sp) for sp in semantic_packets
+        ]

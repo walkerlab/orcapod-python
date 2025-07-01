@@ -35,15 +35,11 @@ versioned_object_hashers = {
         "_class": "orcapod.hashing.object_hashers.BasicObjectHasher",
         "config": {
             "hasher_id": "object_v0.1",
-            "function_info_extractor" : {
+            "function_info_extractor": {
                 "_class": "orcapod.hashing.function_info_extractors.FunctionSignatureExtractor",
-                "config": {
-                    "include_module": True,
-                    "include_defaults": True
-                }
-
-            }
-        }
+                "config": {"include_module": True, "include_defaults": True},
+            },
+        },
     }
 }
 
@@ -91,7 +87,7 @@ def get_versioned_semantic_arrow_hasher(
 
 def get_versioned_object_hasher(
     version: str | None = None,
-) -> ObjectHasher: 
+) -> ObjectHasher:
     """
     Get an object hasher for the specified version.
 
@@ -109,4 +105,3 @@ def get_versioned_object_hasher(
 
     hasher_spec = versioned_object_hashers[version]
     return parse_objectspec(hasher_spec)
-

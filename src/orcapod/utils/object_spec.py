@@ -1,5 +1,6 @@
 import importlib
 
+
 def parse_objectspec(obj_spec: dict) -> Any:
     if "_class" in obj_spec:
         # if _class is specified, treat the dict as an object specification

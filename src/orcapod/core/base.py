@@ -386,7 +386,9 @@ class Stream(ABC, ContentIdentifiableBase):
         # otherwise, use the keys from the first packet in the stream
         # note that this may be computationally expensive
         tag, packet = next(iter(self))
-        return tag_types or get_typespec_from_dict(tag), packet_types or get_typespec_from_dict(packet)
+        return tag_types or get_typespec_from_dict(
+            tag
+        ), packet_types or get_typespec_from_dict(packet)
 
     def claims_unique_tags(self, *, trigger_run=False) -> bool | None:
         """

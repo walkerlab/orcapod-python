@@ -95,7 +95,12 @@ class Pipeline(GraphTracker):
                 tag_store=self.pipeline_store,
                 store_path_prefix=self.name,
             )
-        return KernelNode(kernel, input_nodes, output_store=self.pipeline_store, store_path_prefix=self.name)
+        return KernelNode(
+            kernel,
+            input_nodes,
+            output_store=self.pipeline_store,
+            store_path_prefix=self.name,
+        )
 
     def compile(self):
         import networkx as nx

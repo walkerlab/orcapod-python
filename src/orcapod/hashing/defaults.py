@@ -13,7 +13,10 @@ from orcapod.hashing.object_hashers import LegacyObjectHasher
 from orcapod.hashing.function_info_extractors import FunctionInfoExtractorFactory
 from orcapod.hashing.arrow_hashers import SemanticArrowHasher
 from orcapod.hashing.semantic_type_hashers import PathHasher
-from orcapod.hashing.versioned_hashers import get_versioned_semantic_arrow_hasher, get_versioned_object_hasher
+from orcapod.hashing.versioned_hashers import (
+    get_versioned_semantic_arrow_hasher,
+    get_versioned_object_hasher,
+)
 
 
 def get_default_arrow_hasher(
@@ -39,7 +42,6 @@ def get_default_arrow_hasher(
 def get_default_object_hasher() -> ObjectHasher:
     object_hasher = get_versioned_object_hasher()
     return object_hasher
-    
 
 
 def get_legacy_object_hasher() -> ObjectHasher:
@@ -59,7 +61,9 @@ def get_default_composite_file_hasher(with_cache=True) -> LegacyCompositeFileHas
     return LegacyPathLikeHasherFactory.create_basic_legacy_composite()
 
 
-def get_default_composite_file_hasher_with_cacher(cacher=None) -> LegacyCompositeFileHasher:
+def get_default_composite_file_hasher_with_cacher(
+    cacher=None,
+) -> LegacyCompositeFileHasher:
     if cacher is None:
         cacher = InMemoryCacher(max_size=None)
     return LegacyPathLikeHasherFactory.create_cached_legacy_composite(cacher)

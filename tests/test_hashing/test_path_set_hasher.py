@@ -86,7 +86,9 @@ def mock_hash_pathset(
 @pytest.fixture(autouse=True)
 def patch_hash_pathset():
     """Patch the hash_pathset function in the hashing module for all tests."""
-    with patch("orcapod.hashing.legacy_core.hash_pathset", side_effect=mock_hash_pathset):
+    with patch(
+        "orcapod.hashing.legacy_core.hash_pathset", side_effect=mock_hash_pathset
+    ):
         yield
 
 
@@ -225,7 +227,8 @@ def test_default_pathset_hasher_with_nonexistent_files():
 
         # Patch hash_pathset just for this test
         with patch(
-            "orcapod.hashing.legacy_core.hash_pathset", side_effect=custom_hash_nonexistent
+            "orcapod.hashing.legacy_core.hash_pathset",
+            side_effect=custom_hash_nonexistent,
         ):
             result = pathset_hasher.hash_pathset(pathset)
 

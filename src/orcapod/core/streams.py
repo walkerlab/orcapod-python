@@ -104,4 +104,3 @@ class SyncStreamFromGenerator(SyncStream):
             return super().keys(trigger_run=trigger_run)
         # If the keys are already set, return them
         return self.tag_keys.copy(), self.packet_keys.copy()
-        

@@ -5,7 +5,6 @@ import os
 from collections.abc import Collection, Mapping
 
 
-
 DataType: TypeAlias = type
 
 TypeSpec: TypeAlias = Mapping[
@@ -34,8 +33,9 @@ ExtendedSupportedPythonData: TypeAlias = SupportedNativePythonData | PathLike
 
 # Extended data values that can be stored in packets
 # Either the original PathSet or one of our supported simple data types
-DataValue: TypeAlias = PathSet | SupportedNativePythonData | None | Collection["DataValue"]
-
+DataValue: TypeAlias = (
+    PathSet | SupportedNativePythonData | None | Collection["DataValue"]
+)
 
 
 class PodFunction(Protocol):

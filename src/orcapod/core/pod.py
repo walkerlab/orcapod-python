@@ -52,7 +52,6 @@ class Pod(Kernel):
         """
         self._active = active
 
-
     def process_stream(self, *streams: SyncStream) -> tuple[SyncStream, ...]:
         """
         Prepare the incoming streams for execution in the pod. This default implementation
@@ -72,7 +71,7 @@ class Pod(Kernel):
         self, *streams: SyncStream, **kwargs
     ) -> tuple[SyncStream, ...]:
         return self.process_stream(*streams)
-    
+
     def generator_completion_hook(self, n_computed: int) -> None:
         """
         Hook that is called when the generator is completed. This can be used to
@@ -215,7 +214,9 @@ class FunctionPod(Pod):
             )
         )
 
-        self.input_converter = PacketConverter(self.function_input_typespec, self.registry)
+        self.input_converter = PacketConverter(
+            self.function_input_typespec, self.registry
+        )
         self.output_converter = PacketConverter(
             self.function_output_typespec, self.registry
         )
@@ -223,13 +224,16 @@ class FunctionPod(Pod):
     def get_function_typespecs(self) -> tuple[TypeSpec, TypeSpec]:
         return self.function_input_typespec, self.function_output_typespec
 
-
     def __repr__(self) -> str:
         return f"FunctionPod:{self.function!r}"
 
     def __str__(self) -> str:
         include_module = self.function.__module__ != "__main__"
-        func_sig = get_function_signature(self.function, name_override=self.function_name, include_module=include_module)
+        func_sig = get_function_signature(
+            self.function,
+            name_override=self.function_name,
+            include_module=include_module,
+        )
         return f"FunctionPod:{func_sig}"
 
     def call(self, tag, packet) -> tuple[Tag, Packet | None]:
@@ -258,7 +262,9 @@ class FunctionPod(Pod):
                 f"Number of output keys {len(self.output_keys)}:{self.output_keys} does not match number of values returned by function {len(output_values)}"
             )
 
-        output_packet: Packet = Packet({k: v for k, v in zip(self.output_keys, output_values)})
+        output_packet: Packet = Packet(
+            {k: v for k, v in zip(self.output_keys, output_values)}
+        )
         return tag, output_packet
 
     def identity_structure(self, *streams) -> Any:

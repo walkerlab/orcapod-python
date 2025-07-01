@@ -67,7 +67,6 @@ class LegacyDefaultFileHasher:
         )
 
 
-
 class LegacyCachedFileHasher:
     """File hasher with caching."""
 
@@ -90,7 +89,6 @@ class LegacyCachedFileHasher:
         return value
 
 
-
 class LegacyDefaultPathsetHasher:
     """Default pathset hasher that composes file hashing."""
 
@@ -107,11 +105,11 @@ class LegacyDefaultPathsetHasher:
 
     def hash_pathset(self, pathset: PathSet) -> str:
         """Hash a pathset using the injected file hasher."""
-        return  legacy_core.hash_pathset(
-                pathset,
-                char_count=self.char_count,
-                file_hasher=self.file_hasher.hash_file,  # Inject the method
-            )
+        return legacy_core.hash_pathset(
+            pathset,
+            char_count=self.char_count,
+            file_hasher=self.file_hasher.hash_file,  # Inject the method
+        )
 
 
 class LegacyDefaultPacketHasher:
@@ -197,7 +195,7 @@ class LegacyPathLikeHasherFactory:
         return LegacyDefaultCompositeFileHasher(
             cached_file_hasher, char_count, packet_prefix=algorithm
         )
-    
+
     @staticmethod
     def create_legacy_file_hasher(
         string_cacher: StringCacher | None = None,

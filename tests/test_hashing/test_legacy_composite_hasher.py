@@ -6,8 +6,15 @@ from unittest.mock import patch
 import pytest
 
 from orcapod.hashing.legacy_core import hash_to_hex
-from orcapod.hashing.file_hashers import LegacyDefaultFileHasher, LegacyDefaultCompositeFileHasher
-from orcapod.hashing.types import LegacyFileHasher, LegacyPacketHasher, LegacyPathSetHasher
+from orcapod.hashing.file_hashers import (
+    LegacyDefaultFileHasher,
+    LegacyDefaultCompositeFileHasher,
+)
+from orcapod.hashing.types import (
+    LegacyFileHasher,
+    LegacyPacketHasher,
+    LegacyPathSetHasher,
+)
 
 
 # Custom implementation of hash_file for tests that doesn't check for file existence
@@ -90,7 +97,9 @@ def patch_hash_functions():
     """Patch the hash functions in the core module for all tests."""
     with (
         patch("orcapod.hashing.legacy_core.hash_file", side_effect=mock_hash_file),
-        patch("orcapod.hashing.legacy_core.hash_pathset", side_effect=mock_hash_pathset),
+        patch(
+            "orcapod.hashing.legacy_core.hash_pathset", side_effect=mock_hash_pathset
+        ),
         patch("orcapod.hashing.legacy_core.hash_packet", side_effect=mock_hash_packet),
     ):
         yield

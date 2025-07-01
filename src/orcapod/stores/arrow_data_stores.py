@@ -24,7 +24,11 @@ class MockArrowDataStore:
         logger.info("Initialized MockArrowDataStore")
 
     def add_record(
-        self, source_pathh: tuple[str, ...], source_id: str, entry_id: str, arrow_data: pa.Table
+        self,
+        source_pathh: tuple[str, ...],
+        source_id: str,
+        entry_id: str,
+        arrow_data: pa.Table,
     ) -> pa.Table:
         """Add a record to the mock store."""
         return arrow_data
@@ -35,7 +39,9 @@ class MockArrowDataStore:
         """Get a specific record."""
         return None
 
-    def get_all_records(self, source_path: tuple[str, ...], source_id: str) -> pa.Table | None:
+    def get_all_records(
+        self, source_path: tuple[str, ...], source_id: str
+    ) -> pa.Table | None:
         """Retrieve all records for a given source as a single table."""
         return None
 
@@ -47,7 +53,7 @@ class MockArrowDataStore:
 
     def get_records_by_ids(
         self,
-        source_path: tuple[str,...],
+        source_path: tuple[str, ...],
         source_id: str,
         entry_ids: list[str] | pl.Series | pa.Array,
         add_entry_id_column: bool | str = False,
@@ -77,7 +83,7 @@ class MockArrowDataStore:
 
     def get_records_by_ids_as_polars(
         self,
-        source_path: tuple[str,...],
+        source_path: tuple[str, ...],
         source_id: str,
         entry_ids: list[str] | pl.Series | pa.Array,
         add_entry_id_column: bool | str = False,

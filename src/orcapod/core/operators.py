@@ -13,9 +13,8 @@ from orcapod.utils.stream_utils import (
     check_packet_compatibility,
     join_tags,
     semijoin_tags,
-    fill_missing
+    fill_missing,
 )
-
 
 
 class Repeat(Operator):
@@ -185,6 +184,7 @@ class Merge(Operator):
 
         return True
 
+
 def union_lists(left, right):
     if left is None or right is None:
         return None
@@ -193,7 +193,7 @@ def union_lists(left, right):
         if item not in output:
             output.append(item)
     return output
-                  
+
 
 class Join(Operator):
     def identity_structure(self, *streams):
@@ -423,7 +423,7 @@ class MapPackets(Operator):
         stream = streams[0]
         tag_keys, packet_keys = stream.keys(trigger_run=trigger_run)
         if tag_keys is None or packet_keys is None:
-            super_tag_keys, super_packet_keys =  super().keys(trigger_run=trigger_run)
+            super_tag_keys, super_packet_keys = super().keys(trigger_run=trigger_run)
             tag_keys = tag_keys or super_tag_keys
             packet_keys = packet_keys or super_packet_keys
 
@@ -583,10 +583,12 @@ class MapTags(Operator):
 
         return mapped_tag_keys, packet_keys
 
+
 class SemiJoin(Operator):
     """
     Perform semi-join on the left stream tags with the tags of the right stream
     """
+
     def identity_structure(self, *streams):
         # Restrict DOES depend on the order of the streams -- maintain as a tuple
         return (self.__class__.__name__,) + streams
@@ -625,7 +627,9 @@ class SemiJoin(Operator):
         left_tag_typespec, left_packet_typespec = left_stream.types()
         right_tag_typespec, right_packet_typespec = right_stream.types()
 
-        common_tag_typespec = intersection_typespecs(left_tag_typespec, right_tag_typespec)
+        common_tag_typespec = intersection_typespecs(
+            left_tag_typespec, right_tag_typespec
+        )
         common_tag_keys = None
         if common_tag_typespec is not None:
             common_tag_keys = list(common_tag_typespec.keys())
@@ -645,6 +649,7 @@ class SemiJoin(Operator):
 
     def __repr__(self) -> str:
         return "SemiJoin()"
+
 
 class Filter(Operator):
     """
@@ -848,9 +853,9 @@ class GroupBy(Operator):
                     if k not in new_tag:
                         new_tag[k] = [t.get(k, None) for t, _ in packets]
                 # combine all packets into a single packet
-                combined_packet: Packet = Packet({
-                    k: [p.get(k, None) for _, p in packets] for k in packet_keys
-                })
+                combined_packet: Packet = Packet(
+                    {k: [p.get(k, None) for _, p in packets] for k in packet_keys}
+                )
                 yield new_tag, combined_packet
 
         return SyncStreamFromGenerator(generator)

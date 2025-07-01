@@ -33,7 +33,9 @@ class SemanticTypeRegistry:
             type, tuple[TypeHandler, str]
         ] = {}  # PythonType -> (Handler, semantic_name)
         self._semantic_handlers: dict[str, TypeHandler] = {}  # semantic_name -> Handler
-        self._semantic_to_python_lut: dict[str, type] = {}  # semantic_name -> Python type
+        self._semantic_to_python_lut: dict[
+            str, type
+        ] = {}  # semantic_name -> Python type
 
     def register(
         self,
@@ -49,7 +51,7 @@ class SemanticTypeRegistry:
             override: If True, allow overriding existing registration for the same semantic name and Python type(s)
         """
         # Determine which types to register for
-        
+
         python_type = handler.python_type()
 
         # Register handler for each type
@@ -59,7 +61,7 @@ class SemanticTypeRegistry:
             raise ValueError(
                 f"Type {python_type} already registered with semantic type '{existing_semantic}'"
             )
-        
+
         # Register by semantic name
         if semantic_type in self._semantic_handlers:
             raise ValueError(f"Semantic type '{semantic_type}' already registered")
@@ -78,12 +80,12 @@ class SemanticTypeRegistry:
             if issubclass(python_type, registered_type):
                 return (handler, semantic_type)
         return None
-    
+
     def get_semantic_type(self, python_type: type) -> str | None:
         """Get semantic type for a Python type."""
         handler_info = self.lookup_handler_info(python_type)
         return handler_info[1] if handler_info else None
-    
+
     def get_handler(self, python_type: type) -> TypeHandler | None:
         """Get handler for a Python type."""
         handler_info = self.lookup_handler_info(python_type)
@@ -92,7 +94,6 @@ class SemanticTypeRegistry:
     def get_handler_by_semantic_type(self, semantic_type: str) -> TypeHandler | None:
         """Get handler by semantic type."""
         return self._semantic_handlers.get(semantic_type)
-    
 
     def get_type_info(self, python_type: type) -> TypeInfo | None:
         """Get TypeInfo for a Python type."""
@@ -107,7 +108,6 @@ class SemanticTypeRegistry:
             handler=handler,
         )
 
-    
     def __contains__(self, python_type: type) -> bool:
         """Check if a Python type is registered."""
         for registered_type in self._handlers:
@@ -116,18 +116,14 @@ class SemanticTypeRegistry:
         return False
 
 
-
-
-
-
 # Below is a collection of functions that handles converting between various aspects of Python packets and Arrow tables.
 # Here for convenience, any Python dictionary with str keys and supported Python values are referred to as a packet.
 
 
 # Conversions are:
-#  python packet <-> storage packet <-> arrow table 
+#  python packet <-> storage packet <-> arrow table
 #  python typespec <-> storage typespec <-> arrow schema
-# 
+#
 #  python packet <-> storage packet requires the use of SemanticTypeRegistry
 #  conversion between storage packet <-> arrow table requires info about semantic_type
 
@@ -152,13 +148,13 @@ class SemanticTypeRegistry:
 #     """Convert Arrow Schema to storage typespec and semantic type metadata."""
 #     typespec = {}
 #     semantic_type_info = {}
-    
+
 #     for field in schema:
 #         field_type = field.type
 #         typespec[field.name] = field_type.to_pandas_dtype()  # Convert Arrow type to Pandas dtype
 #         if field.metadata and b"semantic_type" in field.metadata:
 #             semantic_type_info[field.name] = field.metadata[b"semantic_type"].decode("utf-8")
-    
+
 #     return typespec, semantic_type_info
 
 
@@ -168,14 +164,9 @@ class SemanticTypeRegistry:
 #     semantic_type_info: dict[str, str] | None = None,
 
 
-
 # # TypeSpec + TypeRegistry + ArrowLUT -> Arrow Schema (annotated with semantic_type)
 
-# # 
-
-
-
-
+# #
 
 
 # # TypeSpec <-> Arrow Schema
@@ -184,7 +175,7 @@ class SemanticTypeRegistry:
 #     """Convert TypeSpec to PyArrow Schema."""
 #     if metadata_info is None:
 #         metadata_info = {}
-    
+
 #     fields = []
 #     for field_name, field_type in typespec.items():
 #         type_info = registry.get_type_info(field_type)
@@ -225,7 +216,6 @@ class SemanticTypeRegistry:
 
 #         schema_fields.append(pa.field(key, arrow_type, metadata=field_metadata))
 #     return keys_with_handlers, pa.schema(schema_fields)
-
 
 
 # def arrow_table_to_packets(
@@ -347,14 +337,14 @@ class SemanticTypeRegistry:
 #         bool: pa.bool_(),
 #         bytes: pa.binary(),
 #     }
-    
+
 #     if python_type in basic_mapping:
 #         return basic_mapping[python_type]
-    
+
 #     # Handle generic types
 #     origin = get_origin(python_type)
 #     args = get_args(python_type)
-    
+
 #     if origin is list:
 #         # Handle list[T]
 #         if args:
@@ -362,7 +352,7 @@ class SemanticTypeRegistry:
 #             return pa.list_(element_type)
 #         else:
 #             return pa.list_(pa.large_string())  # default to list of strings
-    
+
 #     elif origin is dict:
 #         # Handle dict[K, V] - PyArrow uses map type
 #         if len(args) == 2:
@@ -372,13 +362,13 @@ class SemanticTypeRegistry:
 #         else:
 #             # Otherwise default to using long string
 #             return pa.map_(pa.large_string(), pa.large_string())
-    
+
 #     elif origin is UnionType:
 #         # Handle Optional[T] (Union[T, None])
 #         if len(args) == 2 and type(None) in args:
 #             non_none_type = args[0] if args[1] is type(None) else args[1]
 #             return python_to_pyarrow_type(non_none_type)
-    
+
 #     # Default fallback
 #     if not strict:
 #         logger.warning(f"Unsupported type {python_type}, defaulting to large_string")

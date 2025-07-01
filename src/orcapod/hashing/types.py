@@ -44,12 +44,14 @@ class ObjectHasher(ABC):
         ...
 
     @abstractmethod
-    def get_hasher_id(self) -> str: 
+    def get_hasher_id(self) -> str:
         """
         Returns a unique identifier/name assigned to the hasher
         """
 
-    def hash_to_hex(self, obj: Any, char_count: int | None = None, prefix_hasher_id:bool=False) -> str:
+    def hash_to_hex(
+        self, obj: Any, char_count: int | None = None, prefix_hasher_id: bool = False
+    ) -> str:
         hash_bytes = self.hash(obj)
         hex_str = hash_bytes.hex()
 
@@ -95,6 +97,7 @@ class FileContentHasher(Protocol):
 @runtime_checkable
 class ArrowHasher(Protocol):
     """Protocol for hashing arrow packets."""
+
     def get_hasher_id(self) -> str: ...
 
     def hash_table(self, table: pa.Table, prefix_hasher_id: bool = True) -> str: ...
@@ -140,7 +143,7 @@ class SemanticTypeHasher(Protocol):
         pass
 
 
-#---------------Legacy implementations and protocols to be deprecated---------------------
+# ---------------Legacy implementations and protocols to be deprecated---------------------
 
 
 @runtime_checkable
@@ -167,9 +170,9 @@ class LegacyPacketHasher(Protocol):
 
 # Combined interface for convenience (optional)
 @runtime_checkable
-class LegacyCompositeFileHasher(LegacyFileHasher, LegacyPathSetHasher, LegacyPacketHasher, Protocol):
+class LegacyCompositeFileHasher(
+    LegacyFileHasher, LegacyPathSetHasher, LegacyPacketHasher, Protocol
+):
     """Combined interface for all file-related hashing operations."""
 
     pass
-
-

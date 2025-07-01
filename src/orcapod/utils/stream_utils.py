@@ -12,7 +12,6 @@ K = TypeVar("K", bound=Hashable)
 V = TypeVar("V")
 
 
-
 def merge_dicts(left: dict[K, V], right: dict[K, V]) -> dict[K, V]:
     merged = left.copy()
     for key, right_value in right.items():
@@ -24,8 +23,6 @@ def merge_dicts(left: dict[K, V], right: dict[K, V]) -> dict[K, V]:
         else:
             merged[key] = right_value
     return merged
-
-
 
 
 def common_elements(*values) -> Collection[str]:
@@ -57,7 +54,10 @@ def join_tags(tag1: Mapping[K, V], tag2: Mapping[K, V]) -> dict[K, V] | None:
             joined_tag[k] = v
     return joined_tag
 
-def semijoin_tags(tag1: Mapping[K, V], tag2: Mapping[K, V], target_keys: Collection[K]|None = None) -> dict[K, V] | None:
+
+def semijoin_tags(
+    tag1: Mapping[K, V], tag2: Mapping[K, V], target_keys: Collection[K] | None = None
+) -> dict[K, V] | None:
     """
     Semijoin two tags. If the tags have the same key, the value must be the same or None will be returned.  If all shared
     key's value match, tag1 would be returned
@@ -71,6 +71,7 @@ def semijoin_tags(tag1: Mapping[K, V], tag2: Mapping[K, V], target_keys: Collect
         if tag1[key] != tag2[key]:
             return None
     return dict(tag1)
+
 
 def check_packet_compatibility(packet1: Packet, packet2: Packet) -> bool:
     """

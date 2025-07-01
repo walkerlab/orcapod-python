@@ -214,7 +214,6 @@ def extract_function_typespecs(
     return param_info, inferred_output_types
 
 
-
 def get_typespec_from_dict(dict: Mapping) -> TypeSpec:
     """
     Returns a TypeSpec for the given dictionary.
@@ -248,7 +247,10 @@ def union_typespecs(left: TypeSpec | None, right: TypeSpec | None) -> TypeSpec |
         )
     return merged
 
-def intersection_typespecs(left: TypeSpec | None, right: TypeSpec | None) -> TypeSpec | None:
+
+def intersection_typespecs(
+    left: TypeSpec | None, right: TypeSpec | None
+) -> TypeSpec | None:
     """
     Returns the intersection of two TypeSpecs, only returning keys that are present in both.
     If a key is present in both TypeSpecs, the type must be the same.
@@ -263,6 +265,8 @@ def intersection_typespecs(left: TypeSpec | None, right: TypeSpec | None) -> Typ
             intersection[key] = get_compatible_type(left[key], right[key])
         except TypeError:
             # If types are not compatible, raise an error
-            raise TypeError(f"Type conflict for key '{key}': {left[key]} vs {right[key]}")
-        
+            raise TypeError(
+                f"Type conflict for key '{key}': {left[key]} vs {right[key]}"
+            )
+
     return intersection

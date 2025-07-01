@@ -1,6 +1,11 @@
 from orcapod.types.core import TypeSpec, TypeHandler
 from orcapod.types.packets import Packet, PacketLike
-from orcapod.types.semantic_type_registry import SemanticTypeRegistry, TypeInfo, get_metadata_from_schema, arrow_to_dicts
+from orcapod.types.semantic_type_registry import (
+    SemanticTypeRegistry,
+    TypeInfo,
+    get_metadata_from_schema,
+    arrow_to_dicts,
+)
 from typing import Any
 from collections.abc import Mapping, Sequence
 import pyarrow as pa
@@ -10,7 +15,9 @@ logger = logging.getLogger(__name__)
 
 
 def is_packet_supported(
-    python_type_info: TypeSpec, registry: SemanticTypeRegistry, type_lut: dict | None = None
+    python_type_info: TypeSpec,
+    registry: SemanticTypeRegistry,
+    type_lut: dict | None = None,
 ) -> bool:
     """Check if all types in the packet are supported by the registry or known to the default lut."""
     if type_lut is None:
@@ -19,7 +26,6 @@ def is_packet_supported(
         python_type in registry or python_type in type_lut
         for python_type in python_type_info.values()
     )
-
 
 
 class PacketConverter:
@@ -174,4 +180,3 @@ class PacketConverter:
             return storage_packets
 
         return [Packet(self._from_storage_packet(packet)) for packet in storage_packets]
-
