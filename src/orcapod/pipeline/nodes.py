@@ -747,14 +747,14 @@ class Node(KernelInvocationWrapper, Source):
     def reset_cache(self) -> None: ...
 
 
-class KernelNode(Node, CachedKernelWrapper):
+class KernelNode(CachedKernelWrapper, Node):
     """
     A node that wraps a Kernel and provides a Node interface.
     This is useful for creating nodes in a pipeline that can be executed.
     """
 
 
-class FunctionPodNode(Node, CachedFunctionPodWrapper):
+class FunctionPodNode(CachedFunctionPodWrapper, Node):
     """
     A node that wraps a FunctionPod and provides a Node interface.
     This is useful for creating nodes in a pipeline that can be executed.
