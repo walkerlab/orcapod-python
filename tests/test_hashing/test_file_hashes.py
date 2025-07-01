@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 # Add the parent directory to the path to import orcapod
-from orcapod.hashing import hash_file
+from orcapod.hashing.legacy_core import hash_file
 
 
 def load_hash_lut():

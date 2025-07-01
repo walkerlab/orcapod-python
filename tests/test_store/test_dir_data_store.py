@@ -499,7 +499,7 @@ def test_dir_data_store_legacy_mode_compatibility(temp_dir, sample_files):
     output_packet = {"output_file": sample_files["output"]["output1"]}
 
     # Get the hash values directly for comparison
-    from orcapod.hashing import hash_packet
+    from orcapod.hashing.legacy_core import hash_packet
 
     legacy_hash = hash_packet(packet, algorithm="sha256")
     assert store_default.packet_hasher is not None, (
@@ -610,7 +610,7 @@ def test_dir_data_store_hash_equivalence(temp_dir, sample_files):
     output_packet = {"output_file": sample_files["output"]["output1"]}
 
     # First compute hashes directly
-    from orcapod.hashing import hash_packet
+    from orcapod.hashing.legacy_core import hash_packet
     from orcapod.hashing.defaults import get_default_composite_file_hasher
 
     legacy_hash = hash_packet(packet, algorithm="sha256")

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from orcapod.hashing import hash_file, hash_packet, hash_pathset
+from orcapod.hashing.legacy_core import hash_file, hash_packet, hash_pathset
 
 logger = logging.getLogger(__name__)
 
