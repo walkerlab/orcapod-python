@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 
 from orcapod.hashing.legacy_core import hash_to_hex
-from orcapod.hashing.file_hashers import BasicFileHasher, LegacyDefaultCompositeFileHasher
+from orcapod.hashing.file_hashers import LegacyDefaultFileHasher, LegacyDefaultCompositeFileHasher
 from orcapod.hashing.types import LegacyFileHasher, LegacyPacketHasher, LegacyPathSetHasher
 
 
@@ -89,9 +89,9 @@ def mock_hash_packet(
 def patch_hash_functions():
     """Patch the hash functions in the core module for all tests."""
     with (
-        patch("orcapod.hashing.core.hash_file", side_effect=mock_hash_file),
-        patch("orcapod.hashing.core.hash_pathset", side_effect=mock_hash_pathset),
-        patch("orcapod.hashing.core.hash_packet", side_effect=mock_hash_packet),
+        patch("orcapod.hashing.legacy_core.hash_file", side_effect=mock_hash_file),
+        patch("orcapod.hashing.legacy_core.hash_pathset", side_effect=mock_hash_pathset),
+        patch("orcapod.hashing.legacy_core.hash_packet", side_effect=mock_hash_packet),
     ):
         yield
 
@@ -99,7 +99,7 @@ def patch_hash_functions():
 def test_default_composite_hasher_implements_all_protocols():
     """Test that CompositeFileHasher implements all three protocols."""
     # Create a basic file hasher to be used within the composite hasher
-    file_hasher = BasicFileHasher()
+    file_hasher = LegacyDefaultFileHasher()
 
     # Create the composite hasher
     composite_hasher = LegacyDefaultCompositeFileHasher(file_hasher)

@@ -461,7 +461,7 @@ def test_dir_data_store_with_default_packet_hasher(temp_dir, sample_files):
     store = DirDataStore(store_dir=store_dir)
 
     # Verify that default PacketHasher was created
-    assert isinstance(store.packet_hasher, PacketHasher)
+    assert isinstance(store.packet_hasher, LegacyPacketHasher)
 
     # Test memoization and retrieval
     packet = {"input_file": sample_files["input"]["file1"]}
