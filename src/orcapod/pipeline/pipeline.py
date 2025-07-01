@@ -14,7 +14,7 @@ from orcapod.pipeline.wrappers import KernelNode, FunctionPodNode, Node
 
 from orcapod.hashing import hash_to_hex
 from orcapod.core.tracker import GraphTracker
-from orcapod.store import ArrowDataStore
+from orcapod.stores import ArrowDataStore
 
 logger = logging.getLogger(__name__)
 
@@ -33,15 +33,17 @@ class Pipeline(GraphTracker):
 
     def __init__(
         self,
-        name: str,
-        results_store: ArrowDataStore,
+        name: str | tuple[str, ...],
         pipeline_store: ArrowDataStore,
+        results_store: ArrowDataStore,
         auto_compile: bool = True,
     ) -> None:
         super().__init__()
-        self.name = name or f"pipeline_{id(self)}"
-        self.results_store = results_store
+        if not isinstance(name, tuple):
+            name = (name,)
+        self.name = name
         self.pipeline_store = pipeline_store
+        self.results_store = results_store
         self.labels_to_nodes = {}
         self.auto_compile = auto_compile
         self._dirty = False
@@ -92,8 +94,9 @@ class Pipeline(GraphTracker):
                 input_nodes,
                 output_store=self.results_store,
                 tag_store=self.pipeline_store,
+                store_path_prefix=self.name,
             )
-        return KernelNode(kernel, input_nodes, output_store=self.pipeline_store)
+        return KernelNode(kernel, input_nodes, output_store=self.pipeline_store, store_path_prefix=self.name)
 
     def compile(self):
         import networkx as nx

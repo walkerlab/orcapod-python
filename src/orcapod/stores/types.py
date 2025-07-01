@@ -1,6 +1,6 @@
 from typing import Protocol, runtime_checkable
 
-from orcapod.types import Tag, Packet
+from orcapod.types import Tag, PacketLike
 import pyarrow as pa
 import polars as pl
 
@@ -21,13 +21,13 @@ class DataStore(Protocol):
         self,
         function_name: str,
         function_hash: str,
-        packet: Packet,
-        output_packet: Packet,
-    ) -> Packet: ...
+        packet: PacketLike,
+        output_packet: PacketLike,
+    ) -> PacketLike: ...
 
     def retrieve_memoized(
-        self, function_name: str, function_hash: str, packet: Packet
-    ) -> Packet | None: ...
+        self, function_name: str, function_hash: str, packet: PacketLike
+    ) -> PacketLike | None: ...
 
 
 @runtime_checkable
@@ -41,31 +41,29 @@ class ArrowDataStore(Protocol):
 
     def add_record(
         self,
-        source_name: str,
-        source_id: str,
+        source_path: tuple[str, ...],
         entry_id: str,
         arrow_data: pa.Table,
         ignore_duplicate: bool = False,
     ) -> pa.Table: ...
 
     def get_record(
-        self, source_name: str, source_id: str, entry_id: str
+        self, source_path: tuple[str,...], entry_id: str
     ) -> pa.Table | None: ...
 
-    def get_all_records(self, source_name: str, source_id: str) -> pa.Table | None:
+    def get_all_records(self, source_path: tuple[str,...]) -> pa.Table | None:
         """Retrieve all records for a given source as a single table."""
         ...
 
     def get_all_records_as_polars(
-        self, source_name: str, source_id: str
+        self, source_path: tuple[str,...]
     ) -> pl.LazyFrame | None:
         """Retrieve all records for a given source as a single Polars DataFrame."""
         ...
 
     def get_records_by_ids(
         self,
-        source_name: str,
-        source_id: str,
+        source_path: tuple[str, ...],
         entry_ids: list[str] | pl.Series | pa.Array,
         add_entry_id_column: bool | str = False,
         preserve_input_order: bool = False,
@@ -75,8 +73,7 @@ class ArrowDataStore(Protocol):
 
     def get_records_by_ids_as_polars(
         self,
-        source_name: str,
-        source_id: str,
+        source_path: tuple[str, ...],
         entry_ids: list[str] | pl.Series | pa.Array,
         add_entry_id_column: bool | str = False,
         preserve_input_order: bool = False,

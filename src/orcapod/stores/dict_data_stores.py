@@ -5,10 +5,10 @@ from os import PathLike
 from pathlib import Path
 
 from orcapod.hashing import hash_packet
+from orcapod.hashing.types import LegacyPacketHasher
 from orcapod.hashing.defaults import get_default_composite_file_hasher
-from orcapod.hashing.types import PacketHasher
-from orcapod.store.types import DataStore
-from orcapod.types import Packet
+from orcapod.stores.types import DataStore
+from orcapod.types import Packet, PacketLike
 
 logger = logging.getLogger(__name__)
 
@@ -30,15 +30,15 @@ class NoOpDataStore(DataStore):
         self,
         function_name: str,
         function_hash: str,
-        packet: Packet,
-        output_packet: Packet,
+        packet: PacketLike,
+        output_packet: PacketLike,
         overwrite: bool = False,
-    ) -> Packet:
+    ) -> PacketLike:
         return output_packet
 
     def retrieve_memoized(
-        self, function_name: str, function_hash: str, packet: Packet
-    ) -> Packet | None:
+        self, function_name: str, function_hash: str, packet: PacketLike
+    ) -> PacketLike | None:
         return None
 
 
@@ -46,7 +46,7 @@ class DirDataStore(DataStore):
     def __init__(
         self,
         store_dir: str | PathLike = "./pod_data",
-        packet_hasher: PacketHasher | None = None,
+        packet_hasher: LegacyPacketHasher | None = None,
         copy_files=True,
         preserve_filename=True,
         overwrite=False,
@@ -71,9 +71,9 @@ class DirDataStore(DataStore):
         self,
         function_name: str,
         function_hash: str,
-        packet: Packet,
-        output_packet: Packet,
-    ) -> Packet:
+        packet: PacketLike,
+        output_packet: PacketLike,
+    ) -> PacketLike:
         if self.legacy_mode:
             packet_hash = hash_packet(packet, algorithm=self.legacy_algorithm)
         else:
@@ -139,7 +139,7 @@ class DirDataStore(DataStore):
             return retrieved_output_packet
 
     def retrieve_memoized(
-        self, function_name: str, function_hash: str, packet: Packet
+        self, function_name: str, function_hash: str, packet: PacketLike
     ) -> Packet | None:
         if self.legacy_mode:
             packet_hash = hash_packet(packet, algorithm=self.legacy_algorithm)

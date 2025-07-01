@@ -9,11 +9,11 @@ from unittest.mock import patch
 import pytest
 
 import orcapod.hashing.legacy_core
-from orcapod.hashing.file_hashers import DefaultPathsetHasher
-from orcapod.hashing.types import FileHasher
+from orcapod.hashing.file_hashers import LegacyDefaultPathsetHasher
+from orcapod.hashing.types import LegacyFileHasher
 
 
-class MockFileHasher(FileHasher):
+class MockFileHasher(LegacyFileHasher):
     """Simple mock FileHasher for testing."""
 
     def __init__(self, hash_value="mock_hash"):
@@ -90,10 +90,10 @@ def patch_hash_pathset():
         yield
 
 
-def test_default_pathset_hasher_single_file():
-    """Test DefaultPathsetHasher with a single file path."""
+def test_legacy_pathset_hasher_single_file():
+    """Test LegacyPathsetHasher with a single file path."""
     file_hasher = MockFileHasher()
-    pathset_hasher = DefaultPathsetHasher(file_hasher)
+    pathset_hasher = LegacyDefaultPathsetHasher(file_hasher)
 
     # Create a real file for testing
     file_path = create_temp_file()
@@ -116,7 +116,7 @@ def test_default_pathset_hasher_single_file():
 def test_default_pathset_hasher_multiple_files():
     """Test DefaultPathsetHasher with multiple files in a list."""
     file_hasher = MockFileHasher()
-    pathset_hasher = DefaultPathsetHasher(file_hasher)
+    pathset_hasher = LegacyDefaultPathsetHasher(file_hasher)
 
     # Create real files for testing
     file_paths = [create_temp_file(f"content {i}") for i in range(3)]
@@ -195,7 +195,7 @@ def test_default_pathset_hasher_nested_paths():
 def test_default_pathset_hasher_with_nonexistent_files():
     """Test DefaultPathsetHasher with both existent and non-existent files."""
     file_hasher = MockFileHasher()
-    pathset_hasher = DefaultPathsetHasher(file_hasher)
+    pathset_hasher = LegacyDefaultPathsetHasher(file_hasher)
 
     # Reset the file_hasher's call list
     file_hasher.file_hash_calls = []
@@ -249,14 +249,14 @@ def test_default_pathset_hasher_with_char_count():
 
     try:
         # Test with default char_count (32)
-        default_hasher = DefaultPathsetHasher(file_hasher)
+        default_hasher = LegacyDefaultPathsetHasher(file_hasher)
         default_result = default_hasher.hash_pathset(file_path)
 
         # Reset call list
         file_hasher.file_hash_calls = []
 
         # Test with custom char_count
-        custom_hasher = DefaultPathsetHasher(file_hasher, char_count=16)
+        custom_hasher = LegacyDefaultPathsetHasher(file_hasher, char_count=16)
         custom_result = custom_hasher.hash_pathset(file_path)
 
         # Both should have called the file_hasher once

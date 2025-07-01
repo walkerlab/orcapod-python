@@ -1,7 +1,7 @@
 # A collection of utility function that provides a "default" implementation of hashers.
 # This is often used as the fallback hasher in the library code.
 from orcapod.hashing.types import (
-    CompositeFileHasher,
+    LegacyCompositeFileHasher,
     ArrowHasher,
     FileContentHasher,
     StringCacher,
@@ -36,7 +36,7 @@ def get_default_arrow_hasher(
     return arrow_hasher
 
 
-def get_default_composite_file_hasher(with_cache=True) -> CompositeFileHasher:
+def get_default_composite_file_hasher(with_cache=True) -> LegacyCompositeFileHasher:
     if with_cache:
         # use unlimited caching
         string_cacher = InMemoryCacher(max_size=None)
@@ -44,7 +44,7 @@ def get_default_composite_file_hasher(with_cache=True) -> CompositeFileHasher:
     return LegacyPathLikeHasherFactory.create_basic_legacy_composite()
 
 
-def get_default_composite_file_hasher_with_cacher(cacher=None) -> CompositeFileHasher:
+def get_default_composite_file_hasher_with_cacher(cacher=None) -> LegacyCompositeFileHasher:
     if cacher is None:
         cacher = InMemoryCacher(max_size=None)
     return LegacyPathLikeHasherFactory.create_cached_legacy_composite(cacher)

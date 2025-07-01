@@ -14,7 +14,7 @@ from orcapod.hashing.file_hashers import (
     CachedFileHasher,
 )
 from orcapod.hashing.string_cachers import InMemoryCacher
-from orcapod.hashing.types import FileHasher, StringCacher
+from orcapod.hashing.types import LegacyFileHasher, StringCacher
 
 
 def verify_path_exists(rel_path):
@@ -81,7 +81,7 @@ def test_cached_file_hasher_construction():
     assert cached_hasher1.string_cacher == string_cacher
 
     # Test that CachedFileHasher implements FileHasher protocol
-    assert isinstance(cached_hasher1, FileHasher)
+    assert isinstance(cached_hasher1, LegacyFileHasher)
 
 
 def test_cached_file_hasher_file_caching():
@@ -136,7 +136,7 @@ def test_cached_file_hasher_call_counts():
 
     try:
         # Mock the file_hasher to track calls
-        mock_file_hasher = MagicMock(spec=FileHasher)
+        mock_file_hasher = MagicMock(spec=LegacyFileHasher)
         mock_file_hasher.hash_file.return_value = "mock_file_hash"
 
         # Real cacher

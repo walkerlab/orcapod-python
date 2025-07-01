@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 import uuid
 
-from orcapod.types import Packet, PathLike, PathSet, TypeSpec
+from orcapod.types import PacketLike, PathLike, PathSet, TypeSpec
 
 import pyarrow as pa
 
@@ -85,21 +85,6 @@ class FileContentHasher(Protocol):
     def hash_file(self, file_path: PathLike) -> bytes: ...
 
 
-# Higher-level operations that compose file hashing
-@runtime_checkable
-class PathSetHasher(Protocol):
-    """Protocol for hashing pathsets (files, directories, collections)."""
-
-    def hash_pathset(self, pathset: PathSet) -> bytes: ...
-
-
-@runtime_checkable
-class PacketHasher(Protocol):
-    """Protocol for hashing packets."""
-
-    def hash_packet(self, packet: Packet) -> str: ...
-
-
 @runtime_checkable
 class ArrowHasher(Protocol):
     """Protocol for hashing arrow packets."""
@@ -114,14 +99,6 @@ class StringCacher(Protocol):
     def get_cached(self, cache_key: str) -> str | None: ...
     def set_cached(self, cache_key: str, value: str) -> None: ...
     def clear_cache(self) -> None: ...
-
-
-# Combined interface for convenience (optional)
-@runtime_checkable
-class CompositeFileHasher(FileContentHasher, PathSetHasher, PacketHasher, Protocol):
-    """Combined interface for all file-related hashing operations."""
-
-    pass
 
 
 # Function hasher protocol
@@ -153,3 +130,38 @@ class SemanticTypeHasher(Protocol):
     def set_cacher(self, cacher: StringCacher) -> None:
         """Add a string cacher for caching hash values."""
         pass
+
+
+#---------------Legacy implementations and protocols to be deprecated---------------------
+
+
+@runtime_checkable
+class LegacyFileHasher(Protocol):
+    """Protocol for file-related hashing."""
+
+    def hash_file(self, file_path: PathLike) -> str: ...
+
+
+# Higher-level operations that compose file hashing
+@runtime_checkable
+class LegacyPathSetHasher(Protocol):
+    """Protocol for hashing pathsets (files, directories, collections)."""
+
+    def hash_pathset(self, pathset: PathSet) -> str: ...
+
+
+@runtime_checkable
+class LegacyPacketHasher(Protocol):
+    """Protocol for hashing packets."""
+
+    def hash_packet(self, packet: PacketLike) -> str: ...
+
+
+# Combined interface for convenience (optional)
+@runtime_checkable
+class LegacyCompositeFileHasher(LegacyFileHasher, LegacyPathSetHasher, LegacyPacketHasher, Protocol):
+    """Combined interface for all file-related hashing operations."""
+
+    pass
+
+

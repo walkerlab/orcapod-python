@@ -7,7 +7,7 @@ from typing import Any, cast
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
-from orcapod.store.types import DuplicateError
+from orcapod.stores.types import DuplicateError
 
 # Module-level logger
 logger = logging.getLogger(__name__)
@@ -24,30 +24,30 @@ class MockArrowDataStore:
         logger.info("Initialized MockArrowDataStore")
 
     def add_record(
-        self, source_name: str, source_id: str, entry_id: str, arrow_data: pa.Table
+        self, source_pathh: tuple[str, ...], source_id: str, entry_id: str, arrow_data: pa.Table
     ) -> pa.Table:
         """Add a record to the mock store."""
         return arrow_data
 
     def get_record(
-        self, source_name: str, source_id: str, entry_id: str
+        self, source_path: tuple[str, ...], source_id: str, entry_id: str
     ) -> pa.Table | None:
         """Get a specific record."""
         return None
 
-    def get_all_records(self, source_name: str, source_id: str) -> pa.Table | None:
+    def get_all_records(self, source_path: tuple[str, ...], source_id: str) -> pa.Table | None:
         """Retrieve all records for a given source as a single table."""
         return None
 
     def get_all_records_as_polars(
-        self, source_name: str, source_id: str
+        self, source_path: tuple[str, ...], source_id: str
     ) -> pl.LazyFrame | None:
         """Retrieve all records for a given source as a single Polars LazyFrame."""
         return None
 
     def get_records_by_ids(
         self,
-        source_name: str,
+        source_path: tuple[str,...],
         source_id: str,
         entry_ids: list[str] | pl.Series | pa.Array,
         add_entry_id_column: bool | str = False,
@@ -77,7 +77,7 @@ class MockArrowDataStore:
 
     def get_records_by_ids_as_polars(
         self,
-        source_name: str,
+        source_path: tuple[str,...],
         source_id: str,
         entry_ids: list[str] | pl.Series | pa.Array,
         add_entry_id_column: bool | str = False,
@@ -115,14 +115,13 @@ class SimpleInMemoryDataStore:
             f"Initialized InMemoryArrowDataStore with duplicate_entry_behavior='{duplicate_entry_behavior}'"
         )
 
-    def _get_source_key(self, source_name: str, source_id: str) -> str:
+    def _get_source_key(self, source_path: tuple[str, ...]) -> str:
         """Generate key for source storage."""
-        return f"{source_name}:{source_id}"
+        return "/".join(source_path)
 
     def add_record(
         self,
-        source_name: str,
-        source_id: str,
+        source_path: tuple[str, ...],
         entry_id: str,
         arrow_data: pa.Table,
         ignore_duplicate: bool = False,
@@ -142,7 +141,7 @@ class SimpleInMemoryDataStore:
         Raises:
             ValueError: If entry_id already exists and duplicate_entry_behavior is 'error'
         """
-        source_key = self._get_source_key(source_name, source_id)
+        source_key = self._get_source_key(source_path)
 
         # Initialize source if it doesn't exist
         if source_key not in self._in_memory_store:
@@ -154,7 +153,7 @@ class SimpleInMemoryDataStore:
         if entry_id in local_data:
             if not ignore_duplicate and self.duplicate_entry_behavior == "error":
                 raise ValueError(
-                    f"Entry '{entry_id}' already exists in {source_name}/{source_id}. "
+                    f"Entry '{entry_id}' already exists in {source_key}. "
                     f"Use duplicate_entry_behavior='overwrite' to allow updates."
                 )
 
@@ -166,18 +165,18 @@ class SimpleInMemoryDataStore:
         return arrow_data
 
     def get_record(
-        self, source_name: str, source_id: str, entry_id: str
+        self, source_path: tuple[str, ...], entry_id: str
     ) -> pa.Table | None:
         """Get a specific record."""
-        source_key = self._get_source_key(source_name, source_id)
+        source_key = self._get_source_key(source_path)
         local_data = self._in_memory_store.get(source_key, {})
         return local_data.get(entry_id)
 
     def get_all_records(
-        self, source_name: str, source_id: str, add_entry_id_column: bool | str = False
+        self, source_path: tuple[str, ...], add_entry_id_column: bool | str = False
     ) -> pa.Table | None:
         """Retrieve all records for a given source as a single table."""
-        source_key = self._get_source_key(source_name, source_id)
+        source_key = self._get_source_key(source_path)
         local_data = self._in_memory_store.get(source_key, {})
 
         if not local_data:
@@ -199,18 +198,17 @@ class SimpleInMemoryDataStore:
         return None
 
     def get_all_records_as_polars(
-        self, source_name: str, source_id: str
+        self, source_path: tuple[str, ...]
     ) -> pl.LazyFrame | None:
         """Retrieve all records for a given source as a single Polars LazyFrame."""
-        all_records = self.get_all_records(source_name, source_id)
+        all_records = self.get_all_records(source_path)
         if all_records is None:
             return None
         return pl.LazyFrame(all_records)
 
     def get_records_by_ids(
         self,
-        source_name: str,
-        source_id: str,
+        source_path: tuple[str, ...],
         entry_ids: list[str] | pl.Series | pa.Array,
         add_entry_id_column: bool | str = False,
         preserve_input_order: bool = False,
@@ -253,7 +251,7 @@ class SimpleInMemoryDataStore:
                 f"entry_ids must be list[str], pl.Series, or pa.Array, got {type(entry_ids)}"
             )
 
-        source_key = self._get_source_key(source_name, source_id)
+        source_key = self._get_source_key(source_path)
         local_data = self._in_memory_store.get(source_key, {})
 
         if not local_data:
@@ -340,8 +338,7 @@ class SimpleInMemoryDataStore:
 
     def get_records_by_ids_as_polars(
         self,
-        source_name: str,
-        source_id: str,
+        source_path: tuple[str, ...],
         entry_ids: list[str] | pl.Series | pa.Array,
         add_entry_id_column: bool | str = False,
         preserve_input_order: bool = False,
@@ -368,7 +365,7 @@ class SimpleInMemoryDataStore:
         """
         # Get Arrow result and convert to Polars
         arrow_result = self.get_records_by_ids(
-            source_name, source_id, entry_ids, add_entry_id_column, preserve_input_order
+            source_path, entry_ids, add_entry_id_column, preserve_input_order
         )
 
         if arrow_result is None:
@@ -464,7 +461,7 @@ class SimpleInMemoryDataStore:
                     continue
 
                 source_id = source_id_dir.name
-                source_key = self._get_source_key(source_name, source_id)
+                source_key = self._get_source_key((source_name, source_id))
 
                 # Look for Parquet files in this directory
                 parquet_files = list(source_id_dir.glob("*.parquet"))

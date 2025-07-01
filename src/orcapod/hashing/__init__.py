@@ -17,22 +17,22 @@ from .defaults import (
 )
 from .types import (
     FileContentHasher,
-    PacketHasher,
+    LegacyPacketHasher,
     ArrowHasher,
     ObjectHasher,
     StringCacher,
     FunctionInfoExtractor,
-    CompositeFileHasher,
+    LegacyCompositeFileHasher,
 )
 from .content_identifiable import ContentIdentifiableBase
 
 __all__ = [
     "FileContentHasher",
-    "PacketHasher",
+    "LegacyPacketHasher",
     "ArrowHasher",
     "StringCacher",
     "ObjectHasher",
-    "CompositeFileHasher",
+    "LegacyCompositeFileHasher",
     "FunctionInfoExtractor",
     "hash_file",
     "hash_pathset",

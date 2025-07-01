@@ -1,11 +1,12 @@
 from .core import operators, sources, streams
 from .core.streams import SyncStreamFromLists, SyncStreamFromGenerator
-from . import hashing, store
+from . import hashing, stores
 from .core.operators import Join, MapPackets, MapTags, packet, tag
 from .core.pod import FunctionPod, function_pod
 from .core.sources import GlobSource
-from .store import DirDataStore, SafeDirDataStore
+from .stores import DirDataStore, SafeDirDataStore
 from .core.tracker import GraphTracker
+from .pipeline import Pipeline
 
 DEFAULT_TRACKER = GraphTracker()
 DEFAULT_TRACKER.activate()
@@ -13,7 +14,7 @@ DEFAULT_TRACKER.activate()
 
 __all__ = [
     "hashing",
-    "store",
+    "stores",
     "pod",
     "operators",
     "streams",
@@ -31,4 +32,5 @@ __all__ = [
     "DEFAULT_TRACKER",
     "SyncStreamFromLists",
     "SyncStreamFromGenerator",
+    "Pipeline",
 ]

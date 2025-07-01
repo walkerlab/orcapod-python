@@ -16,7 +16,7 @@ from orcapod.hashing import (
 from orcapod.core.base import Kernel
 from orcapod.core.operators import Join
 from orcapod.core.streams import SyncStream, SyncStreamFromGenerator
-from orcapod.store import DataStore, NoOpDataStore
+from orcapod.stores import DataStore, NoOpDataStore
 
 
 logger = logging.getLogger(__name__)

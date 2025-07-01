@@ -33,7 +33,7 @@ from uuid import UUID
 
 import xxhash
 
-from orcapod.types import Packet, PathSet
+from orcapod.types import Packet, PacketLike, PathSet
 from orcapod.utils.name import find_noncolliding_name
 
 # Configure logging with __name__ for proper hierarchy
@@ -681,7 +681,7 @@ def hash_packet_with_psh(
 
 
 def hash_packet(
-    packet: Packet,
+    packet: PacketLike,
     algorithm: str = "sha256",
     buffer_size: int = 65536,
     char_count: Optional[int] = 32,

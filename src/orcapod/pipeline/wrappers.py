@@ -1,6 +1,6 @@
 from orcapod.core.pod import Pod, FunctionPod
 from orcapod.core import SyncStream, Source, Kernel
-from orcapod.store import ArrowDataStore
+from orcapod.stores import ArrowDataStore
 from orcapod.types import Tag, Packet, PacketLike, TypeSpec, default_registry
 from orcapod.types.typespec_utils import get_typespec_from_dict, union_typespecs, extract_function_typespecs
 from orcapod.types.semantic_type_registry import SemanticTypeRegistry
@@ -167,6 +167,7 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         kernel: Kernel,
         input_streams: Collection[SyncStream],
         output_store: ArrowDataStore,
+        store_path_prefix: tuple[str, ...] | None = None,
         kernel_hasher: ObjectHasher | None = None,
         arrow_packet_hasher: ArrowHasher | None = None,
         packet_type_registry: SemanticTypeRegistry | None = None,
@@ -175,6 +176,7 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         super().__init__(kernel, input_streams, **kwargs)
 
         self.output_store = output_store
+        self.store_path_prefix = store_path_prefix or ()
 
         # These are configurable but are not expected to be modified except for special circumstances
         if kernel_hasher is None:
@@ -214,7 +216,7 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         self.update_cached_values()
 
     def update_cached_values(self):
-        self.source_info = self.label, self.kernel_hasher.hash_to_hex(self.kernel)
+        self.source_info = self.store_path_prefix + (self.label, self.kernel_hasher.hash_to_hex(self.kernel))
         self.tag_keys, self.packet_keys = self.keys(trigger_run=False)
         self.tag_typespec, self.packet_typespec = self.types(trigger_run=False)
         if self.tag_typespec is None or self.packet_typespec is None:
@@ -270,9 +272,9 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         output_table = self.output_converter.from_python_packet_to_arrow_table(merged_info)
         # TODO: revisit this logic
         output_id = self.arrow_hasher.hash_table(output_table)
-        if not self.output_store.get_record(*self.source_info, output_id):
+        if not self.output_store.get_record(self.source_info, output_id):
             self.output_store.add_record(
-                *self.source_info,
+                self.source_info,
                 output_id,
                 output_table,
             )
@@ -287,7 +289,7 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
 
     @property
     def lazy_df(self) -> pl.LazyFrame | None:
-        return self.output_store.get_all_records_as_polars(*self.source_info)
+        return self.output_store.get_all_records_as_polars(self.source_info)
 
     @property
     def df(self) -> pl.DataFrame | None:
@@ -345,6 +347,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         output_store: ArrowDataStore,
         tag_store: ArrowDataStore | None = None,
         label: str | None = None,
+        store_path_prefix: tuple[str, ...] | None = None,
         skip_memoization_lookup: bool = False,
         skip_memoization: bool = False,
         skip_tag_record: bool = False,
@@ -361,6 +364,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
             error_handling=error_handling,
             **kwargs,
         )
+        self.store_path_prefix = store_path_prefix or ()
         self.output_store = output_store
         self.tag_store = tag_store
 
@@ -502,9 +506,9 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
 
         # TODO: add error handling
         # check if record already exists:
-        retrieved_table = self.tag_store.get_record(*self.source_info, entry_hash)
+        retrieved_table = self.tag_store.get_record(self.source_info, entry_hash)
         if retrieved_table is None:
-            self.tag_store.add_record(*self.source_info, entry_hash, table)
+            self.tag_store.add_record(self.source_info, entry_hash, table)
 
         return tag
 
@@ -523,8 +527,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         """
         logger.debug(f"Retrieving memoized packet with key {packet_key}")
         arrow_table = self.output_store.get_record(
-            self.function_pod.function_name,
-            self.function_pod_hash,
+            self.source_info,
             packet_key,
         )
         if arrow_table is None:
@@ -560,7 +563,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         # consider simpler alternative
         packets = self.output_converter.from_arrow_table_to_python_packets(
             self.output_store.add_record(
-                *self.source_info,
+                self.source_info,
                 packet_key,
                 self.output_converter.from_python_packet_to_arrow_table(output_packet),
             )
@@ -622,12 +625,12 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         return tag, output_packet
 
     def get_all_outputs(self) -> pl.LazyFrame | None:
-        return self.output_store.get_all_records_as_polars(*self.source_info)
+        return self.output_store.get_all_records_as_polars(self.source_info)
 
     def get_all_tags(self, with_packet_id: bool = False) -> pl.LazyFrame | None:
         if self.tag_store is None:
             raise ValueError("Tag store is not set, no tag record can be retrieved")
-        data = self.tag_store.get_all_records_as_polars(*self.source_info)
+        data = self.tag_store.get_all_records_as_polars(self.source_info)
         if not with_packet_id:
             return data.drop("__packet_key") if data is not None else None
         return data
@@ -640,11 +643,11 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         if self.tag_store is None:
             raise ValueError("Tag store is not set, no tag record can be retrieved")
 
-        tag_records = self.tag_store.get_all_records_as_polars(*self.source_info)
+        tag_records = self.tag_store.get_all_records_as_polars(self.source_info)
         if tag_records is None:
             return None
         result_packets = self.output_store.get_records_by_ids_as_polars(
-            *self.source_info,
+            self.source_info,
             tag_records.collect()["__packet_key"],
             preserve_input_order=True,
         )
