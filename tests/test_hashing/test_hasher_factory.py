@@ -80,7 +80,7 @@ class TestPathLikeHasherFactoryCreateFileHasher:
     def test_create_file_hasher_all_custom_parameters(self):
         """Test creating file hasher with all custom parameters."""
         cacher = InMemoryCacher(max_size=500)
-        hasher = LegacyPathLikeHasherFactory.create_file_hasher(
+        hasher = LegacyPathLikeHasherFactory.create_legacy_file_hasher(
             string_cacher=cacher, algorithm="blake2b", buffer_size=16384
         )
 
@@ -94,7 +94,7 @@ class TestPathLikeHasherFactoryCreateFileHasher:
         """Test creating file hasher with different types of string cachers."""
         # InMemoryCacher
         memory_cacher = InMemoryCacher()
-        hasher1 = LegacyPathLikeHasherFactory.create_file_hasher(string_cacher=memory_cacher)
+        hasher1 = LegacyPathLikeHasherFactory.create_legacy_file_hasher(string_cacher=memory_cacher)
         assert isinstance(hasher1, LegacyCachedFileHasher)
         assert hasher1.string_cacher is memory_cacher
 
