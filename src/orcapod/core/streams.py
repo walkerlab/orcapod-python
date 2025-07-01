@@ -96,6 +96,7 @@ class SyncStreamFromGenerator(SyncStream):
         if not self.check_consistency:
             yield from self.generator_factory()
 
+    # TODO: add typespec handling
     def keys(
         self, *, trigger_run: bool = False
     ) -> tuple[Collection[str] | None, Collection[str] | None]:
@@ -103,3 +104,4 @@ class SyncStreamFromGenerator(SyncStream):
             return super().keys(trigger_run=trigger_run)
         # If the keys are already set, return them
         return self.tag_keys.copy(), self.packet_keys.copy()
+        

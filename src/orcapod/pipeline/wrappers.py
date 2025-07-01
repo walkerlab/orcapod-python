@@ -460,11 +460,11 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
     def forward(self, *streams: SyncStream, **kwargs) -> SyncStream:
         if self._cache_computed:
             logger.info(f"Returning cached outputs for {self}")
-            if self.df is not None:
+            lazy_df = self.get_all_entries_with_tags(keep_hidden_fields=True)
+            if lazy_df is not None:
                 if self.tag_keys is None:
                     raise ValueError("Tag keys are not set, cannot return PolarsStream")
-                
-                return PolarsStream(self.df, self.tag_keys, packet_keys=self.output_keys)
+                return PolarsStream(lazy_df.collect(), self.tag_keys, packet_keys=self.output_keys)
             else:
                 return EmptyStream(tag_keys=self.tag_keys, packet_keys=self.output_keys)
         logger.info(f"Computing and caching outputs for {self}")
