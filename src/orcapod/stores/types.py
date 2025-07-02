@@ -80,3 +80,7 @@ class ArrowDataStore(Protocol):
     ) -> pl.LazyFrame | None:
         """Retrieve records by entry IDs as a single Polars DataFrame."""
         ...
+
+    def flush(self) -> None:
+        """Flush all pending writes/saves to the data store."""
+        ...

@@ -34,13 +34,23 @@ class Pipeline(GraphTracker):
         self,
         name: str | tuple[str, ...],
         pipeline_store: ArrowDataStore,
-        results_store: ArrowDataStore,
+        results_store: ArrowDataStore | None = None,
         auto_compile: bool = True,
     ) -> None:
         super().__init__()
         if not isinstance(name, tuple):
             name = (name,)
         self.name = name
+        self.pipeline_store_path_prefix = self.name
+        self.results_store_path_prefix = ()
+        if results_store is None:
+            if pipeline_store is None:
+                raise ValueError(
+                    "Either pipeline_store or results_store must be provided"
+                )
+            results_store = pipeline_store
+            self.results_store_path_prefix = self.name + ("_results",)
+
         self.pipeline_store = pipeline_store
         self.results_store = results_store
         self.labels_to_nodes = {}
@@ -78,6 +88,12 @@ class Pipeline(GraphTracker):
                 temp_path.unlink()
             raise
 
+    def flush(self) -> None:
+        """Flush all pending writes to the data store"""
+        self.pipeline_store.flush()
+        self.results_store.flush()
+        logger.info("Pipeline stores flushed")
+
     def record(self, invocation: Invocation) -> None:
         """
         Record an invocation in the pipeline.
@@ -93,13 +109,14 @@ class Pipeline(GraphTracker):
                 input_nodes,
                 output_store=self.results_store,
                 tag_store=self.pipeline_store,
-                store_path_prefix=self.name,
+                output_store_path_prefix=self.results_store_path_prefix,
+                tag_store_path_prefix=self.pipeline_store_path_prefix,
             )
         return KernelNode(
             kernel,
             input_nodes,
             output_store=self.pipeline_store,
-            store_path_prefix=self.name,
+            store_path_prefix=self.pipeline_store_path_prefix,
         )
 
     def compile(self):
@@ -174,6 +191,8 @@ class Pipeline(GraphTracker):
             if full_sync:
                 node.reset_cache()
             node.flow()
+
+        self.flush()
 
     @classmethod
     def load(cls, path: Path | str) -> "Pipeline":
