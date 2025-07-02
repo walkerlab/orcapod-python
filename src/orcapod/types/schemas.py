@@ -1,6 +1,5 @@
 from orcapod.types import TypeSpec
 from orcapod.types.semantic_type_registry import SemanticTypeRegistry
-from typing import Any
 import pyarrow as pa
 import datetime
 
