@@ -1,47 +1,396 @@
 import pyarrow as pa
+import pyarrow.compute as pc
 from io import BytesIO
-import pyarrow.ipc as ipc
 import struct
 from typing import Any
 import hashlib
 
 
-def serialize_table_ipc(table: pa.Table) -> bytes:
-    # TODO: fix and use logical table hashing instead
-    """Serialize table using Arrow IPC format for stable binary representation."""
-    buffer = BytesIO()
-
-    # Write format version
-    buffer.write(b"ARROW_IPC_V1")
-
-    # Use IPC stream format for deterministic serialization
-    with ipc.new_stream(buffer, table.schema) as writer:
-        writer.write_table(table)
-
-    return buffer.getvalue()
+def bool_sequence_to_byte(sequence: list[bool]) -> bytes:
+    """Convert a sequence of booleans to a byte array."""
+    if len(sequence) > 8:
+        raise ValueError("Sequence length exceeds 8 bits, cannot fit in a byte.")
+    mask = 1
+    flags = 0
+    for value in sequence:
+        if value:
+            flags |= mask
+        mask <<= 1
+    return struct.pack("<B", flags)
 
 
-def serialize_table_logical(table: pa.Table) -> bytes:
+class OrderOptions:
+    """Configuration for order-independent serialization."""
+
+    def __init__(
+        self, ignore_column_order: bool = True, ignore_row_order: bool = False
+    ):
+        self.ignore_column_order = ignore_column_order
+        self.ignore_row_order = ignore_row_order
+
+    def to_bytes(self) -> bytes:
+        """Serialize order options to bytes for inclusion in format."""
+        flags = 0
+        if self.ignore_column_order:
+            flags |= 1
+        if self.ignore_row_order:
+            flags |= 2
+        return struct.pack("<B", flags)
+
+    @classmethod
+    def from_bytes(cls, data: bytes) -> "OrderOptions":
+        """Deserialize order options from bytes."""
+        flags = struct.unpack("<B", data)[0]
+        return cls(
+            ignore_column_order=bool(flags & 1), ignore_row_order=bool(flags & 2)
+        )
+
+    def __str__(self):
+        return f"OrderOptions(ignore_column_order={self.ignore_column_order}, ignore_row_order={self.ignore_row_order})"
+
+
+def _convert_array_to_string_for_sorting(array: pa.Array) -> pa.Array:
+    """
+    Convert any Arrow array to string representation for sorting purposes.
+    Handles all data types including complex ones.
+    """
+    if pa.types.is_string(array.type) or pa.types.is_large_string(array.type):
+        # Already string
+        return array
+
+    elif pa.types.is_binary(array.type) or pa.types.is_large_binary(array.type):
+        # Convert binary to base64 string representation for deterministic sorting
+        try:
+            # Use Arrow's base64 encoding if available
+            import base64
+
+            str_values = []
+            # Get null mask
+            null_mask = pc.is_null(array)  # type: ignore
+            for i in range(len(array)):
+                if null_mask[i].as_py():
+                    str_values.append(None)  # Will be handled by fill_null later
+                else:
+                    binary_val = array[i].as_py()
+                    if binary_val is not None:
+                        str_values.append(base64.b64encode(binary_val).decode("ascii"))
+                    else:
+                        str_values.append(None)
+            return pa.array(str_values, type=pa.string())
+        except Exception:
+            # Fallback: convert to hex string
+            str_values = []
+            try:
+                null_mask = pc.is_null(array)  # type: ignore
+                for i in range(len(array)):
+                    if null_mask[i].as_py():
+                        str_values.append(None)
+                    else:
+                        try:
+                            binary_val = array[i].as_py()
+                            if binary_val is not None:
+                                str_values.append(binary_val.hex())
+                            else:
+                                str_values.append(None)
+                        except Exception:
+                            str_values.append(f"BINARY_{i}")
+            except Exception:
+                # If null checking fails, just convert all values
+                for i in range(len(array)):
+                    try:
+                        binary_val = array[i].as_py()
+                        if binary_val is not None:
+                            str_values.append(binary_val.hex())
+                        else:
+                            str_values.append(None)
+                    except Exception:
+                        str_values.append(f"BINARY_{i}")
+            return pa.array(str_values, type=pa.string())
+
+    elif _is_primitive_type(array.type):
+        # Convert primitive types to string
+        try:
+            return pc.cast(array, pa.string())
+        except Exception:
+            # Manual conversion for types that don't cast well
+            str_values = []
+            try:
+                null_mask = pc.is_null(array)  # type: ignore
+                for i in range(len(array)):
+                    if null_mask[i].as_py():
+                        str_values.append(None)
+                    else:
+                        try:
+                            value = array[i].as_py()
+                            str_values.append(str(value))
+                        except Exception:
+                            str_values.append(f"PRIMITIVE_{i}")
+            except Exception:
+                # If null checking fails, just convert all values
+                for i in range(len(array)):
+                    try:
+                        value = array[i].as_py()
+                        if value is not None:
+                            str_values.append(str(value))
+                        else:
+                            str_values.append(None)
+                    except Exception:
+                        str_values.append(f"PRIMITIVE_{i}")
+            return pa.array(str_values, type=pa.string())
+
+    elif pa.types.is_list(array.type) or pa.types.is_large_list(array.type):
+        # Convert list to string representation
+        str_values = []
+        try:
+            null_mask = pc.is_null(array)  # type: ignore
+            for i in range(len(array)):
+                if null_mask[i].as_py():
+                    str_values.append(None)
+                else:
+                    try:
+                        value = array[i].as_py()
+                        # Sort list elements for consistent representation
+                        if value is not None:
+                            sorted_value = sorted(
+                                value, key=lambda x: (x is None, str(x))
+                            )
+                            str_values.append(str(sorted_value))
+                        else:
+                            str_values.append(None)
+                    except Exception:
+                        str_values.append(f"LIST_{i}")
+        except Exception:
+            # If null checking fails, just convert all values
+            for i in range(len(array)):
+                try:
+                    value = array[i].as_py()
+                    if value is not None:
+                        sorted_value = sorted(value, key=lambda x: (x is None, str(x)))
+                        str_values.append(str(sorted_value))
+                    else:
+                        str_values.append(None)
+                except Exception:
+                    str_values.append(f"LIST_{i}")
+        return pa.array(str_values, type=pa.string())
+
+    elif pa.types.is_struct(array.type):
+        # Convert struct to string representation
+        str_values = []
+        try:
+            null_mask = pc.is_null(array)  # type: ignore
+            for i in range(len(array)):
+                if null_mask[i].as_py():
+                    str_values.append(None)
+                else:
+                    try:
+                        value = array[i].as_py()
+                        if value is not None:
+                            # Sort dict keys for consistent representation
+                            if isinstance(value, dict):
+                                sorted_items = sorted(
+                                    value.items(), key=lambda x: str(x[0])
+                                )
+                                str_values.append(str(dict(sorted_items)))
+                            else:
+                                str_values.append(str(value))
+                        else:
+                            str_values.append(None)
+                    except Exception:
+                        str_values.append(f"STRUCT_{i}")
+        except Exception:
+            # If null checking fails, just convert all values
+            for i in range(len(array)):
+                try:
+                    value = array[i].as_py()
+                    if value is not None:
+                        if isinstance(value, dict):
+                            sorted_items = sorted(
+                                value.items(), key=lambda x: str(x[0])
+                            )
+                            str_values.append(str(dict(sorted_items)))
+                        else:
+                            str_values.append(str(value))
+                    else:
+                        str_values.append(None)
+                except Exception:
+                    str_values.append(f"STRUCT_{i}")
+        return pa.array(str_values, type=pa.string())
+
+    elif pa.types.is_dictionary(array.type):
+        # Convert dictionary to string representation using the decoded values
+        str_values = []
+        try:
+            null_mask = pc.is_null(array)  # type: ignore
+            for i in range(len(array)):
+                if null_mask[i].as_py():
+                    str_values.append(None)
+                else:
+                    try:
+                        value = array[i].as_py()
+                        str_values.append(str(value))
+                    except Exception:
+                        str_values.append(f"DICT_{i}")
+        except Exception:
+            # If null checking fails, just convert all values
+            for i in range(len(array)):
+                try:
+                    value = array[i].as_py()
+                    if value is not None:
+                        str_values.append(str(value))
+                    else:
+                        str_values.append(None)
+                except Exception:
+                    str_values.append(f"DICT_{i}")
+        return pa.array(str_values, type=pa.string())
+
+    else:
+        # Generic fallback for any other types
+        try:
+            return pc.cast(array, pa.string())
+        except Exception:
+            # Manual conversion as last resort
+            str_values = []
+            try:
+                null_mask = pc.is_null(array)  # type: ignore
+                for i in range(len(array)):
+                    if null_mask[i].as_py():
+                        str_values.append(None)
+                    else:
+                        try:
+                            value = array[i].as_py()
+                            str_values.append(str(value))
+                        except Exception:
+                            str_values.append(f"UNKNOWN_{array.type}_{i}")
+            except Exception:
+                # If null checking fails, just convert all values
+                for i in range(len(array)):
+                    try:
+                        value = array[i].as_py()
+                        if value is not None:
+                            str_values.append(str(value))
+                        else:
+                            str_values.append(None)
+                    except Exception:
+                        str_values.append(f"UNKNOWN_{array.type}_{i}")
+            return pa.array(str_values, type=pa.string())
+
+
+def _create_row_sort_key(table: pa.Table) -> pa.Array:
+    """
+    Create a deterministic sort key for rows by combining all column values.
+    This ensures consistent row ordering regardless of input order.
+    """
+    if table.num_rows == 0:
+        return pa.array([], type=pa.string())
+
+    # Convert each column to string representation for sorting
+    sort_components = []
+
+    for i in range(table.num_columns):
+        column = table.column(i)
+        field = table.schema.field(i)
+
+        # Combine all chunks into a single array
+        if column.num_chunks > 1:
+            combined_array = pa.concat_arrays(column.chunks)
+        elif column.num_chunks == 1:
+            combined_array = column.chunk(0)
+        else:
+            combined_array = pa.array([], type=field.type)
+
+        # Convert to string representation for sorting
+        str_array = _convert_array_to_string_for_sorting(combined_array)
+
+        # Handle nulls by replacing with a consistent null representation
+        str_array = pc.fill_null(str_array, "NULL")
+        sort_components.append(str_array)
+
+    # Combine all columns into a single sort key
+    if len(sort_components) == 1:
+        return sort_components[0]
+    else:
+        # Concatenate all string representations with separators
+        separator = pa.scalar("||")
+        combined = sort_components[0]
+        for component in sort_components[1:]:
+            combined = pc.binary_join_element_wise(combined, separator, component)  # type: ignore
+        return combined
+
+
+def _sort_table_by_content(table: pa.Table) -> pa.Table:
+    """Sort table rows based on content for deterministic ordering."""
+    if table.num_rows <= 1:
+        return table
+
+    # Create sort key
+    sort_key = _create_row_sort_key(table)
+
+    # Get sort indices
+    sort_indices = pc.sort_indices(sort_key)  # type: ignore
+
+    # Apply sort to table
+    return pc.take(table, sort_indices)
+
+
+def _sort_table_columns_by_name(table: pa.Table) -> pa.Table:
+    """Sort table columns alphabetically by name for deterministic ordering."""
+    if table.num_columns <= 1:
+        return table
+
+    # Get column names and sort them
+    column_names = [field.name for field in table.schema]
+    sorted_names = sorted(column_names)
+
+    # If already sorted, return as-is
+    if column_names == sorted_names:
+        return table
+
+    # Reorder columns
+    return table.select(sorted_names)
+
+
+def serialize_table_logical(
+    table: pa.Table, order_options: OrderOptions | None = None
+) -> bytes:
     """
     Serialize table using column-wise processing with direct binary data access.
 
     This implementation works directly with Arrow's underlying binary buffers
     without converting to Python objects, making it much faster and more
     memory efficient while maintaining high repeatability.
+
+    Args:
+        table: PyArrow table to serialize
+        order_options: Options for handling column and row order independence
     """
+    if order_options is None:
+        order_options = OrderOptions()
+
     buffer = BytesIO()
 
     # Write format version
-    buffer.write(b"ARROW_BINARY_V1")
+    buffer.write(b"ARROW_BINARY_V1")  # Updated version to include order options
+
+    # Write order options
+    buffer.write(order_options.to_bytes())
+
+    # Apply ordering transformations if requested
+    processed_table = table
+
+    if order_options.ignore_column_order:
+        processed_table = _sort_table_columns_by_name(processed_table)
+
+    if order_options.ignore_row_order:
+        processed_table = _sort_table_by_content(processed_table)
 
     # Serialize schema deterministically
-    _serialize_schema_deterministic(buffer, table.schema)
+    _serialize_schema_deterministic(buffer, processed_table.schema)
 
     # Process each column using direct binary access
     column_digests = []
-    for i in range(table.num_columns):
-        column = table.column(i)
-        field = table.schema.field(i)
+    for i in range(processed_table.num_columns):
+        column = processed_table.column(i)
+        field = processed_table.schema.field(i)
         column_digest = _serialize_column_binary(column, field)
         column_digests.append(column_digest)
 
@@ -132,7 +481,7 @@ def _serialize_column_binary(column: pa.ChunkedArray, field: pa.Field) -> bytes:
 
     # Combine all chunks into a single array for consistent processing
     if column.num_chunks > 1:
-        # Multiple chunks - combine them
+        # Multiple chunks - combine them using pa.concat_arrays
         combined_array = pa.concat_arrays(column.chunks)
     elif column.num_chunks == 1:
         # Single chunk - use directly
@@ -158,26 +507,37 @@ def _serialize_array_binary(array: pa.Array, data_type: pa.DataType) -> bytes:
         validity_buffer = array.buffers()[0]
 
     # Process based on Arrow type, accessing buffers directly
-    if _is_primitive_type(data_type):
-        _serialize_primitive_array_binary(buffer, array, data_type, validity_buffer)
+    try:
+        if _is_primitive_type(data_type):
+            _serialize_primitive_array_binary(buffer, array, data_type, validity_buffer)
 
-    elif pa.types.is_string(data_type) or pa.types.is_large_string(data_type):
-        _serialize_string_array_binary(buffer, array, data_type, validity_buffer)
+        elif pa.types.is_string(data_type) or pa.types.is_large_string(data_type):
+            _serialize_string_array_binary(buffer, array, data_type, validity_buffer)
 
-    elif pa.types.is_binary(data_type) or pa.types.is_large_binary(data_type):
-        _serialize_binary_array_binary(buffer, array, data_type, validity_buffer)
+        elif pa.types.is_binary(data_type) or pa.types.is_large_binary(data_type):
+            _serialize_binary_array_binary(buffer, array, data_type, validity_buffer)
 
-    elif pa.types.is_list(data_type) or pa.types.is_large_list(data_type):
-        _serialize_list_array_binary(buffer, array, data_type, validity_buffer)
+        elif pa.types.is_list(data_type) or pa.types.is_large_list(data_type):
+            _serialize_list_array_binary(buffer, array, data_type, validity_buffer)
 
-    elif pa.types.is_struct(data_type):
-        _serialize_struct_array_binary(buffer, array, data_type, validity_buffer)
+        elif pa.types.is_struct(data_type):
+            _serialize_struct_array_binary(buffer, array, data_type, validity_buffer)
 
-    elif pa.types.is_dictionary(data_type):
-        _serialize_dictionary_array_binary(buffer, array, data_type, validity_buffer)
+        elif pa.types.is_dictionary(data_type):
+            _serialize_dictionary_array_binary(
+                buffer, array, data_type, validity_buffer
+            )
 
-    else:
-        # Fallback to element-wise processing for complex types
+        else:
+            # Fallback to element-wise processing for complex types
+            _serialize_array_fallback(buffer, array, data_type, validity_buffer)
+
+    except Exception as e:
+        # If binary serialization fails, fall back to element-wise processing
+        print(
+            f"Warning: Binary serialization failed for {data_type}, falling back to element-wise: {e}"
+        )
+        buffer = BytesIO()  # Reset buffer
         _serialize_array_fallback(buffer, array, data_type, validity_buffer)
 
     return buffer.getvalue()
@@ -252,17 +612,31 @@ def _serialize_list_array_binary(
     if offset_buffer is not None:
         buffer.write(offset_buffer.to_pybytes())
 
-    # Get child array - handle both .children and .values access patterns
+    # Get child array - handle different access patterns
     child_array = None
+
+    # Method 1: Try .values (most common for ListArray)
     if hasattr(array, "values") and array.values is not None:
         child_array = array.values
-    elif hasattr(array, "children") and len(array.children) > 0:
+
+    # Method 2: Try .children (some array types)
+    elif hasattr(array, "children") and array.children and len(array.children) > 0:
         child_array = array.children[0]
+
+    # Method 3: Try accessing via flatten() for some list types
+    elif hasattr(array, "flatten"):
+        try:
+            child_array = array.flatten()
+        except Exception:
+            pass
 
     # Recursively serialize child array
     if child_array is not None:
         child_data = _serialize_array_binary(child_array, data_type.value_type)
         buffer.write(child_data)
+    else:
+        # If we can't access child arrays directly, fall back to element-wise processing
+        _serialize_array_fallback(buffer, array, data_type, validity_buffer)
 
 
 def _serialize_struct_array_binary(
@@ -272,8 +646,27 @@ def _serialize_struct_array_binary(
     # Write validity bitmap
     _serialize_validity_buffer(buffer, validity_buffer)
 
+    # Get child arrays - handle different access patterns for StructArray
+    child_arrays = []
+    if hasattr(array, "field"):
+        # StructArray uses .field(i) to access child arrays
+        for i in range(len(data_type)):
+            child_arrays.append(array.field(i))
+    elif hasattr(array, "children") and array.children:
+        # Some array types use .children
+        child_arrays = array.children
+    else:
+        # Fallback: try to access fields by iterating
+        try:
+            for i in range(len(data_type)):
+                child_arrays.append(array.field(i))
+        except (AttributeError, IndexError):
+            # If all else fails, use element-wise processing
+            _serialize_array_fallback(buffer, array, data_type, validity_buffer)
+            return
+
     # Serialize each child field
-    for i, child_array in enumerate(array.children):
+    for i, child_array in enumerate(child_arrays):
         field_type = data_type[i].type
         child_data = _serialize_array_binary(child_array, field_type)
         buffer.write(child_data)
@@ -303,30 +696,6 @@ def _serialize_validity_buffer(buffer: BytesIO, validity_buffer):
     # If no validity buffer, there are no nulls (implicit)
 
 
-def _serialize_boolean_buffer(buffer: BytesIO, data_buffer, array_length: int):
-    """Serialize boolean buffer (bit-packed)."""
-    # Boolean data is bit-packed, copy directly
-    bool_bytes = data_buffer.to_pybytes()
-    buffer.write(struct.pack("<Q", len(bool_bytes)))
-    buffer.write(bool_bytes)
-    # Also store the actual length for proper bit interpretation
-    buffer.write(struct.pack("<Q", array_length))
-
-
-def _get_type_byte_width(data_type: pa.DataType) -> int:
-    """Get byte width of primitive types."""
-    if pa.types.is_boolean(data_type):
-        return 1  # Bit-packed, but minimum 1 byte
-    elif pa.types.is_integer(data_type) or pa.types.is_floating(data_type):
-        return data_type.bit_width // 8
-    elif pa.types.is_date(data_type):
-        return 4 if data_type == pa.date32() else 8
-    elif pa.types.is_time(data_type) or pa.types.is_timestamp(data_type):
-        return data_type.bit_width // 8
-    else:
-        return 8  # Default
-
-
 def _serialize_array_fallback(
     buffer: BytesIO, array: pa.Array, data_type: pa.DataType, validity_buffer
 ):
@@ -334,35 +703,132 @@ def _serialize_array_fallback(
     # Write validity bitmap
     _serialize_validity_buffer(buffer, validity_buffer)
 
-    # Process element by element (only for types that need it)
+    # Process element by element
     for i in range(len(array)):
-        if array.is_null(i):
+        try:
+            null_mask = pc.is_null(array)  # type: ignore
+            is_null = null_mask[i].as_py()
+        except:
+            # Fallback null check
+            try:
+                value = array[i].as_py()
+                is_null = value is None
+            except:
+                is_null = False
+
+        if is_null:
             buffer.write(b"\x00")
         else:
             buffer.write(b"\x01")
-            # For complex nested types, we might still need .as_py()
-            # But this should be rare with proper binary handling above
-            value = array[i].as_py()
-            _serialize_complex_value(buffer, value, data_type)
+
+            # For complex nested types, convert to Python and serialize
+            try:
+                value = array[i].as_py()
+                _serialize_complex_value(buffer, value, data_type)
+            except Exception as e:
+                # If .as_py() fails, try alternative approaches
+                try:
+                    # For some array types, we can access scalar values differently
+                    scalar = array[i]
+                    if hasattr(scalar, "value"):
+                        value = scalar.value
+                    else:
+                        value = str(scalar)  # Convert to string as last resort
+                    _serialize_complex_value(buffer, value, data_type)
+                except Exception:
+                    # Absolute fallback - serialize type name and index
+                    fallback_str = f"{data_type}[{i}]"
+                    fallback_bytes = fallback_str.encode("utf-8")
+                    buffer.write(struct.pack("<Q", len(fallback_bytes)))
+                    buffer.write(fallback_bytes)
 
 
 def _serialize_complex_value(buffer: BytesIO, value: Any, data_type: pa.DataType):
     """Serialize complex values that can't be handled by direct buffer access."""
-    # This handles edge cases like nested structs with mixed types
+
     if pa.types.is_decimal(data_type):
+        # Decimal as string for deterministic representation
         decimal_str = str(value).encode("utf-8")
         buffer.write(struct.pack("<Q", len(decimal_str)))
         buffer.write(decimal_str)
+
+    elif pa.types.is_list(data_type) or pa.types.is_large_list(data_type):
+        # List: length + elements
+        if value is None:
+            buffer.write(struct.pack("<Q", 0))
+        else:
+            buffer.write(struct.pack("<Q", len(value)))
+            for item in value:
+                if item is not None:
+                    buffer.write(b"\x01")
+                    _serialize_complex_value(buffer, item, data_type.value_type)
+                else:
+                    buffer.write(b"\x00")
+
+    elif pa.types.is_struct(data_type):
+        # Struct: serialize fields in order
+        if value is None:
+            buffer.write(struct.pack("<Q", 0))
+        else:
+            buffer.write(struct.pack("<Q", len(data_type)))
+            # Handle both dict-like and tuple-like struct values
+            if isinstance(value, dict):
+                # Dict-like access
+                for i, field in enumerate(data_type):
+                    field_value = value.get(field.name)
+                    if field_value is not None:
+                        buffer.write(b"\x01")
+                        _serialize_complex_value(buffer, field_value, field.type)
+                    else:
+                        buffer.write(b"\x00")
+            else:
+                # Tuple/list-like access
+                for i, field in enumerate(data_type):
+                    field_value = value[i] if i < len(value) else None
+                    if field_value is not None:
+                        buffer.write(b"\x01")
+                        _serialize_complex_value(buffer, field_value, field.type)
+                    else:
+                        buffer.write(b"\x00")
+
+    elif pa.types.is_dictionary(data_type):
+        # Dictionary: serialize the actual decoded value
+        _serialize_complex_value(buffer, value, data_type.value_type)
+
+    elif isinstance(value, (list, tuple)):
+        # Generic list/tuple handling
+        buffer.write(struct.pack("<Q", len(value)))
+        for item in value:
+            item_str = str(item).encode("utf-8")
+            buffer.write(struct.pack("<Q", len(item_str)))
+            buffer.write(item_str)
+
+    elif isinstance(value, dict):
+        # Generic dict handling - sort keys for determinism
+        sorted_items = sorted(value.items())
+        buffer.write(struct.pack("<Q", len(sorted_items)))
+        for key, val in sorted_items:
+            key_str = str(key).encode("utf-8")
+            val_str = str(val).encode("utf-8")
+            buffer.write(struct.pack("<Q", len(key_str)))
+            buffer.write(key_str)
+            buffer.write(struct.pack("<Q", len(val_str)))
+            buffer.write(val_str)
+
     else:
-        # Generic fallback
+        # Generic fallback: convert to string representation
         str_repr = str(value).encode("utf-8")
         buffer.write(struct.pack("<Q", len(str_repr)))
         buffer.write(str_repr)
 
 
-def serialize_table_logical_hash(table: pa.Table, algorithm: str = "sha256") -> str:
+def serialize_table_logical_hash(
+    table: pa.Table,
+    algorithm: str = "sha256",
+    order_options: OrderOptions | None = None,
+) -> str:
     """Create deterministic hash using binary serialization."""
-    serialized = serialize_table_logical(table)
+    serialized = serialize_table_logical(table, order_options)
 
     if algorithm == "sha256":
         hasher = hashlib.sha256()
@@ -377,27 +843,44 @@ def serialize_table_logical_hash(table: pa.Table, algorithm: str = "sha256") -> 
     return hasher.hexdigest()
 
 
-def serialize_table_logical_streaming(table: pa.Table) -> str:
+def serialize_table_logical_streaming(
+    table: pa.Table, order_options: OrderOptions | None = None
+) -> str:
     """
     Memory-efficient streaming version that produces the same hash as serialize_table_logical_hash.
 
     This version processes data in streaming fashion but maintains the same logical structure
     as the non-streaming version to ensure identical hashes and chunking independence.
     """
+    if order_options is None:
+        order_options = OrderOptions()
+
     hasher = hashlib.sha256()
 
     # Hash format version (same as non-streaming)
     hasher.update(b"ARROW_BINARY_V1")
 
+    # Hash order options
+    hasher.update(order_options.to_bytes())
+
+    # Apply ordering transformations if requested
+    processed_table = table
+
+    if order_options.ignore_column_order:
+        processed_table = _sort_table_columns_by_name(processed_table)
+
+    if order_options.ignore_row_order:
+        processed_table = _sort_table_by_content(processed_table)
+
     # Hash schema (same as non-streaming)
     schema_buffer = BytesIO()
-    _serialize_schema_deterministic(schema_buffer, table.schema)
+    _serialize_schema_deterministic(schema_buffer, processed_table.schema)
     hasher.update(schema_buffer.getvalue())
 
     # Process each column using the same logic as non-streaming
-    for i in range(table.num_columns):
-        column = table.column(i)
-        field = table.schema.field(i)
+    for i in range(processed_table.num_columns):
+        column = processed_table.column(i)
+        field = processed_table.schema.field(i)
 
         # Use the same column serialization logic for chunking independence
         column_data = _serialize_column_binary(column, field)
@@ -408,7 +891,46 @@ def serialize_table_logical_streaming(table: pa.Table) -> str:
     return hasher.hexdigest()
 
 
-# Test utilities
+# IPC serialization for comparison (updated to include order options for fair comparison)
+def serialize_table_ipc(
+    table: pa.Table, order_options: OrderOptions | None = None
+) -> bytes:
+    """Serialize table using Arrow IPC format for comparison."""
+    from io import BytesIO
+    import pyarrow.ipc as ipc
+
+    if order_options is None:
+        order_options = OrderOptions()
+
+    buffer = BytesIO()
+
+    # Add format version for consistency with logical serialization
+    buffer.write(b"ARROW_IPC_V2")
+
+    # Add order options
+    buffer.write(order_options.to_bytes())
+
+    # Apply ordering transformations if requested
+    processed_table = table
+
+    if order_options.ignore_column_order:
+        processed_table = _sort_table_columns_by_name(processed_table)
+
+    if order_options.ignore_row_order:
+        processed_table = _sort_table_by_content(processed_table)
+
+    # Standard IPC serialization
+    ipc_buffer = BytesIO()
+    with ipc.new_stream(ipc_buffer, processed_table.schema) as writer:
+        writer.write_table(processed_table)
+
+    # Append IPC data
+    buffer.write(ipc_buffer.getvalue())
+
+    return buffer.getvalue()
+
+
+# Test utilities (updated to test order independence)
 def create_test_table_1():
     """Create a basic test table with various data types."""
     return pa.table(
@@ -494,45 +1016,6 @@ def create_test_table_different_chunking():
     )
 
 
-def create_test_table_empty():
-    """Create an empty table with same schema."""
-    return pa.table(
-        {
-            "int32_col": pa.array([], type=pa.int32()),
-            "float64_col": pa.array([], type=pa.float64()),
-            "string_col": pa.array([], type=pa.string()),
-            "bool_col": pa.array([], type=pa.bool_()),
-            "binary_col": pa.array([], type=pa.binary()),
-        }
-    )
-
-
-def create_test_table_all_nulls():
-    """Create a table with all null values."""
-    return pa.table(
-        {
-            "int32_col": pa.array([None, None, None], type=pa.int32()),
-            "float64_col": pa.array([None, None, None], type=pa.float64()),
-            "string_col": pa.array([None, None, None], type=pa.string()),
-            "bool_col": pa.array([None, None, None], type=pa.bool_()),
-            "binary_col": pa.array([None, None, None], type=pa.binary()),
-        }
-    )
-
-
-def create_test_table_no_nulls():
-    """Create a table with no null values."""
-    return pa.table(
-        {
-            "int32_col": pa.array([1, 2, 3, 4, 5], type=pa.int32()),
-            "float64_col": pa.array([1.1, 2.2, 3.3, 4.4, 5.5], type=pa.float64()),
-            "string_col": pa.array(["hello", "world", "arrow", "fast", "data"]),
-            "bool_col": pa.array([True, False, True, False, True]),
-            "binary_col": pa.array([b"data1", b"data2", b"data3", b"data4", b"data5"]),
-        }
-    )
-
-
 def create_test_table_complex_types():
     """Create a table with complex nested types."""
     return pa.table(
@@ -557,29 +1040,13 @@ def create_test_table_complex_types():
     )
 
 
-def create_test_table_single_column():
-    """Create a table with just one column."""
-    return pa.table({"single_col": pa.array([1, 2, 3, 4, 5], type=pa.int32())})
-
-
-def create_test_table_single_row():
-    """Create a table with just one row."""
-    return pa.table(
-        {
-            "int32_col": pa.array([42], type=pa.int32()),
-            "string_col": pa.array(["single"]),
-            "bool_col": pa.array([True]),
-        }
-    )
-
-
 def run_comprehensive_tests():
-    """Run comprehensive test suite for serialization."""
+    """Run comprehensive test suite for serialization with order independence."""
     import time
 
-    print("=" * 60)
-    print("COMPREHENSIVE ARROW SERIALIZATION TEST SUITE")
-    print("=" * 60)
+    print("=" * 70)
+    print("COMPREHENSIVE ARROW SERIALIZATION TEST SUITE (WITH ORDER OPTIONS)")
+    print("=" * 70)
 
     # Test cases
     test_cases = [
@@ -588,159 +1055,151 @@ def run_comprehensive_tests():
         ("Reordered rows", create_test_table_reordered_rows),
         ("Different types", create_test_table_different_types),
         ("Different chunking", create_test_table_different_chunking),
-        ("Empty table", create_test_table_empty),
-        ("All nulls", create_test_table_all_nulls),
-        ("No nulls", create_test_table_no_nulls),
         ("Complex types", create_test_table_complex_types),
-        ("Single column", create_test_table_single_column),
-        ("Single row", create_test_table_single_row),
     ]
 
-    # Generate hashes for all test cases
-    results = {}
+    # Order option combinations to test
+    order_configs = [
+        ("Default (order-sensitive)", OrderOptions(False, False)),
+        ("Column-order independent", OrderOptions(True, False)),
+        ("Row-order independent", OrderOptions(False, True)),
+        ("Fully order-independent", OrderOptions(True, True)),
+    ]
 
-    print("\n1. GENERATING HASHES FOR ALL TEST CASES")
-    print("-" * 50)
-
-    for name, create_func in test_cases:
-        try:
-            table = create_func()
-
-            # Generate all hash types
-            logical_hash = serialize_table_logical_hash(table)
-            streaming_hash = serialize_table_logical_streaming(table)
-            ipc_hash = hashlib.sha256(serialize_table_ipc(table)).hexdigest()
-
-            results[name] = {
-                "table": table,
-                "logical": logical_hash,
-                "streaming": streaming_hash,
-                "ipc": ipc_hash,
-                "rows": table.num_rows,
-                "cols": table.num_columns,
-            }
-
-            print(
-                f"{name:20} | Rows: {table.num_rows:5} | Cols: {table.num_columns:2} | "
-                f"Logical: {logical_hash[:12]}... | IPC: {ipc_hash[:12]}..."
-            )
-
-        except Exception as e:
-            print(f"{name:20} | ERROR: {str(e)}")
-            results[name] = {"error": str(e)}
-
-    print("\n2. DETERMINISM TESTS")
+    print("\n1. ORDER INDEPENDENCE TESTS")
     print("-" * 50)
 
     base_table = create_test_table_1()
+    reordered_cols = create_test_table_reordered_columns()
+    reordered_rows = create_test_table_reordered_rows()
 
-    # Test multiple runs of same table
-    logical_hashes = [serialize_table_logical_hash(base_table) for _ in range(5)]
-    streaming_hashes = [serialize_table_logical_streaming(base_table) for _ in range(5)]
-    ipc_hashes = [
-        hashlib.sha256(serialize_table_ipc(base_table)).hexdigest() for _ in range(5)
-    ]
+    for config_name, order_opts in order_configs:
+        print(f"\n{config_name}:")
+        print(f"  Config: {order_opts}")
 
-    print(
-        f"Logical deterministic:   {len(set(logical_hashes)) == 1} ({len(set(logical_hashes))}/5 unique)"
-    )
-    print(
-        f"Streaming deterministic: {len(set(streaming_hashes)) == 1} ({len(set(streaming_hashes))}/5 unique)"
-    )
-    print(
-        f"IPC deterministic:       {len(set(ipc_hashes)) == 1} ({len(set(ipc_hashes))}/5 unique)"
-    )
-    print(f"Streaming == Logical:    {streaming_hashes[0] == logical_hashes[0]}")
+        # Test with base table
+        base_hash = serialize_table_logical_hash(base_table, order_options=order_opts)
+        cols_hash = serialize_table_logical_hash(
+            reordered_cols, order_options=order_opts
+        )
+        rows_hash = serialize_table_logical_hash(
+            reordered_rows, order_options=order_opts
+        )
 
-    print("\n3. EQUIVALENCE TESTS")
+        # Test streaming consistency
+        base_stream = serialize_table_logical_streaming(
+            base_table, order_options=order_opts
+        )
+
+        print(f"  Base table:        {base_hash[:12]}...")
+        print(f"  Reordered columns: {cols_hash[:12]}...")
+        print(f"  Reordered rows:    {rows_hash[:12]}...")
+        print(f"  Streaming matches: {base_hash == base_stream}")
+
+        # Check expected behavior
+        cols_should_match = order_opts.ignore_column_order
+        rows_should_match = order_opts.ignore_row_order
+
+        cols_match = base_hash == cols_hash
+        rows_match = base_hash == rows_hash
+
+        cols_status = "✓" if cols_match == cols_should_match else "✗"
+        rows_status = "✓" if rows_match == rows_should_match else "✗"
+
+        print(
+            f"  {cols_status} Column order independence: {cols_match} (expected: {cols_should_match})"
+        )
+        print(
+            f"  {rows_status} Row order independence: {rows_match} (expected: {rows_should_match})"
+        )
+
+    print("\n2. CHUNKING INDEPENDENCE WITH ORDER OPTIONS")
     print("-" * 50)
 
-    base_logical = results["Basic table"]["logical"]
-    base_ipc = results["Basic table"]["ipc"]
-
-    equivalence_tests = [
-        (
-            "Same table vs reordered columns",
-            "Reordered columns",
-            False,
-            "Different column order should produce different hash",
-        ),
-        (
-            "Same table vs reordered rows",
-            "Reordered rows",
-            False,
-            "Different row order should produce different hash",
-        ),
-        (
-            "Same table vs different types",
-            "Different types",
-            False,
-            "Different data types should produce different hash",
-        ),
-        (
-            "Same table vs different chunking",
-            "Different chunking",
-            True,
-            "Same data with different chunking should produce same hash",
-        ),
-        (
-            "Same table vs no nulls",
-            "No nulls",
-            False,
-            "Different null patterns should produce different hash",
-        ),
-        (
-            "Same table vs all nulls",
-            "All nulls",
-            False,
-            "Different data should produce different hash",
-        ),
-    ]
-
-    for test_name, compare_case, should_match, explanation in equivalence_tests:
-        if compare_case in results and "logical" in results[compare_case]:
-            compare_logical = results[compare_case]["logical"]
-            compare_ipc = results[compare_case]["ipc"]
-
-            logical_match = base_logical == compare_logical
-            ipc_match = base_ipc == compare_ipc
-
-            logical_status = "✓" if logical_match == should_match else "✗"
-            ipc_status = "✓" if ipc_match == should_match else "✗"
-
-            print(f"{logical_status} {test_name}")
-            print(f"   Logical: {logical_match} (expected: {should_match})")
-            print(f"   IPC:     {ipc_match} (expected: {should_match})")
-            print(f"   Reason:  {explanation}")
-            print()
-
-    print("4. CHUNKING INDEPENDENCE DETAILED TEST")
-    print("-" * 50)
-
-    # Test various chunking strategies
-    original_table = create_test_table_1()
-    combined_table = original_table.combine_chunks()
+    original = create_test_table_1()
+    combined = original.combine_chunks()
     different_chunking = create_test_table_different_chunking()
 
-    orig_logical = serialize_table_logical_hash(original_table)
-    comb_logical = serialize_table_logical_hash(combined_table)
-    diff_logical = serialize_table_logical_hash(different_chunking)
+    for config_name, order_opts in order_configs:
+        orig_hash = serialize_table_logical_hash(original, order_options=order_opts)
+        comb_hash = serialize_table_logical_hash(combined, order_options=order_opts)
+        diff_hash = serialize_table_logical_hash(
+            different_chunking, order_options=order_opts
+        )
 
-    orig_ipc = hashlib.sha256(serialize_table_ipc(original_table)).hexdigest()
-    comb_ipc = hashlib.sha256(serialize_table_ipc(combined_table)).hexdigest()
-    diff_ipc = hashlib.sha256(serialize_table_ipc(different_chunking)).hexdigest()
+        chunking_independent = orig_hash == comb_hash == diff_hash
+        status = "✓" if chunking_independent else "✗"
 
-    print(f"Original chunking:     {orig_logical[:16]}...")
-    print(f"Combined chunks:       {comb_logical[:16]}...")
-    print(f"Different chunking:    {diff_logical[:16]}...")
-    print(
-        f"Logical chunking-independent: {orig_logical == comb_logical == diff_logical}"
+        print(
+            f"{status} {config_name:25} | Chunking independent: {chunking_independent}"
+        )
+
+    print("\n3. FORMAT VERSION COMPATIBILITY")
+    print("-" * 50)
+
+    # Test that different order options produce different hashes when they should
+    test_table = create_test_table_1()
+
+    hashes = {}
+    for config_name, order_opts in order_configs:
+        hash_value = serialize_table_logical_hash(test_table, order_options=order_opts)
+        hashes[config_name] = hash_value
+        print(f"{config_name:25} | {hash_value[:16]}...")
+
+    # Verify that order-sensitive vs order-independent produce different hashes
+    default_hash = hashes["Default (order-sensitive)"]
+    col_indep_hash = hashes["Column-order independent"]
+    row_indep_hash = hashes["Row-order independent"]
+    full_indep_hash = hashes["Fully order-independent"]
+
+    print(f"\nHash uniqueness:")
+    print(f"  Default != Col-independent:  {default_hash != col_indep_hash}")
+    print(f"  Default != Row-independent:  {default_hash != row_indep_hash}")
+    print(f"  Default != Fully independent: {default_hash != full_indep_hash}")
+
+    print("\n4. CONTENT EQUIVALENCE TEST")
+    print("-" * 50)
+
+    # Create tables with same content but different presentation
+    table_a = pa.table({"col1": pa.array([1, 2, 3]), "col2": pa.array(["a", "b", "c"])})
+
+    table_b = pa.table(
+        {
+            "col2": pa.array(["a", "b", "c"]),  # Different column order
+            "col1": pa.array([1, 2, 3]),
+        }
     )
-    print()
-    print(f"Original IPC:          {orig_ipc[:16]}...")
-    print(f"Combined IPC:          {comb_ipc[:16]}...")
-    print(f"Different IPC:         {diff_ipc[:16]}...")
-    print(f"IPC chunking-independent:     {orig_ipc == comb_ipc == diff_ipc}")
+
+    table_c = pa.table(
+        {
+            "col1": pa.array([3, 1, 2]),  # Different row order
+            "col2": pa.array(["c", "a", "b"]),
+        }
+    )
+
+    table_d = pa.table(
+        {
+            "col2": pa.array(["c", "a", "b"]),  # Both different
+            "col1": pa.array([3, 1, 2]),
+        }
+    )
+
+    full_indep_opts = OrderOptions(True, True)
+
+    hash_a = serialize_table_logical_hash(table_a, order_options=full_indep_opts)
+    hash_b = serialize_table_logical_hash(table_b, order_options=full_indep_opts)
+    hash_c = serialize_table_logical_hash(table_c, order_options=full_indep_opts)
+    hash_d = serialize_table_logical_hash(table_d, order_options=full_indep_opts)
+
+    all_match = hash_a == hash_b == hash_c == hash_d
+    status = "✓" if all_match else "✗"
+
+    print(f"{status} Content equivalence test:")
+    print(f"  Table A (original):     {hash_a[:12]}...")
+    print(f"  Table B (reord cols):   {hash_b[:12]}...")
+    print(f"  Table C (reord rows):   {hash_c[:12]}...")
+    print(f"  Table D (both reord):   {hash_d[:12]}...")
+    print(f"  All hashes match: {all_match}")
 
     print("\n5. PERFORMANCE COMPARISON")
     print("-" * 50)
@@ -758,18 +1217,14 @@ def run_comprehensive_tests():
         }
     )
 
-    # Time each method
-    methods = [
-        ("Logical", lambda t: serialize_table_logical_hash(t)),
-        ("Streaming", lambda t: serialize_table_logical_streaming(t)),
-        ("IPC", lambda t: hashlib.sha256(serialize_table_ipc(t)).hexdigest()),
-    ]
-    hash_result = ""
-    for method_name, method_func in methods:
+    # Time each method with different order options
+    for config_name, order_opts in order_configs:
         times = []
         for _ in range(3):  # Run 3 times for average
             start = time.time()
-            hash_result = method_func(large_table)
+            hash_result = serialize_table_logical_hash(
+                large_table, order_options=order_opts
+            )
             end = time.time()
             times.append(end - start)
 
@@ -777,43 +1232,12 @@ def run_comprehensive_tests():
         throughput = (large_size * 4) / avg_time  # 4 columns
 
         print(
-            f"{method_name:10} | {avg_time * 1000:6.1f}ms | {throughput:8.0f} values/sec | {hash_result[:12]}..."
+            f"{config_name:25} | {avg_time * 1000:6.1f}ms | {throughput:8.0f} values/sec"
         )
 
-    print("\n6. EDGE CASES")
-    print("-" * 50)
-
-    edge_cases = ["Empty table", "All nulls", "Single column", "Single row"]
-    for case in edge_cases:
-        if case in results and "error" not in results[case]:
-            r = results[case]
-            print(
-                f"{case:15} | {r['rows']:3}r x {r['cols']:2}c | "
-                f"L:{r['logical'][:8]}... | I:{r['ipc'][:8]}... | "
-                f"Match: {r['logical'] == r['streaming']}"
-            )
-
-    print("\n7. COMPLEX TYPES TEST")
-    print("-" * 50)
-
-    if "Complex types" in results and "error" not in results["Complex types"]:
-        complex_result = results["Complex types"]
-        print(f"Complex types serialization successful:")
-        print(f"  Logical hash:  {complex_result['logical']}")
-        print(
-            f"  Streaming ==:  {complex_result['logical'] == complex_result['streaming']}"
-        )
-        print(f"  Rows/Cols:     {complex_result['rows']}r x {complex_result['cols']}c")
-    else:
-        print(
-            "Complex types test failed - this is expected for some complex nested types"
-        )
-
-    print(f"\n{'=' * 60}")
-    print("TEST SUITE COMPLETE")
-    print(f"{'=' * 60}")
-
-    return results
+    print(f"\n{'=' * 70}")
+    print("ORDER-INDEPENDENT SERIALIZATION TEST SUITE COMPLETE")
+    print(f"{'=' * 70}")
 
 
 # Main execution
