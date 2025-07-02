@@ -1,7 +1,6 @@
-from polars import Object
-from .types import FunctionInfoExtractor, ObjectHasher
-from .legacy_core import legacy_hash
-from .hash_utils import hash_object
+from orcapod.hashing.types import FunctionInfoExtractor, ObjectHasher
+from orcapod.hashing import legacy_core
+from orcapod.hashing import hash_utils
 
 
 class BasicObjectHasher(ObjectHasher):
@@ -30,7 +29,9 @@ class BasicObjectHasher(ObjectHasher):
         Returns:
             bytes: The byte representation of the hash.
         """
-        return hash_object(obj, function_info_extractor=self.function_info_extractor)
+        return hash_utils.hash_object(
+            obj, function_info_extractor=self.function_info_extractor
+        )
 
 
 class LegacyObjectHasher(ObjectHasher):
@@ -54,6 +55,12 @@ class LegacyObjectHasher(ObjectHasher):
         """
         self.function_info_extractor = function_info_extractor
 
+    def get_hasher_id(self) -> str:
+        """
+        Returns a unique identifier/name assigned to the hasher
+        """
+        return "legacy_object_hasher"
+
     def hash(self, obj: object) -> bytes:
         """
         Hash an object to a byte representation.
@@ -64,4 +71,6 @@ class LegacyObjectHasher(ObjectHasher):
         Returns:
             bytes: The byte representation of the hash.
         """
-        return legacy_hash(obj, function_info_extractor=self.function_info_extractor)
+        return legacy_core.legacy_hash(
+            obj, function_info_extractor=self.function_info_extractor
+        )

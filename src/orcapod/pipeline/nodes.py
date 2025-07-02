@@ -1,19 +1,16 @@
 from orcapod.core.pod import Pod, FunctionPod
 from orcapod.core import SyncStream, Source, Kernel
+from orcapod.core.streams import PolarsStream
+from orcapod.core.streams import EmptyStream
 from orcapod.stores import ArrowDataStore
 from orcapod.types import Tag, Packet, PacketLike, TypeSpec, default_registry
-from orcapod.types.typespec_utils import (
-    get_typespec_from_dict,
-    union_typespecs,
-    extract_function_typespecs,
-)
+from orcapod.types.typespec_utils import union_typespecs
 from orcapod.types.semantic_type_registry import SemanticTypeRegistry
 from orcapod.types import packets, schemas
 from orcapod.hashing import ObjectHasher, ArrowHasher
 from orcapod.hashing.defaults import get_default_object_hasher, get_default_arrow_hasher
 from typing import Any, Literal
 from collections.abc import Collection, Iterator
-import pyarrow as pa
 import polars as pl
 from orcapod.core.streams import SyncStreamFromGenerator
 
@@ -26,91 +23,6 @@ def get_tag_typespec(tag: Tag) -> dict[str, type]:
     return {k: str for k in tag}
 
 
-class PolarsSource(Source):
-    def __init__(
-        self,
-        df: pl.DataFrame,
-        tag_keys: Collection[str],
-        packet_keys: Collection[str] | None = None,
-    ):
-        self.df = df
-        self.tag_keys = tag_keys
-        self.packet_keys = packet_keys
-
-    def forward(self, *streams: SyncStream, **kwargs) -> SyncStream:
-        if len(streams) != 0:
-            raise ValueError(
-                "PolarsSource does not support forwarding streams. "
-                "It generates its own stream from the DataFrame."
-            )
-        return PolarsStream(self.df, self.tag_keys, self.packet_keys)
-
-
-class PolarsStream(SyncStream):
-    def __init__(
-        self,
-        df: pl.DataFrame,
-        tag_keys: Collection[str],
-        packet_keys: Collection[str] | None = None,
-    ):
-        self.df = df
-        self.tag_keys = tuple(tag_keys)
-        self.packet_keys = tuple(packet_keys) if packet_keys is not None else None
-
-    def __iter__(self) -> Iterator[tuple[Tag, Packet]]:
-        df = self.df
-        # if self.packet_keys is not None:
-        #     df = df.select(self.tag_keys + self.packet_keys)
-        for row in df.iter_rows(named=True):
-            tag = {key: row[key] for key in self.tag_keys}
-            packet = {
-                key: val
-                for key, val in row.items()
-                if key not in self.tag_keys and not key.startswith("_source_info_")
-            }
-            # TODO: revisit and fix this rather hacky implementation
-            source_info = {
-                key.removeprefix("_source_info_"): val
-                for key, val in row.items()
-                if key.startswith("_source_info_")
-            }
-            yield tag, Packet(packet, source_info=source_info)
-
-
-class EmptyStream(SyncStream):
-    def __init__(
-        self,
-        tag_keys: Collection[str] | None = None,
-        packet_keys: Collection[str] | None = None,
-        tag_typespec: TypeSpec | None = None,
-        packet_typespec: TypeSpec | None = None,
-    ):
-        if tag_keys is None and tag_typespec is not None:
-            tag_keys = tag_typespec.keys()
-        self.tag_keys = list(tag_keys) if tag_keys else []
-
-        if packet_keys is None and packet_typespec is not None:
-            packet_keys = packet_typespec.keys()
-        self.packet_keys = list(packet_keys) if packet_keys else []
-
-        self.tag_typespec = tag_typespec
-        self.packet_typespec = packet_typespec
-
-    def keys(
-        self, *streams: SyncStream, trigger_run: bool = False
-    ) -> tuple[Collection[str] | None, Collection[str] | None]:
-        return self.tag_keys, self.packet_keys
-
-    def types(
-        self, *streams: SyncStream, trigger_run: bool = False
-    ) -> tuple[TypeSpec | None, TypeSpec | None]:
-        return self.tag_typespec, self.packet_typespec
-
-    def __iter__(self) -> Iterator[tuple[Tag, Packet]]:
-        # Empty stream, no data to yield
-        return iter([])
-
-
 class KernelInvocationWrapper(Kernel):
     def __init__(
         self, kernel: Kernel, input_streams: Collection[SyncStream], **kwargs
@@ -119,10 +31,10 @@ class KernelInvocationWrapper(Kernel):
         self.kernel = kernel
         self.input_streams = list(input_streams)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{self.__class__.__name__}<{self.kernel!r}>"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.__class__.__name__}<{self.kernel}>"
 
     def computed_label(self) -> str | None:
@@ -187,7 +99,7 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         kernel: Kernel,
         input_streams: Collection[SyncStream],
         output_store: ArrowDataStore,
-        store_path_prefix: tuple[str, ...] | None = None,
+        store_path_prefix: tuple[str, ...] = (),
         kernel_hasher: ObjectHasher | None = None,
         arrow_packet_hasher: ArrowHasher | None = None,
         packet_type_registry: SemanticTypeRegistry | None = None,
@@ -196,7 +108,7 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         super().__init__(kernel, input_streams, **kwargs)
 
         self.output_store = output_store
-        self.store_path_prefix = store_path_prefix or ()
+        self.store_path_prefix = store_path_prefix
 
         # These are configurable but are not expected to be modified except for special circumstances
         if kernel_hasher is None:
@@ -235,10 +147,27 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         # hasher changed -- trigger recomputation of properties that depend on kernel hasher
         self.update_cached_values()
 
+    @property
+    def source_info(self) -> tuple[str, ...]:
+        """
+        Returns a tuple of (label, kernel_hash) that uniquely identifies the source of the cached outputs.
+        This is used to store and retrieve the outputs from the output store.
+        """
+        return self.label, self.kernel_hasher.hash_to_hex(
+            self.kernel, prefix_hasher_id=True
+        )
+
+    @property
+    def store_path(self) -> tuple[str, ...]:
+        """
+        Returns the path prefix for the output store.
+        This is used to store and retrieve the outputs from the output store.
+        """
+        return self.store_path_prefix + self.source_info
+
     def update_cached_values(self):
-        self.source_info = self.store_path_prefix + (
-            self.label,
-            self.kernel_hasher.hash_to_hex(self.kernel, prefix_hasher_id=True),
+        self.kernel_hash = self.kernel_hasher.hash_to_hex(
+            self.kernel, prefix_hasher_id=True
         )
         self.tag_keys, self.packet_keys = self.keys(trigger_run=False)
         self.tag_typespec, self.packet_typespec = self.types(trigger_run=False)
@@ -269,7 +198,6 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
                     raise ValueError(
                         "CachedKernelWrapper has no tag keys defined, cannot return PolarsStream"
                     )
-                source_info_sig = ":".join(self.source_info)
                 return PolarsStream(
                     self.df, tag_keys=self.tag_keys, packet_keys=self.packet_keys
                 )
@@ -304,9 +232,9 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         )
         # TODO: revisit this logic
         output_id = self.arrow_hasher.hash_table(output_table, prefix_hasher_id=True)
-        if not self.output_store.get_record(self.source_info, output_id):
+        if not self.output_store.get_record(self.store_path, output_id):
             self.output_store.add_record(
-                self.source_info,
+                self.store_path,
                 output_id,
                 output_table,
             )
@@ -320,7 +248,7 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
 
     @property
     def lazy_df(self) -> pl.LazyFrame | None:
-        return self.output_store.get_all_records_as_polars(self.source_info)
+        return self.output_store.get_all_records_as_polars(self.store_path)
 
     @property
     def df(self) -> pl.DataFrame | None:
@@ -378,7 +306,9 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         output_store: ArrowDataStore,
         tag_store: ArrowDataStore | None = None,
         label: str | None = None,
-        store_path_prefix: tuple[str, ...] | None = None,
+        store_path_prefix: tuple[str, ...] = (),
+        output_store_path_prefix: tuple[str, ...] = (),
+        tag_store_path_prefix: tuple[str, ...] = (),
         skip_memoization_lookup: bool = False,
         skip_memoization: bool = False,
         skip_tag_record: bool = False,
@@ -395,7 +325,9 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
             error_handling=error_handling,
             **kwargs,
         )
-        self.store_path_prefix = store_path_prefix or ()
+        self.output_store_path_prefix = store_path_prefix + output_store_path_prefix
+        self.tag_store_path_prefix = store_path_prefix + tag_store_path_prefix
+
         self.output_store = output_store
         self.tag_store = tag_store
 
@@ -418,6 +350,18 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         # compute and cache properties and converters for efficiency
         self.update_cached_values()
         self._cache_computed = False
+
+    @property
+    def tag_keys(self) -> tuple[str, ...]:
+        if self._tag_keys is None:
+            raise ValueError("Tag keys are not set, cannot return tag keys")
+        return self._tag_keys
+
+    @property
+    def output_keys(self) -> tuple[str, ...]:
+        if self._output_keys is None:
+            raise ValueError("Output keys are not set, cannot return output keys")
+        return self._output_keys
 
     @property
     def object_hasher(self) -> ObjectHasher:
@@ -459,17 +403,19 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         self.function_pod_hash = self.object_hasher.hash_to_hex(
             self.function_pod, prefix_hasher_id=True
         )
+        self.node_hash = self.object_hasher.hash_to_hex(self, prefix_hasher_id=True)
         self.input_typespec, self.output_typespec = (
             self.function_pod.get_function_typespecs()
         )
-        self.tag_keys, self.output_keys = self.keys(trigger_run=False)
+        tag_keys, output_keys = self.keys(trigger_run=False)
 
-        if self.tag_keys is None or self.output_keys is None:
+        if tag_keys is None or output_keys is None:
             raise ValueError(
                 "Currently, cached function pod wrapper can only work with function pods that have keys defined."
             )
-        self.tag_keys = tuple(self.tag_keys)
-        self.output_keys = tuple(self.output_keys)
+        self._tag_keys = tuple(tag_keys)
+        self._output_keys = tuple(output_keys)
+
         self.tag_typespec, self.output_typespec = self.types(trigger_run=False)
         if self.tag_typespec is None or self.output_typespec is None:
             raise ValueError(
@@ -532,8 +478,28 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         )
 
     @property
-    def source_info(self):
+    def pod_source_info(self):
         return self.function_pod.function_name, self.function_pod_hash
+
+    @property
+    def node_source_info(self):
+        return self.label, self.node_hash
+
+    @property
+    def output_store_path(self) -> tuple[str, ...]:
+        """
+        Returns the path prefix for the output store.
+        This is used to store and retrieve the outputs from the output store.
+        """
+        return self.output_store_path_prefix + self.pod_source_info
+
+    @property
+    def tag_store_path(self) -> tuple[str, ...]:
+        """
+        Returns the path prefix for the tag store.
+        This is used to store and retrieve the tags associated with memoized packets.
+        """
+        return self.tag_store_path_prefix + self.node_source_info
 
     def is_memoized(self, packet: Packet) -> bool:
         return self.retrieve_memoized(packet) is not None
@@ -566,9 +532,9 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
 
         # TODO: add error handling
         # check if record already exists:
-        retrieved_table = self.tag_store.get_record(self.source_info, entry_hash)
+        retrieved_table = self.tag_store.get_record(self.tag_store_path, entry_hash)
         if retrieved_table is None:
-            self.tag_store.add_record(self.source_info, entry_hash, table)
+            self.tag_store.add_record(self.tag_store_path, entry_hash, table)
 
         return tag
 
@@ -587,7 +553,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         """
         logger.debug(f"Retrieving memoized packet with key {packet_key}")
         arrow_table = self.output_store.get_record(
-            self.source_info,
+            self.output_store_path,
             packet_key,
         )
         if arrow_table is None:
@@ -625,7 +591,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         # consider simpler alternative
         packets = self.output_converter.from_arrow_table_to_python_packets(
             self.output_store.add_record(
-                self.source_info,
+                self.output_store_path,
                 packet_key,
                 self.output_converter.from_python_packet_to_arrow_table(output_packet),
             )
@@ -668,7 +634,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
                 # e.g. if the output is a file, the path may be changed
                 # add source info to the output packet
                 source_info = {
-                    k: "-".join(self.source_info) + "-" + packet_key
+                    k: "-".join(self.pod_source_info) + "-" + packet_key + ":" + str(k)
                     for k in output_packet.source_info
                 }
                 # TODO: fix and make this not access protected field directly
@@ -691,12 +657,12 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         return tag, output_packet
 
     def get_all_outputs(self) -> pl.LazyFrame | None:
-        return self.output_store.get_all_records_as_polars(self.source_info)
+        return self.output_store.get_all_records_as_polars(self.output_store_path)
 
     def get_all_tags(self, with_packet_id: bool = False) -> pl.LazyFrame | None:
         if self.tag_store is None:
             raise ValueError("Tag store is not set, no tag record can be retrieved")
-        data = self.tag_store.get_all_records_as_polars(self.source_info)
+        data = self.tag_store.get_all_records_as_polars(self.tag_store_path)
         if not with_packet_id:
             return data.drop("__packet_key") if data is not None else None
         return data
@@ -711,11 +677,11 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         if self.tag_store is None:
             raise ValueError("Tag store is not set, no tag record can be retrieved")
 
-        tag_records = self.tag_store.get_all_records_as_polars(self.source_info)
+        tag_records = self.tag_store.get_all_records_as_polars(self.tag_store_path)
         if tag_records is None:
             return None
         result_packets = self.output_store.get_records_by_ids_as_polars(
-            self.source_info,
+            self.output_store_path,
             tag_records.collect()["__packet_key"],
             preserve_input_order=True,
         )
@@ -790,14 +756,19 @@ class DummyCachedFunctionPod(CachedFunctionPodWrapper):
     """
 
     def __init__(self, source_pod: CachedFunctionPodWrapper):
-        self._source_info = source_pod.source_info
+        self._pod_source_info = source_pod.pod_source_info
+        self._node_source_info = source_pod.node_source_info
         self.output_store = source_pod.output_store
         self.tag_store = source_pod.tag_store
         self.function_pod = DummyFunctionPod(source_pod.function_pod.function_name)
 
     @property
-    def source_info(self) -> tuple[str, str]:
-        return self._source_info
+    def pod_source_info(self) -> tuple[str, str]:
+        return self._pod_source_info
+
+    @property
+    def node_source_info(self) -> tuple[str, str]:
+        return self._node_source_info
 
 
 class Node(KernelInvocationWrapper, Source):

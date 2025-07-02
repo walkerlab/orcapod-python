@@ -1,6 +1,6 @@
 # A collection of versioned hashers that provide a "default" implementation of hashers.
 from .arrow_hashers import SemanticArrowHasher
-from .types import ObjectHasher, ArrowHasher
+from .types import ObjectHasher
 import importlib
 from typing import Any
 
@@ -13,6 +13,7 @@ versioned_semantic_arrow_hashers = {
             "hasher_id": "arrow_v0.1",
             "hash_algorithm": "sha256",
             "chunk_size": 8192,
+            "serialization_method": "logical",
             "semantic_type_hashers": {
                 "path": {
                     "_class": "orcapod.hashing.semantic_type_hashers.PathHasher",
@@ -65,7 +66,7 @@ def parse_objectspec(obj_spec: dict) -> Any:
 
 def get_versioned_semantic_arrow_hasher(
     version: str | None = None,
-) -> ArrowHasher:
+) -> SemanticArrowHasher:
     """
     Get the versioned hasher for the specified version.
 
