@@ -1,7 +1,7 @@
 import pyarrow as pa
 import json
 import hashlib
-from typing import Dict, List, Any
+from typing import Dict, Any
 from decimal import Decimal
 import base64
 
@@ -168,7 +168,7 @@ def _arrow_type_to_python_type(arrow_type: pa.DataType) -> str:
         return str(arrow_type).lower()
 
 
-def _extract_semantic_metadata(field_metadata) -> Dict[str, str]:
+def _extract_semantic_metadata(field_metadata) -> dict[str, str]:
     """
     Extract only 'semantic_type' metadata from field metadata.
 

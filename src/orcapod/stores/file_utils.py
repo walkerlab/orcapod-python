@@ -384,7 +384,7 @@ def virtual_mount(
     new_packet = {}
 
     for key, value in packet.items():
-        new_packet[key] = convert_pathset(value, forward_lut, reverse_lut)
+        new_packet[key] = convert_pathset(value, forward_lut, reverse_lut)  # type: ignore
 
     return new_packet, forward_lut, reverse_lut
 

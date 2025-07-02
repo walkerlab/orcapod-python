@@ -1,9 +1,19 @@
-from .types import ObjectHasher
-from .defaults import get_default_object_hasher
+from orcapod.hashing.types import ObjectHasher
+from orcapod.hashing.defaults import get_default_object_hasher
 from typing import Any
 
 
 class ContentIdentifiableBase:
+    """
+    Base class for content-identifiable objects.
+    This class provides a way to define objects that can be uniquely identified
+    based on their content rather than their identity in memory. Specifically, the identity of the
+    object is determined by the structure returned by the `identity_structure` method.
+    The hash of the object is computed based on the `identity_structure` using the provided `ObjectHasher`,
+    which defaults to the one returned by `get_default_object_hasher`.
+    Two content-identifiable objects are considered equal if their `identity_structure` returns the same value.
+    """
+
     def __init__(
         self,
         identity_structure_hasher: ObjectHasher | None = None,

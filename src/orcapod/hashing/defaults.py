@@ -3,16 +3,13 @@
 from orcapod.hashing.types import (
     LegacyCompositeFileHasher,
     ArrowHasher,
-    FileContentHasher,
     StringCacher,
 )
-from orcapod.hashing.file_hashers import BasicFileHasher, LegacyPathLikeHasherFactory
+from orcapod.hashing.file_hashers import LegacyPathLikeHasherFactory
 from orcapod.hashing.string_cachers import InMemoryCacher
 from orcapod.hashing.object_hashers import ObjectHasher
 from orcapod.hashing.object_hashers import LegacyObjectHasher
 from orcapod.hashing.function_info_extractors import FunctionInfoExtractorFactory
-from orcapod.hashing.arrow_hashers import SemanticArrowHasher
-from orcapod.hashing.semantic_type_hashers import PathHasher
 from orcapod.hashing.versioned_hashers import (
     get_versioned_semantic_arrow_hasher,
     get_versioned_object_hasher,
@@ -24,7 +21,7 @@ def get_default_arrow_hasher(
 ) -> ArrowHasher:
     """
     Get the default Arrow hasher with semantic type support.
-    If `with_cache` is True, it uses an in-memory cacher for caching hash values.
+    If `cache_file_hash` is True, it uses an in-memory cacher for caching hash values. If a `StringCacher` is provided, it uses that for caching file hashes.
     """
     arrow_hasher = get_versioned_semantic_arrow_hasher()
     if cache_file_hash:

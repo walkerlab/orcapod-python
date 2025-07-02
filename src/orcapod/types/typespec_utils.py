@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Collection, Sequence, Mapping
 from typing import get_origin, get_args, Any
-from .core import TypeSpec
+from orcapod.types.core import TypeSpec
 import inspect
 import logging
 

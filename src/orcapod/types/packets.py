@@ -4,9 +4,17 @@ from collections.abc import Mapping, Collection
 from orcapod.types.core import TypeSpec, Tag, TypeHandler
 from orcapod.types.semantic_type_registry import SemanticTypeRegistry
 from orcapod.types import schemas
+from orcapod.types.typespec_utils import get_typespec_from_dict
 import pyarrow as pa
 
-# # a packet is a mapping from string keys to data values
+# A conveniece packet-like type that defines a value that can be
+# converted to a packet. It's broader than Packet and a simple mapping
+# from string keys to DataValue (e.g., int, float, str) can be regarded
+# as PacketLike, allowing for more flexible interfaces.
+# Anything that requires Packet-like data but without the strict features
+# of a Packet should accept PacketLike.
+# One should be careful when using PacketLike as a return type as it does not
+# enforce the typespec or source_info, which are important for packet integrity.
 PacketLike: TypeAlias = Mapping[str, DataValue]
 
 
@@ -21,8 +29,6 @@ class Packet(dict[str, DataValue]):
             obj = {}
         super().__init__(obj)
         if typespec is None:
-            from orcapod.types.typespec_utils import get_typespec_from_dict
-
             typespec = get_typespec_from_dict(self)
         self._typespec = typespec
         if source_info is None:

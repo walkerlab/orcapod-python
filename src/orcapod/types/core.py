@@ -1,6 +1,4 @@
-from typing import Protocol, Any, TypeAlias, TypeVar, Generic
-import pyarrow as pa
-from dataclasses import dataclass
+from typing import Protocol, Any, TypeAlias
 import os
 from collections.abc import Collection, Mapping
 
@@ -34,7 +32,11 @@ ExtendedSupportedPythonData: TypeAlias = SupportedNativePythonData | PathLike
 # Extended data values that can be stored in packets
 # Either the original PathSet or one of our supported simple data types
 DataValue: TypeAlias = (
-    PathSet | SupportedNativePythonData | None | Collection["DataValue"]
+    PathSet
+    | SupportedNativePythonData
+    | None
+    | Collection["DataValue"]
+    | Mapping[str, "DataValue"]
 )
 
 

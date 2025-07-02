@@ -1,5 +1,7 @@
 from collections.abc import Callable, Collection, Iterator
 
+import polars as pl
+
 from orcapod.core.base import SyncStream
 from orcapod.types import Packet, PacketLike, Tag, TypeSpec
 from copy import copy
@@ -104,3 +106,98 @@ class SyncStreamFromGenerator(SyncStream):
             return super().keys(trigger_run=trigger_run)
         # If the keys are already set, return them
         return self.tag_keys.copy(), self.packet_keys.copy()
+
+
+class PolarsStream(SyncStream):
+    def __init__(
+        self,
+        df: pl.DataFrame,
+        tag_keys: Collection[str],
+        packet_keys: Collection[str] | None = None,
+    ):
+        self.df = df
+        self.tag_keys = tuple(tag_keys)
+        self.packet_keys = tuple(packet_keys) if packet_keys is not None else None
+
+    def __iter__(self) -> Iterator[tuple[Tag, Packet]]:
+        df = self.df
+        # if self.packet_keys is not None:
+        #     df = df.select(self.tag_keys + self.packet_keys)
+        for row in df.iter_rows(named=True):
+            tag = {key: row[key] for key in self.tag_keys}
+            packet = {
+                key: val
+                for key, val in row.items()
+                if key not in self.tag_keys and not key.startswith("_source_info_")
+            }
+            # TODO: revisit and fix this rather hacky implementation
+            source_info = {
+                key.removeprefix("_source_info_"): val
+                for key, val in row.items()
+                if key.startswith("_source_info_")
+            }
+            yield tag, Packet(packet, source_info=source_info)
+
+
+class EmptyStream(SyncStream):
+    def __init__(
+        self,
+        tag_keys: Collection[str] | None = None,
+        packet_keys: Collection[str] | None = None,
+        tag_typespec: TypeSpec | None = None,
+        packet_typespec: TypeSpec | None = None,
+    ):
+        if tag_keys is None and tag_typespec is not None:
+            tag_keys = tag_typespec.keys()
+        self.tag_keys = list(tag_keys) if tag_keys else []
+
+        if packet_keys is None and packet_typespec is not None:
+            packet_keys = packet_typespec.keys()
+        self.packet_keys = list(packet_keys) if packet_keys else []
+
+        self.tag_typespec = tag_typespec
+        self.packet_typespec = packet_typespec
+
+    def keys(
+        self, *streams: SyncStream, trigger_run: bool = False
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
+        return self.tag_keys, self.packet_keys
+
+    def types(
+        self, *streams: SyncStream, trigger_run: bool = False
+    ) -> tuple[TypeSpec | None, TypeSpec | None]:
+        return self.tag_typespec, self.packet_typespec
+
+    def __iter__(self) -> Iterator[tuple[Tag, Packet]]:
+        # Empty stream, no data to yield
+        return iter([])
+
+
+class StreamWrapper(SyncStream):
+    """
+    A wrapper for a SyncStream that allows the stream to be labeled and
+    associated with an invocation without modifying the original stream.
+    """
+
+    def __init__(self, stream: SyncStream, **kwargs):
+        super().__init__(**kwargs)
+        self.stream = stream
+
+    def keys(
+        self, *streams: SyncStream, **kwargs
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
+        return self.stream.keys(*streams, **kwargs)
+
+    def types(
+        self, *streams: SyncStream, **kwargs
+    ) -> tuple[TypeSpec | None, TypeSpec | None]:
+        return self.stream.types(*streams, **kwargs)
+
+    def computed_label(self) -> str | None:
+        return self.stream.label
+
+    def __iter__(self) -> Iterator[tuple[Tag, Packet]]:
+        """
+        Iterate over the stream, yielding tuples of (tags, packets).
+        """
+        yield from self.stream

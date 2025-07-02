@@ -48,6 +48,8 @@ def process_structure(
     # Initialize the visited set if this is the top-level call
     if visited is None:
         visited = set()
+    else:
+        visited = visited.copy()  # Copy to avoid modifying the original set
 
     # Check for circular references - use object's memory address
     # NOTE: While id() is not stable across sessions, we only use it within a session

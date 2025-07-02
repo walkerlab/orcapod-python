@@ -3,10 +3,17 @@ from os import PathLike
 from pathlib import Path
 from typing import Any, Literal
 
+import polars as pl
+
 from orcapod.core.base import Source
 from orcapod.hashing.legacy_core import hash_function
-from orcapod.core.streams import SyncStream, SyncStreamFromGenerator
-from orcapod.types import Packet, Tag
+from orcapod.core.streams import (
+    PolarsStream,
+    SyncStream,
+    SyncStreamFromGenerator,
+    StreamWrapper,
+)
+from orcapod.types import Packet, Tag, TypeSpec
 
 
 class GlobSource(Source):
@@ -139,3 +146,59 @@ class GlobSource(Source):
             return True
         # Otherwise, delegate to the base class
         return super().claims_unique_tags(trigger_run=trigger_run)
+
+
+class PolarsSource(Source):
+    def __init__(
+        self,
+        df: pl.DataFrame,
+        tag_keys: Collection[str],
+        packet_keys: Collection[str] | None = None,
+    ):
+        self.df = df
+        self.tag_keys = tag_keys
+        self.packet_keys = packet_keys
+
+    def forward(self, *streams: SyncStream, **kwargs) -> SyncStream:
+        if len(streams) != 0:
+            raise ValueError(
+                "PolarsSource does not support forwarding streams. "
+                "It generates its own stream from the DataFrame."
+            )
+        return PolarsStream(self.df, self.tag_keys, self.packet_keys)
+
+
+class StreamSource(Source):
+    def __init__(self, stream: SyncStream, **kwargs):
+        super().__init__(skip_tracking=True, **kwargs)
+        self.stream = stream
+
+    def forward(self, *streams: SyncStream) -> SyncStream:
+        if len(streams) != 0:
+            raise ValueError(
+                "StreamSource does not support forwarding streams. "
+                "It generates its own stream from the file system."
+            )
+        return StreamWrapper(self.stream)
+
+    def identity_structure(self, *streams) -> Any:
+        if len(streams) != 0:
+            raise ValueError(
+                "StreamSource does not support forwarding streams. "
+                "It generates its own stream from the file system."
+            )
+
+        return (self.__class__.__name__, self.stream)
+
+    def types(
+        self, *streams: SyncStream, **kwargs
+    ) -> tuple[TypeSpec | None, TypeSpec | None]:
+        return self.stream.types()
+
+    def keys(
+        self, *streams: SyncStream, **kwargs
+    ) -> tuple[Collection[str] | None, Collection[str] | None]:
+        return self.stream.keys()
+
+    def computed_label(self) -> str | None:
+        return self.stream.label
