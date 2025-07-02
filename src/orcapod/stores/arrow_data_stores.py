@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
 from orcapod.stores.types import DuplicateError
+from pathlib import Path
 
 # Module-level logger
 logger = logging.getLogger(__name__)
@@ -101,7 +102,9 @@ class SimpleInMemoryDataStore:
     Uses dict of dict of Arrow tables for efficient storage and retrieval.
     """
 
-    def __init__(self, duplicate_entry_behavior: str = "error"):
+    def __init__(
+        self, path: str | Path | None = None, duplicate_entry_behavior: str = "error"
+    ):
         """
         Initialize the InMemoryArrowDataStore.
 
@@ -120,6 +123,12 @@ class SimpleInMemoryDataStore:
         logger.info(
             f"Initialized InMemoryArrowDataStore with duplicate_entry_behavior='{duplicate_entry_behavior}'"
         )
+        self.base_path = Path(path) if path else None
+        if self.base_path:
+            try:
+                self.base_path.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                logger.error(f"Error creating base path {self.base_path}: {e}")
 
     def _get_source_key(self, source_path: tuple[str, ...]) -> str:
         """Generate key for source storage."""
@@ -170,10 +179,16 @@ class SimpleInMemoryDataStore:
         logger.debug(f"{action} record {entry_id} in {source_key}")
         return arrow_data
 
+    def load_existing_record(self, source_path: tuple[str, ...]):
+        source_key = self._get_source_key(source_path)
+        if self.base_path is not None and source_key not in self._in_memory_store:
+            self.load_from_parquet(self.base_path, source_path)
+
     def get_record(
         self, source_path: tuple[str, ...], entry_id: str
     ) -> pa.Table | None:
         """Get a specific record."""
+        self.load_existing_record(source_path)
         source_key = self._get_source_key(source_path)
         local_data = self._in_memory_store.get(source_key, {})
         return local_data.get(entry_id)
@@ -182,6 +197,7 @@ class SimpleInMemoryDataStore:
         self, source_path: tuple[str, ...], add_entry_id_column: bool | str = False
     ) -> pa.Table | None:
         """Retrieve all records for a given source as a single table."""
+        self.load_existing_record(source_path)
         source_key = self._get_source_key(source_path)
         local_data = self._in_memory_store.get(source_key, {})
 
@@ -256,6 +272,8 @@ class SimpleInMemoryDataStore:
             raise TypeError(
                 f"entry_ids must be list[str], pl.Series, or pa.Array, got {type(entry_ids)}"
             )
+
+        self.load_existing_record(source_path)
 
         source_key = self._get_source_key(source_path)
         local_data = self._in_memory_store.get(source_key, {})
@@ -394,19 +412,12 @@ class SimpleInMemoryDataStore:
 
         saved_count = 0
 
-        for source_key, local_data in self._in_memory_store.items():
+        for source_id, local_data in self._in_memory_store.items():
             if not local_data:
                 continue
 
-            # Parse source_name and source_id from the key
-            if ":" not in source_key:
-                logger.warning(f"Invalid source key format: {source_key}, skipping")
-                continue
-
-            source_name, source_id = source_key.split(":", 1)
-
             # Create directory structure
-            source_dir = base_path / source_name / source_id
+            source_dir = base_path / source_id
             source_dir.mkdir(parents=True, exist_ok=True)
 
             # Combine all tables for this source with entry_id column
@@ -430,12 +441,14 @@ class SimpleInMemoryDataStore:
 
                 saved_count += 1
                 logger.debug(
-                    f"Saved {len(combined_table)} records for {source_key} to {parquet_path}"
+                    f"Saved {len(combined_table)} records for {source_id} to {parquet_path}"
                 )
 
         logger.info(f"Saved {saved_count} sources to Parquet files in {base_path}")
 
-    def load_from_parquet(self, base_path: str | Path) -> None:
+    def load_from_parquet(
+        self, base_path: str | Path, source_path: tuple[str, ...]
+    ) -> None:
         """
         Load data from Parquet files with the expected directory structure.
 
@@ -444,113 +457,99 @@ class SimpleInMemoryDataStore:
         Args:
             base_path: Base directory path containing the Parquet files
         """
-        base_path = Path(base_path)
 
-        if not base_path.exists():
+        source_key = self._get_source_key(source_path)
+        target_path = Path(base_path) / source_key
+
+        if not target_path.exists():
             logger.warning(f"Base path {base_path} does not exist")
             return
 
-        # Clear existing data
-        self._in_memory_store.clear()
-
         loaded_count = 0
 
-        # Traverse directory structure: source_name/source_id/
-        for source_name_dir in base_path.iterdir():
-            if not source_name_dir.is_dir():
+        # Look for Parquet files in this directory
+        parquet_files = list(target_path.glob("*.parquet"))
+        if not parquet_files:
+            logger.debug(f"No Parquet files found in {target_path}")
+            return
+
+        # Load all Parquet files and combine them
+        all_records = []
+
+        for parquet_file in parquet_files:
+            try:
+                import pyarrow.parquet as pq
+
+                table = pq.read_table(parquet_file)
+
+                # Validate that __entry_id column exists
+                if "__entry_id" not in table.column_names:
+                    logger.warning(
+                        f"Parquet file {parquet_file} missing __entry_id column, skipping"
+                    )
+                    continue
+
+                all_records.append(table)
+                logger.debug(f"Loaded {len(table)} records from {parquet_file}")
+
+            except Exception as e:
+                logger.error(f"Failed to load Parquet file {parquet_file}: {e}")
                 continue
 
-            source_name = source_name_dir.name
+        # Process all records for this source
+        if all_records:
+            # Combine all tables
+            if len(all_records) == 1:
+                combined_table = all_records[0]
+            else:
+                combined_table = pa.concat_tables(all_records)
 
-            for source_id_dir in source_name_dir.iterdir():
-                if not source_id_dir.is_dir():
-                    continue
+            # Split back into individual records by entry_id
+            local_data = {}
+            entry_ids = combined_table.column("__entry_id").to_pylist()
 
-                source_id = source_id_dir.name
-                source_key = self._get_source_key((source_name, source_id))
+            # Group records by entry_id
+            entry_id_groups = {}
+            for i, entry_id in enumerate(entry_ids):
+                if entry_id not in entry_id_groups:
+                    entry_id_groups[entry_id] = []
+                entry_id_groups[entry_id].append(i)
 
-                # Look for Parquet files in this directory
-                parquet_files = list(source_id_dir.glob("*.parquet"))
+            # Extract each entry_id's records
+            for entry_id, indices in entry_id_groups.items():
+                # Take rows for this entry_id and remove __entry_id column
+                entry_table = combined_table.take(indices)
 
-                if not parquet_files:
-                    logger.debug(f"No Parquet files found in {source_id_dir}")
-                    continue
+                # Remove __entry_id column
+                column_names = entry_table.column_names
+                if "__entry_id" in column_names:
+                    indices_to_keep = [
+                        i for i, name in enumerate(column_names) if name != "__entry_id"
+                    ]
+                    entry_table = entry_table.select(indices_to_keep)
 
-                # Load all Parquet files and combine them
-                all_records = []
+                local_data[entry_id] = entry_table
 
-                for parquet_file in parquet_files:
-                    try:
-                        import pyarrow.parquet as pq
+            self._in_memory_store[source_key] = local_data
+            loaded_count += 1
 
-                        table = pq.read_table(parquet_file)
+            record_count = len(combined_table)
+            unique_entries = len(entry_id_groups)
+            logger.info(
+                f"Loaded {record_count} records ({unique_entries} unique entries) for {source_key}"
+            )
 
-                        # Validate that __entry_id column exists
-                        if "__entry_id" not in table.column_names:
-                            logger.warning(
-                                f"Parquet file {parquet_file} missing __entry_id column, skipping"
-                            )
-                            continue
+    def flush(self):
+        """
+        Flush all in-memory data to Parquet files in the base path.
+        This will overwrite existing files.
+        """
+        if self.base_path is None:
+            logger.warning("Base path is not set, cannot flush data")
+            return
 
-                        all_records.append(table)
-                        logger.debug(f"Loaded {len(table)} records from {parquet_file}")
-
-                    except Exception as e:
-                        logger.error(f"Failed to load Parquet file {parquet_file}: {e}")
-                        continue
-
-                # Process all records for this source
-                if all_records:
-                    # Combine all tables
-                    if len(all_records) == 1:
-                        combined_table = all_records[0]
-                    else:
-                        combined_table = pa.concat_tables(all_records)
-
-                    # Split back into individual records by entry_id
-                    local_data = {}
-                    entry_ids = combined_table.column("__entry_id").to_pylist()
-
-                    # Group records by entry_id
-                    entry_id_groups = {}
-                    for i, entry_id in enumerate(entry_ids):
-                        if entry_id not in entry_id_groups:
-                            entry_id_groups[entry_id] = []
-                        entry_id_groups[entry_id].append(i)
-
-                    # Extract each entry_id's records
-                    for entry_id, indices in entry_id_groups.items():
-                        # Take rows for this entry_id and remove __entry_id column
-                        entry_table = combined_table.take(indices)
-
-                        # Remove __entry_id column
-                        column_names = entry_table.column_names
-                        if "__entry_id" in column_names:
-                            indices_to_keep = [
-                                i
-                                for i, name in enumerate(column_names)
-                                if name != "__entry_id"
-                            ]
-                            entry_table = entry_table.select(indices_to_keep)
-
-                        local_data[entry_id] = entry_table
-
-                    self._in_memory_store[source_key] = local_data
-                    loaded_count += 1
-
-                    record_count = len(combined_table)
-                    unique_entries = len(entry_id_groups)
-                    logger.debug(
-                        f"Loaded {record_count} records ({unique_entries} unique entries) for {source_key}"
-                    )
-
-        logger.info(f"Loaded {loaded_count} sources from Parquet files in {base_path}")
-
-        # Log summary of loaded data
-        total_records = sum(
-            len(local_data) for local_data in self._in_memory_store.values()
-        )
-        logger.info(f"Total records loaded: {total_records}")
+        logger.info(f"Flushing data to Parquet files in {self.base_path}")
+        self.save_to_parquet(self.base_path)
 
 
 @dataclass
