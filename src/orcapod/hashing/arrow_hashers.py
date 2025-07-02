@@ -1,11 +1,15 @@
 import hashlib
 from typing import Any
 import pyarrow as pa
-import pyarrow.ipc as ipc
-from io import BytesIO
 import polars as pl
 import json
 from orcapod.hashing.types import SemanticTypeHasher, StringCacher
+from orcapod.hashing import arrow_serialization_old
+from collections.abc import Callable
+
+SERIALIZATION_METHOD_LUT: dict[str, Callable[[pa.Table], bytes]] = {
+    "logical": arrow_serialization_old.serialize_table_logical,
+}
 
 
 def serialize_pyarrow_table(table: pa.Table) -> str:
@@ -51,6 +55,7 @@ class SemanticArrowHasher:
         chunk_size: int = 8192,
         handle_missing: str = "error",
         semantic_type_hashers: dict[str, SemanticTypeHasher] | None = None,
+        serialization_method: str = "logical",
     ):
         """
         Initialize SemanticArrowHasher.
@@ -66,6 +71,13 @@ class SemanticArrowHasher:
             semantic_type_hashers or {}
         )
         self.hash_algorithm = hash_algorithm
+        if serialization_method not in SERIALIZATION_METHOD_LUT:
+            raise ValueError(
+                f"Invalid serialization method '{serialization_method}'. "
+                f"Supported methods: {list(SERIALIZATION_METHOD_LUT.keys())}"
+            )
+        self.serialization_method = serialization_method
+        self._serialize_arrow_table = SERIALIZATION_METHOD_LUT[serialization_method]
 
     def set_cacher(self, semantic_type: str, cacher: StringCacher) -> None:
         """
@@ -167,16 +179,16 @@ class SemanticArrowHasher:
         sorted_schema = pa.schema(sorted_fields)
         return pa.table(sorted_columns, schema=sorted_schema)
 
-    def _serialize_table_ipc(self, table: pa.Table) -> bytes:
-        # TODO: fix and use logical table hashing instead
-        """Serialize table using Arrow IPC format for stable binary representation."""
-        buffer = BytesIO()
+    # def _serialize_table_ipc(self, table: pa.Table) -> bytes:
+    #     # TODO: fix and use logical table hashing instead
+    #     """Serialize table using Arrow IPC format for stable binary representation."""
+    #     buffer = BytesIO()
 
-        # Use IPC stream format for deterministic serialization
-        with ipc.new_stream(buffer, table.schema) as writer:
-            writer.write_table(table)
+    #     # Use IPC stream format for deterministic serialization
+    #     with ipc.new_stream(buffer, table.schema) as writer:
+    #         writer.write_table(table)
 
-        return buffer.getvalue()
+    #     return buffer.getvalue()
 
     def hash_table(self, table: pa.Table, prefix_hasher_id: bool = True) -> str:
         """
@@ -200,7 +212,7 @@ class SemanticArrowHasher:
         sorted_table = pl.DataFrame(sorted_table).to_arrow()
 
         # Step 3: Serialize using Arrow IPC format
-        serialized_bytes = self._serialize_table_ipc(sorted_table)
+        serialized_bytes = self._serialize_arrow_table(sorted_table)
 
         # Step 4: Compute final hash
         hasher = hashlib.new(self.hash_algorithm)
@@ -208,7 +220,7 @@ class SemanticArrowHasher:
 
         hash_str = hasher.hexdigest()
         if prefix_hasher_id:
-            hash_str = f"{self.get_hasher_id()}:{hash_str}"
+            hash_str = f"{self.get_hasher_id()}@{hash_str}"
 
         return hash_str
 

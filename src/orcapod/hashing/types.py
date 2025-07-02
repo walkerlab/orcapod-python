@@ -63,7 +63,7 @@ class ObjectHasher(ABC):
                 )
             hex_str = hex_str[:char_count]
         if prefix_hasher_id:
-            hex_str = self.get_hasher_id() + ":" + hex_str
+            hex_str = self.get_hasher_id() + "@" + hex_str
         return hex_str
 
     def hash_to_int(self, obj: Any, hexdigits: int = 16) -> int:
