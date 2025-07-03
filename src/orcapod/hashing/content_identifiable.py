@@ -31,6 +31,16 @@ class ContentIdentifiableBase:
         self._label = label
 
     @property
+    def has_assigned_label(self) -> bool:
+        """
+        Check if the label is explicitly set for this object.
+
+        Returns:
+            bool: True if the label is explicitly set, False otherwise.
+        """
+        return self._label is not None
+
+    @property
     def label(self) -> str:
         """
         Get the label of this object.
