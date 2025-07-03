@@ -1841,6 +1841,8 @@ class InMemoryPolarsDataStore:
         df = self.get_all_records_as_polars(
             source_name, source_id, add_entry_id_column=add_entry_id_column
         )
+        if df is None:
+            return None
         return df.collect().to_arrow()
 
     def get_all_records_as_polars(
@@ -1917,9 +1919,9 @@ class InMemoryPolarsDataStore:
         elif isinstance(entry_ids, pa.Array):
             if len(entry_ids) == 0:
                 return None
-            entry_ids_series = pl.from_arrow(pa.table({"entry_id": entry_ids}))[
-                "entry_id"
-            ]
+            entry_ids_series: pl.Series = pl.from_arrow(
+                pa.table({"entry_id": entry_ids})
+            )["entry_id"]  # type: ignore
         else:
             raise TypeError(
                 f"entry_ids must be list[str], pl.Series, or pa.Array, got {type(entry_ids)}"
@@ -1993,7 +1995,8 @@ class InMemoryPolarsDataStore:
             return None
 
         # Convert to Polars LazyFrame
-        return pl.from_arrow(arrow_result).lazy()
+        df = cast(pl.DataFrame, pl.from_arrow(arrow_result))
+        return df.lazy()
 
     def entry_exists(self, source_name: str, source_id: str, entry_id: str) -> bool:
         """Check if a specific entry exists."""
