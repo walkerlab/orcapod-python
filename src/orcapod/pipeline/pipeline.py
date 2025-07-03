@@ -102,7 +102,9 @@ class Pipeline(GraphTracker):
         super().record(invocation)
         self._dirty = True
 
-    def wrap_invocation(self, kernel: Kernel, input_nodes: Collection[Node]) -> Node:
+    def wrap_invocation(
+        self, kernel: Kernel, input_nodes: Collection[Node], label: str | None = None
+    ) -> Node:
         if isinstance(kernel, FunctionPod):
             return FunctionPodNode(
                 kernel,
@@ -111,12 +113,14 @@ class Pipeline(GraphTracker):
                 tag_store=self.pipeline_store,
                 output_store_path_prefix=self.results_store_path_prefix,
                 tag_store_path_prefix=self.pipeline_store_path_prefix,
+                label=label,
             )
         return KernelNode(
             kernel,
             input_nodes,
             output_store=self.pipeline_store,
             store_path_prefix=self.pipeline_store_path_prefix,
+            label=label,
         )
 
     def compile(self):
@@ -133,7 +137,11 @@ class Pipeline(GraphTracker):
         for invocation in nx.topological_sort(G):
             # map streams to the new streams based on Nodes
             input_nodes = [edge_lut[stream] for stream in invocation.streams]
-            new_node = self.wrap_invocation(invocation.kernel, input_nodes)
+            label = None
+            if invocation.has_assigned_label:
+                # If the invocation has a label, use it directly
+                label = invocation.label
+            new_node = self.wrap_invocation(invocation.kernel, input_nodes, label=label)
 
             # register the new node against the original invocation
             node_lut[invocation] = new_node
