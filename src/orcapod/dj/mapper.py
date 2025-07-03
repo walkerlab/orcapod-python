@@ -1,18 +1,18 @@
 import warnings
 from typing import Optional
 
-from orcapod.mappers import Join, MapPackets, Mapper, MapTags
+from orcapod.core.operators import Join, MapPackets, MapTags, Operator
 from .operation import QueryOperation
 from .stream import QueryStream
 
 
-class QueryMapper(QueryOperation, Mapper):
+class QueryMapper(QueryOperation, Operator):
     """
     A special type of mapper that returns and works with QueryStreams
     """
 
 
-def convert_to_query_mapper(operation: Mapper) -> QueryMapper:
+def convert_to_query_mapper(operation: Operator) -> QueryMapper:
     """
     Convert a generic mapper to an equivalent, Query mapper
     """

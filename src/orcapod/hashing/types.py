@@ -5,7 +5,7 @@ from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 import uuid
 
-from orcapod.types import Packet, PathLike, PathSet, TypeSpec
+from orcapod.types import PacketLike, PathLike, PathSet, TypeSpec
 
 import pyarrow as pa
 
@@ -29,6 +29,7 @@ class Identifiable(Protocol):
 class ObjectHasher(ABC):
     """Abstract class for general object hashing."""
 
+    # TODO: consider more explicitly stating types of objects accepted
     @abstractmethod
     def hash(self, obj: Any) -> bytes:
         """
@@ -42,7 +43,15 @@ class ObjectHasher(ABC):
         """
         ...
 
-    def hash_to_hex(self, obj: Any, char_count: int | None = None) -> str:
+    @abstractmethod
+    def get_hasher_id(self) -> str:
+        """
+        Returns a unique identifier/name assigned to the hasher
+        """
+
+    def hash_to_hex(
+        self, obj: Any, char_count: int | None = None, prefix_hasher_id: bool = False
+    ) -> str:
         hash_bytes = self.hash(obj)
         hex_str = hash_bytes.hex()
 
@@ -52,7 +61,9 @@ class ObjectHasher(ABC):
                 raise ValueError(
                     f"Cannot truncate to {char_count} chars, hash only has {len(hex_str)}"
                 )
-            return hex_str[:char_count]
+            hex_str = hex_str[:char_count]
+        if prefix_hasher_id:
+            hex_str = self.get_hasher_id() + "@" + hex_str
         return hex_str
 
     def hash_to_int(self, obj: Any, hexdigits: int = 16) -> int:
@@ -73,42 +84,23 @@ class ObjectHasher(ABC):
         self, obj: Any, namespace: uuid.UUID = uuid.NAMESPACE_OID
     ) -> uuid.UUID:
         """Convert hash to proper UUID5."""
-        # Use the hex representation as input to UUID5
         return uuid.uuid5(namespace, self.hash(obj))
 
 
 @runtime_checkable
-class FileHasher(Protocol):
+class FileContentHasher(Protocol):
     """Protocol for file-related hashing."""
 
-    def hash_file(self, file_path: PathLike) -> str: ...
-
-
-# Higher-level operations that compose file hashing
-@runtime_checkable
-class PathSetHasher(Protocol):
-    """Protocol for hashing pathsets (files, directories, collections)."""
-
-    def hash_pathset(self, pathset: PathSet) -> str: ...
-
-
-@runtime_checkable
-class SemanticHasher(Protocol):
-    pass
-
-
-@runtime_checkable
-class PacketHasher(Protocol):
-    """Protocol for hashing packets."""
-
-    def hash_packet(self, packet: Packet) -> str: ...
+    def hash_file(self, file_path: PathLike) -> bytes: ...
 
 
 @runtime_checkable
 class ArrowHasher(Protocol):
     """Protocol for hashing arrow packets."""
 
-    def hash_table(self, table: pa.Table) -> str: ...
+    def get_hasher_id(self) -> str: ...
+
+    def hash_table(self, table: pa.Table, prefix_hasher_id: bool = True) -> str: ...
 
 
 @runtime_checkable
@@ -120,14 +112,6 @@ class StringCacher(Protocol):
     def clear_cache(self) -> None: ...
 
 
-# Combined interface for convenience (optional)
-@runtime_checkable
-class CompositeFileHasher(FileHasher, PathSetHasher, PacketHasher, Protocol):
-    """Combined interface for all file-related hashing operations."""
-
-    pass
-
-
 # Function hasher protocol
 @runtime_checkable
 class FunctionInfoExtractor(Protocol):
@@ -137,6 +121,58 @@ class FunctionInfoExtractor(Protocol):
         self,
         func: Callable[..., Any],
         function_name: str | None = None,
-        input_types: TypeSpec | None = None,
-        output_types: TypeSpec | None = None,
+        input_typespec: TypeSpec | None = None,
+        output_typespec: TypeSpec | None = None,
     ) -> dict[str, Any]: ...
+
+
+class SemanticTypeHasher(Protocol):
+    """Abstract base class for semantic type-specific hashers."""
+
+    @abstractmethod
+    def hash_column(
+        self,
+        column: pa.Array,
+    ) -> pa.Array:
+        """Hash a column with this semantic type and return the hash bytes."""
+        pass
+
+    @abstractmethod
+    def set_cacher(self, cacher: StringCacher) -> None:
+        """Add a string cacher for caching hash values."""
+        pass
+
+
+# ---------------Legacy implementations and protocols to be deprecated---------------------
+
+
+@runtime_checkable
+class LegacyFileHasher(Protocol):
+    """Protocol for file-related hashing."""
+
+    def hash_file(self, file_path: PathLike) -> str: ...
+
+
+# Higher-level operations that compose file hashing
+@runtime_checkable
+class LegacyPathSetHasher(Protocol):
+    """Protocol for hashing pathsets (files, directories, collections)."""
+
+    def hash_pathset(self, pathset: PathSet) -> str: ...
+
+
+@runtime_checkable
+class LegacyPacketHasher(Protocol):
+    """Protocol for hashing packets."""
+
+    def hash_packet(self, packet: PacketLike) -> str: ...
+
+
+# Combined interface for convenience (optional)
+@runtime_checkable
+class LegacyCompositeFileHasher(
+    LegacyFileHasher, LegacyPathSetHasher, LegacyPacketHasher, Protocol
+):
+    """Combined interface for all file-related hashing operations."""
+
+    pass

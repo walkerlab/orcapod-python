@@ -14,8 +14,8 @@ class FunctionNameExtractor:
         self,
         func: Callable[..., Any],
         function_name: str | None = None,
-        input_types: TypeSpec | None = None,
-        output_types: TypeSpec | None = None,
+        input_typespec: TypeSpec | None = None,
+        output_typespec: TypeSpec | None = None,
     ) -> dict[str, Any]:
         if not callable(func):
             raise TypeError("Provided object is not callable")
@@ -38,8 +38,8 @@ class FunctionSignatureExtractor:
         self,
         func: Callable[..., Any],
         function_name: str | None = None,
-        input_types: TypeSpec | None = None,
-        output_types: TypeSpec | None = None,
+        input_typespec: TypeSpec | None = None,
+        output_typespec: TypeSpec | None = None,
     ) -> dict[str, Any]:
         if not callable(func):
             raise TypeError("Provided object is not callable")

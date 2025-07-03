@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_store/test_integration.py
 """Integration tests for the store module."""
 
 import os
@@ -10,10 +9,10 @@ import pytest
 from orcapod.hashing.file_hashers import (
     BasicFileHasher,
     CachedFileHasher,
-    DefaultCompositeFileHasher,
+    LegacyDefaultCompositeFileHasher,
 )
 from orcapod.hashing.string_cachers import InMemoryCacher
-from orcapod.store.core import DirDataStore, NoOpDataStore
+from orcapod.stores.dict_data_stores import DirDataStore, NoOpDataStore
 
 
 def test_integration_with_cached_file_hasher(temp_dir, sample_files):
@@ -29,7 +28,7 @@ def test_integration_with_cached_file_hasher(temp_dir, sample_files):
     )
 
     # Create a CompositeFileHasher that will use the CachedFileHasher
-    composite_hasher = DefaultCompositeFileHasher(file_hasher)
+    composite_hasher = LegacyDefaultCompositeFileHasher(file_hasher)
 
     # Create the store with CompositeFileHasher
     store = DirDataStore(store_dir=store_dir, packet_hasher=composite_hasher)

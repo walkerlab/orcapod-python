@@ -68,19 +68,19 @@ class MockRedis:
             return [key for key in self.data.keys() if key.startswith(prefix)]
         return [key for key in self.data.keys() if key == pattern]
 
+
 class MockRedisModule:
     ConnectionError = MockConnectionError
     RedisError = MockRedisError
     Redis = MagicMock(return_value=MockRedis())  # Simple one-liner!
 
-    
 
 def mock_get_redis():
     return MockRedisModule
 
+
 def mock_no_redis():
     return None
-
 
 
 class TestRedisCacher:

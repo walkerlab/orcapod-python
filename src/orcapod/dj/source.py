@@ -6,12 +6,12 @@ from datajoint import Schema, Table
 
 from orcapod.hashing import hash_to_uuid
 
-from orcapod.sources import Source
-from orcapod.streams import SyncStream
-from ..utils.name import pascal_to_snake, snake_to_pascal
-from ..utils.stream_utils import common_elements
-from .operation import QueryOperation
-from .stream import QueryStream, TableCachedStream, TableStream
+from orcapod.core.sources import Source
+from orcapod.core.streams import SyncStream
+from orcapod.utils.name import pascal_to_snake, snake_to_pascal
+from orcapod.utils.stream_utils import common_elements
+from orcapod.dj.operation import QueryOperation
+from orcapod.dj.stream import QueryStream, TableCachedStream, TableStream
 
 logger = logging.getLogger(__name__)
 

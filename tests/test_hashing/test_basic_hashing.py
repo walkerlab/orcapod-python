@@ -1,4 +1,4 @@
-from orcapod.hashing.core import (
+from orcapod.hashing.legacy_core import (
     HashableMixin,
     hash_to_hex,
     hash_to_int,

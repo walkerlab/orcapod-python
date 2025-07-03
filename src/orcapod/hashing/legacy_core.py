@@ -6,6 +6,7 @@ A library for creating stable, content-based hashes that remain consistent acros
 suitable for arbitrarily nested data structures and custom objects via HashableMixin.
 """
 
+WARN_NONE_IDENTITY = False
 import hashlib
 import inspect
 import json
@@ -29,9 +30,10 @@ from typing import (
 )
 from uuid import UUID
 
+
 import xxhash
 
-from orcapod.types import Packet, PathSet
+from orcapod.types import Packet, PacketLike, PathSet
 from orcapod.utils.name import find_noncolliding_name
 
 # Configure logging with __name__ for proper hierarchy
@@ -175,11 +177,12 @@ class HashableMixin:
         # If no custom structure is provided, use the class name
         # We avoid using id() since it's not stable across sessions
         if structure is None:
-            logger.warning(
-                f"HashableMixin.content_hash called on {self.__class__.__name__} "
-                "instance that returned identity_structure() of None. "
-                "Using class name as default identity, which may not correctly reflect object uniqueness."
-            )
+            if WARN_NONE_IDENTITY:
+                logger.warning(
+                    f"HashableMixin.content_hash called on {self.__class__.__name__} "
+                    "instance that returned identity_structure() of None. "
+                    "Using class name as default identity, which may not correctly reflect object uniqueness."
+                )
             # Fall back to class name for consistent behavior
             return f"HashableMixin-DefaultIdentity-{self.__class__.__name__}"
 
@@ -205,11 +208,12 @@ class HashableMixin:
         # If no custom structure is provided, use the class name
         # We avoid using id() since it's not stable across sessions
         if structure is None:
-            logger.warning(
-                f"HashableMixin.content_hash_int called on {self.__class__.__name__} "
-                "instance without identity_structure() implementation. "
-                "Using class name as default identity, which may not correctly reflect object uniqueness."
-            )
+            if WARN_NONE_IDENTITY:
+                logger.warning(
+                    f"HashableMixin.content_hash_int called on {self.__class__.__name__} "
+                    "instance that returned identity_structure() of None. "
+                    "Using class name as default identity, which may not correctly reflect object uniqueness."
+                )
             # Use the same default identity as content_hash for consistency
             default_identity = (
                 f"HashableMixin-DefaultIdentity-{self.__class__.__name__}"
@@ -235,11 +239,12 @@ class HashableMixin:
         # If no custom structure is provided, use the class name
         # We avoid using id() since it's not stable across sessions
         if structure is None:
-            logger.warning(
-                f"HashableMixin.content_hash_uuid called on {self.__class__.__name__} "
-                "instance without identity_structure() implementation. "
-                "Using class name as default identity, which may not correctly reflect object uniqueness."
-            )
+            if WARN_NONE_IDENTITY:
+                logger.warning(
+                    f"HashableMixin.content_hash_uuid called on {self.__class__.__name__} "
+                    "instance without identity_structure() implementation. "
+                    "Using class name as default identity, which may not correctly reflect object uniqueness."
+                )
             # Use the same default identity as content_hash for consistency
             default_identity = (
                 f"HashableMixin-DefaultIdentity-{self.__class__.__name__}"
@@ -432,6 +437,16 @@ def process_structure(
     if isinstance(obj, HashableMixin):
         logger.debug(f"Processing HashableMixin instance of type {type(obj).__name__}")
         return obj.content_hash()
+
+    from .content_identifiable import ContentIdentifiableBase
+
+    if isinstance(obj, ContentIdentifiableBase):
+        logger.debug(
+            f"Processing ContentHashableBase instance of type {type(obj).__name__}"
+        )
+        return process_structure(
+            obj.identity_structure(), visited, function_info_extractor
+        )
 
     # Handle basic types
     if isinstance(obj, (str, int, float, bool)):
@@ -666,7 +681,7 @@ def hash_packet_with_psh(
 
 
 def hash_packet(
-    packet: Packet,
+    packet: PacketLike,
     algorithm: str = "sha256",
     buffer_size: int = 65536,
     char_count: Optional[int] = 32,
@@ -829,6 +844,7 @@ def get_function_signature(
     name_override: str | None = None,
     include_defaults: bool = True,
     include_module: bool = True,
+    output_names: Collection[str] | None = None,
 ) -> str:
     """
     Get a stable string representation of a function's signature.
@@ -844,14 +860,14 @@ def get_function_signature(
     sig = inspect.signature(func)
 
     # Build the signature string
-    parts = []
+    parts = {}
 
     # Add module if requested
     if include_module and hasattr(func, "__module__"):
-        parts.append(f"module:{func.__module__}")
+        parts["module"] = func.__module__
 
     # Add function name
-    parts.append(f"name:{name_override or func.__name__}")
+    parts["name"] = name_override or func.__name__
 
     # Add parameters
     param_strs = []
@@ -861,13 +877,16 @@ def get_function_signature(
             param_str = param_str.split("=")[0].strip()
         param_strs.append(param_str)
 
-    parts.append(f"params:({', '.join(param_strs)})")
+    parts["params"] = f"({', '.join(param_strs)})"
 
     # Add return annotation if present
     if sig.return_annotation is not inspect.Signature.empty:
-        parts.append(f"returns:{sig.return_annotation}")
+        parts["returns"] = sig.return_annotation
 
-    return " ".join(parts)
+    fn_string = f"{parts['module'] + '.' if 'module' in parts else ''}{parts['name']}{parts['params']}"
+    if "returns" in parts:
+        fn_string = fn_string + f"-> {str(parts['returns'])}"
+    return fn_string
 
 
 def _is_in_string(line, pos):

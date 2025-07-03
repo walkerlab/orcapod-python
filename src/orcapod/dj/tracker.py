@@ -6,10 +6,10 @@ from typing import Any, Collection, Optional, Tuple
 import networkx as nx
 from datajoint import Schema
 
-from orcapod.base import Operation, Source
-from orcapod.mappers import Mapper, Merge
-from orcapod.pod import FunctionPod
-from orcapod.pipeline import GraphTracker
+from orcapod.core.base import Kernel, Source
+from orcapod.core.operators import Operator, Merge
+from orcapod.core.pod import FunctionPod
+from orcapod.core.tracker import GraphTracker
 
 from .mapper import convert_to_query_mapper
 from .operation import QueryOperation
@@ -19,7 +19,7 @@ from .stream import QueryStream
 
 
 def convert_to_query_operation(
-    operation: Operation,
+    operation: Kernel,
     schema: Schema,
     table_name: str = None,
     table_postfix: str = "",
@@ -68,7 +68,7 @@ def convert_to_query_operation(
             True,
         )
 
-    if isinstance(operation, Mapper):
+    if isinstance(operation, Operator):
         return convert_to_query_mapper(operation), True
 
     # operation conversion is not supported, raise an error
@@ -102,7 +102,7 @@ class QueryTracker(GraphTracker):
         for invocation in nx.topological_sort(G):
             streams = [edge_lut.get(stream, stream) for stream in invocation.streams]
             new_node, converted = convert_to_query_operation(
-                invocation.operation,
+                invocation.kernel,
                 schema,
                 table_name=None,
                 table_postfix=invocation.content_hash_int(),

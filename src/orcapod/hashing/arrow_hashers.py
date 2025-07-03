@@ -1,87 +1,40 @@
 import hashlib
-import os
-from typing import Any, Protocol
-from abc import ABC, abstractmethod
+from typing import Any
 import pyarrow as pa
-import pyarrow.ipc as ipc
-from io import BytesIO
 import polars as pl
+import json
+from orcapod.hashing.types import SemanticTypeHasher, StringCacher
+from orcapod.hashing import arrow_serialization
+from collections.abc import Callable
+
+SERIALIZATION_METHOD_LUT: dict[str, Callable[[pa.Table], bytes]] = {
+    "logical": arrow_serialization.serialize_table_logical,
+}
 
 
-class SemanticTypeHasher(Protocol):
-    """Abstract base class for semantic type-specific hashers."""
+def serialize_pyarrow_table(table: pa.Table) -> str:
+    """
+    Serialize a PyArrow table to a stable JSON string by converting to dictionary of lists.
 
-    @abstractmethod
-    def hash_column(self, column: pa.Array) -> bytes:
-        """Hash a column with this semantic type and return the hash bytes."""
-        pass
+    Args:
+        table: PyArrow table to serialize
 
+    Returns:
+        JSON string representation with sorted keys and no whitespace
+    """
+    # Convert table to dictionary of lists using to_pylist()
+    data_dict = {}
 
-class PathHasher(SemanticTypeHasher):
-    """Hasher for Path semantic type columns - hashes file contents."""
+    for column_name in table.column_names:
+        # Convert Arrow column to Python list, which visits all elements
+        data_dict[column_name] = table.column(column_name).to_pylist()
 
-    def __init__(self, chunk_size: int = 8192, handle_missing: str = "error"):
-        """
-        Initialize PathHasher.
-
-        Args:
-            chunk_size: Size of chunks to read files in bytes
-            handle_missing: How to handle missing files ('error', 'skip', 'null_hash')
-        """
-        self.chunk_size = chunk_size
-        self.handle_missing = handle_missing
-
-    def _hash_file_content(self, file_path: str) -> str:
-        """Hash the content of a single file and return hex string."""
-        import os
-
-        try:
-            if not os.path.exists(file_path):
-                if self.handle_missing == "error":
-                    raise FileNotFoundError(f"File not found: {file_path}")
-                elif self.handle_missing == "skip":
-                    return hashlib.sha256(b"<FILE_NOT_FOUND>").hexdigest()
-                elif self.handle_missing == "null_hash":
-                    return hashlib.sha256(b"<FILE_NOT_FOUND>").hexdigest()
-
-            hasher = hashlib.sha256()
-
-            # Read file in chunks to handle large files efficiently
-            with open(file_path, "rb") as f:
-                while chunk := f.read(self.chunk_size):
-                    hasher.update(chunk)
-
-            return hasher.hexdigest()
-
-        except (IOError, OSError, PermissionError) as e:
-            if self.handle_missing == "error":
-                raise IOError(f"Cannot read file {file_path}: {e}")
-            else:  # skip or null_hash
-                error_msg = f"<FILE_ERROR:{type(e).__name__}>"
-                return hashlib.sha256(error_msg.encode("utf-8")).hexdigest()
-
-    def hash_column(self, column: pa.Array) -> pa.Array:
-        """
-        Replace path column with file content hashes.
-        Returns a new array where each path is replaced with its file content hash.
-        """
-
-        # Convert to python list for processing
-        paths = column.to_pylist()
-
-        # Hash each file's content individually
-        content_hashes = []
-        for path in paths:
-            if path is not None:
-                # Normalize path for consistency
-                normalized_path = os.path.normpath(str(path))
-                file_content_hash = self._hash_file_content(normalized_path)
-                content_hashes.append(file_content_hash)
-            else:
-                content_hashes.append(None)  # Preserve nulls
-
-        # Return new array with content hashes instead of paths
-        return pa.array(content_hashes)
+    # Serialize to JSON with sorted keys and no whitespace
+    return json.dumps(
+        data_dict,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
 
 
 class SemanticArrowHasher:
@@ -95,7 +48,15 @@ class SemanticArrowHasher:
     4. Computes final hash of the processed packet
     """
 
-    def __init__(self, chunk_size: int = 8192, handle_missing: str = "error"):
+    def __init__(
+        self,
+        hasher_id: str,
+        hash_algorithm: str = "sha256",
+        chunk_size: int = 8192,
+        handle_missing: str = "error",
+        semantic_type_hashers: dict[str, SemanticTypeHasher] | None = None,
+        serialization_method: str = "logical",
+    ):
         """
         Initialize SemanticArrowHasher.
 
@@ -103,9 +64,34 @@ class SemanticArrowHasher:
             chunk_size: Size of chunks to read files in bytes
             handle_missing: How to handle missing files ('error', 'skip', 'null_hash')
         """
+        self._hasher_id = hasher_id
         self.chunk_size = chunk_size
         self.handle_missing = handle_missing
-        self.semantic_type_hashers: dict[str, SemanticTypeHasher] = {}
+        self.semantic_type_hashers: dict[str, SemanticTypeHasher] = (
+            semantic_type_hashers or {}
+        )
+        self.hash_algorithm = hash_algorithm
+        if serialization_method not in SERIALIZATION_METHOD_LUT:
+            raise ValueError(
+                f"Invalid serialization method '{serialization_method}'. "
+                f"Supported methods: {list(SERIALIZATION_METHOD_LUT.keys())}"
+            )
+        self.serialization_method = serialization_method
+        self._serialize_arrow_table = SERIALIZATION_METHOD_LUT[serialization_method]
+
+    def set_cacher(self, semantic_type: str, cacher: StringCacher) -> None:
+        """
+        Add a string cacher for caching hash values.
+
+        This is a no-op for SemanticArrowHasher since it hashes column contents directly.
+        """
+        if semantic_type in self.semantic_type_hashers:
+            self.semantic_type_hashers[semantic_type].set_cacher(cacher)
+        else:
+            raise KeyError(f"No hasher registered for semantic type '{semantic_type}'")
+
+    def get_hasher_id(self) -> str:
+        return self._hasher_id
 
     def register_semantic_hasher(self, semantic_type: str, hasher: SemanticTypeHasher):
         """Register a custom hasher for a semantic type."""
@@ -193,23 +179,23 @@ class SemanticArrowHasher:
         sorted_schema = pa.schema(sorted_fields)
         return pa.table(sorted_columns, schema=sorted_schema)
 
-    def _serialize_table_ipc(self, table: pa.Table) -> bytes:
-        """Serialize table using Arrow IPC format for stable binary representation."""
-        buffer = BytesIO()
+    # def _serialize_table_ipc(self, table: pa.Table) -> bytes:
+    #     # TODO: fix and use logical table hashing instead
+    #     """Serialize table using Arrow IPC format for stable binary representation."""
+    #     buffer = BytesIO()
 
-        # Use IPC stream format for deterministic serialization
-        with ipc.new_stream(buffer, table.schema) as writer:
-            writer.write_table(table)
+    #     # Use IPC stream format for deterministic serialization
+    #     with ipc.new_stream(buffer, table.schema) as writer:
+    #         writer.write_table(table)
 
-        return buffer.getvalue()
+    #     return buffer.getvalue()
 
-    def hash_table(self, table: pa.Table, algorithm: str = "sha256") -> str:
+    def hash_table(self, table: pa.Table, prefix_hasher_id: bool = True) -> str:
         """
         Compute stable hash of Arrow table.
 
         Args:
             table: Arrow table to hash
-            algorithm: Hash algorithm to use ('sha256', 'md5', etc.)
 
         Returns:
             Hex string of the computed hash
@@ -226,17 +212,19 @@ class SemanticArrowHasher:
         sorted_table = pl.DataFrame(sorted_table).to_arrow()
 
         # Step 3: Serialize using Arrow IPC format
-        serialized_bytes = self._serialize_table_ipc(sorted_table)
+        serialized_bytes = self._serialize_arrow_table(sorted_table)
 
         # Step 4: Compute final hash
-        hasher = hashlib.new(algorithm)
+        hasher = hashlib.new(self.hash_algorithm)
         hasher.update(serialized_bytes)
 
-        return hasher.hexdigest()
+        hash_str = hasher.hexdigest()
+        if prefix_hasher_id:
+            hash_str = f"{self.get_hasher_id()}@{hash_str}"
 
-    def hash_table_with_metadata(
-        self, table: pa.Table, algorithm: str = "sha256"
-    ) -> dict[str, Any]:
+        return hash_str
+
+    def hash_table_with_metadata(self, table: pa.Table) -> dict[str, Any]:
         """
         Compute hash with additional metadata about the process.
 
@@ -257,11 +245,10 @@ class SemanticArrowHasher:
             processed_columns.append(column_info)
 
         # Compute hash
-        table_hash = self.hash_table(table, algorithm)
+        table_hash = self.hash_table(table)
 
         return {
             "hash": table_hash,
-            "algorithm": algorithm,
             "num_rows": len(table),
             "num_columns": len(table.schema),
             "processed_columns": processed_columns,
