@@ -23,8 +23,8 @@ class Repeat(Operator):
     The repeat count is the number of times to repeat each packet.
     """
 
-    def __init__(self, repeat_count: int) -> None:
-        super().__init__()
+    def __init__(self, repeat_count: int, **kwargs) -> None:
+        super().__init__(**kwargs)
         if not isinstance(repeat_count, int):
             raise TypeError("repeat_count must be an integer")
         if repeat_count < 0:
@@ -381,8 +381,10 @@ class MapPackets(Operator):
     drop_unmapped=False, in which case unmapped keys will be retained.
     """
 
-    def __init__(self, key_map: dict[str, str], drop_unmapped: bool = True) -> None:
-        super().__init__()
+    def __init__(
+        self, key_map: dict[str, str], drop_unmapped: bool = True, **kwargs
+    ) -> None:
+        super().__init__(**kwargs)
         self.key_map = key_map
         self.drop_unmapped = drop_unmapped
 
@@ -481,8 +483,8 @@ class DefaultTag(Operator):
     tag already contains the same key, it will not be overwritten.
     """
 
-    def __init__(self, default_tag: Tag) -> None:
-        super().__init__()
+    def __init__(self, default_tag: Tag, **kwargs) -> None:
+        super().__init__(**kwargs)
         self.default_tag = default_tag
 
     def forward(self, *streams: SyncStream) -> SyncStream:
@@ -527,8 +529,10 @@ class MapTags(Operator):
     drop_unmapped=False, in which case unmapped tags will be retained.
     """
 
-    def __init__(self, key_map: dict[str, str], drop_unmapped: bool = True) -> None:
-        super().__init__()
+    def __init__(
+        self, key_map: dict[str, str], drop_unmapped: bool = True, **kwargs
+    ) -> None:
+        super().__init__(**kwargs)
         self.key_map = key_map
         self.drop_unmapped = drop_unmapped
 
@@ -658,8 +662,8 @@ class Filter(Operator):
     The predicate function should return True for packets that should be kept and False for packets that should be dropped.
     """
 
-    def __init__(self, predicate: Callable[[Tag, Packet], bool]):
-        super().__init__()
+    def __init__(self, predicate: Callable[[Tag, Packet], bool], **kwargs):
+        super().__init__(**kwargs)
         self.predicate = predicate
 
     def forward(self, *streams: SyncStream) -> SyncStream:
@@ -704,8 +708,10 @@ class Transform(Operator):
     The transformation function should return a tuple of (new_tag, new_packet).
     """
 
-    def __init__(self, transform: Callable[[Tag, Packet], tuple[Tag, Packet]]):
-        super().__init__()
+    def __init__(
+        self, transform: Callable[[Tag, Packet], tuple[Tag, Packet]], **kwargs
+    ):
+        super().__init__(**kwargs)
         self.transform = transform
 
     def forward(self, *streams: SyncStream) -> SyncStream:
@@ -742,8 +748,9 @@ class Batch(Operator):
         batch_size: int,
         tag_processor: None | Callable[[Collection[Tag]], Tag] = None,
         drop_last: bool = True,
+        **kwargs,
     ):
-        super().__init__()
+        super().__init__(**kwargs)
         self.batch_size = batch_size
         if tag_processor is None:
             tag_processor = batch_tags  # noqa: E731
@@ -806,8 +813,9 @@ class GroupBy(Operator):
         reduce_keys: bool = False,
         selection_function: Callable[[Collection[tuple[Tag, Packet]]], Collection[bool]]
         | None = None,
+        **kwargs,
     ) -> None:
-        super().__init__()
+        super().__init__(**kwargs)
         self.group_keys = group_keys
         self.reduce_keys = reduce_keys
         self.selection_function = selection_function
@@ -875,8 +883,8 @@ class CacheStream(Operator):
     Call `clear_cache()` to clear the cache.
     """
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
         self.cache: list[tuple[Tag, Packet]] = []
         self.is_cached = False
 
