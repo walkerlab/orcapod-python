@@ -4,11 +4,11 @@ import pyarrow as pa
 import polars as pl
 import json
 from orcapod.hashing.types import SemanticTypeHasher, StringCacher
-from orcapod.hashing import arrow_serialization_old
+from orcapod.hashing import arrow_serialization
 from collections.abc import Callable
 
 SERIALIZATION_METHOD_LUT: dict[str, Callable[[pa.Table], bytes]] = {
-    "logical": arrow_serialization_old.serialize_table_logical,
+    "logical": arrow_serialization.serialize_table_logical,
 }
 
 
