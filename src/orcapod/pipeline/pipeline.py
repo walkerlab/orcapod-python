@@ -53,7 +53,7 @@ class Pipeline(GraphTracker):
 
         self.pipeline_store = pipeline_store
         self.results_store = results_store
-        self.labels_to_nodes = {}
+        self.nodes = {}
         self.auto_compile = auto_compile
         self._dirty = False
         self._ordered_nodes = []  # Track order of invocations
@@ -167,7 +167,8 @@ class Pipeline(GraphTracker):
                 nodes[0].label = label
                 labels_to_nodes[label] = nodes[0]
 
-        self.labels_to_nodes = labels_to_nodes
+        # store as pipeline's nodes attribute
+        self.nodes = labels_to_nodes
         self._dirty = False
         return node_lut, edge_lut, proposed_labels, labels_to_nodes
 
@@ -178,13 +179,28 @@ class Pipeline(GraphTracker):
 
     def __getattr__(self, item: str) -> Any:
         """Allow direct access to pipeline attributes"""
-        if item in self.labels_to_nodes:
-            return self.labels_to_nodes[item]
+        if item in self.nodes:
+            return self.nodes[item]
         raise AttributeError(f"Pipeline has no attribute '{item}'")
 
     def __dir__(self):
         # Include both regular attributes and dynamic ones
-        return list(super().__dir__()) + list(self.labels_to_nodes.keys())
+        return list(super().__dir__()) + list(self.nodes.keys())
+
+    def rename(self, old_name: str, new_name: str) -> None:
+        """
+        Rename a node in the pipeline.
+        This will update the label and the internal mapping.
+        """
+        if old_name not in self.nodes:
+            raise KeyError(f"Node '{old_name}' does not exist in the pipeline.")
+        if new_name in self.nodes:
+            raise KeyError(f"Node '{new_name}' already exists in the pipeline.")
+        node = self.nodes[old_name]
+        del self.nodes[old_name]
+        node.label = new_name
+        self.nodes[new_name] = node
+        logger.info(f"Node '{old_name}' renamed to '{new_name}'")
 
     def run(self, full_sync: bool = False) -> None:
         """

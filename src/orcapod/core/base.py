@@ -53,9 +53,22 @@ class Kernel(ABC, ContentIdentifiableBase):
     def __call__(
         self, *streams: "SyncStream", label: str | None = None, **kwargs
     ) -> "SyncStream":
+        # check that inputs are stream instances and if it's source, instantiate it
+        verified_streams = []
+        for stream in streams:
+            if not isinstance(stream, SyncStream):
+                raise TypeError(
+                    f"Expected SyncStream, got {type(stream).__name__} for stream {stream}"
+                )
+            if isinstance(stream, Source):
+                # if the stream is a Source, instantiate it
+                stream = stream()
+            verified_streams.append(stream)
+
         # Special handling of Source: trigger call on source if passed as stream
         normalized_streams = [
-            stream() if isinstance(stream, Source) else stream for stream in streams
+            stream() if isinstance(stream, Source) else stream
+            for stream in verified_streams
         ]
 
         pre_processed_streams = self.pre_forward_hook(*normalized_streams, **kwargs)

@@ -15,7 +15,7 @@ PathLike = str | os.PathLike
 
 # an (optional) string or a collection of (optional) string values
 # Note that TagValue can be nested, allowing for an arbitrary depth of nested lists
-TagValue: TypeAlias = str | None | Collection["TagValue"]
+TagValue: TypeAlias = int | str | None | Collection["TagValue"]
 
 # the top level tag is a mapping from string keys to values that can be a string or
 # an arbitrary depth of nested list of strings or None

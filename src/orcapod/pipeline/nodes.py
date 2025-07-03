@@ -169,7 +169,10 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         self.kernel_hash = self.kernel_hasher.hash_to_hex(
             self.kernel, prefix_hasher_id=True
         )
-        self.tag_keys, self.packet_keys = self.keys(trigger_run=False)
+        tag_keys, packet_keys = self.keys(trigger_run=False)
+        self.tag_keys = tuple(tag_keys) if tag_keys is not None else None
+        self.packet_keys = tuple(packet_keys) if packet_keys is not None else None
+
         self.tag_typespec, self.packet_typespec = self.types(trigger_run=False)
         if self.tag_typespec is None or self.packet_typespec is None:
             raise ValueError(
@@ -248,7 +251,14 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
 
     @property
     def lazy_df(self) -> pl.LazyFrame | None:
-        return self.output_store.get_all_records_as_polars(self.store_path)
+        lazydf = self.output_store.get_all_records_as_polars(self.store_path)
+        if lazydf is None:
+            return None
+        if self.tag_keys is None or self.packet_keys is None:
+            raise ValueError(
+                "CachedKernelWrapper has no tag keys or packet keys defined, and currently this is not supported"
+            )
+        return lazydf.select(self.tag_keys + self.packet_keys)
 
     @property
     def df(self) -> pl.DataFrame | None:

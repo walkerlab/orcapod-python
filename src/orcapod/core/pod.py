@@ -8,7 +8,10 @@ from typing import (
 )
 
 from orcapod.types import Packet, Tag, TypeSpec, default_registry
-from orcapod.types.typespec_utils import extract_function_typespecs
+from orcapod.types.typespec_utils import (
+    extract_function_typespecs,
+    check_typespec_compatibility,
+)
 from orcapod.types.packets import PacketConverter
 
 from orcapod.hashing import (
@@ -220,6 +223,20 @@ class FunctionPod(Pod):
         self.output_converter = PacketConverter(
             self.function_output_typespec, self.registry
         )
+
+    def forward(self, *streams: SyncStream, **kwargs) -> SyncStream:
+        assert len(streams) == 1, (
+            "Only one stream is supported in forward() of FunctionPod"
+        )
+        stream = streams[0]
+        _, packet_typespec = stream.types(trigger_run=False)
+        if packet_typespec is not None and not check_typespec_compatibility(
+            packet_typespec, self.function_input_typespec
+        ):
+            raise TypeError(
+                f"Input packet types {packet_typespec} is not compatible with the function's expected input types {self.function_input_typespec}"
+            )
+        return super().forward(*streams, **kwargs)
 
     def get_function_typespecs(self) -> tuple[TypeSpec, TypeSpec]:
         return self.function_input_typespec, self.function_output_typespec
