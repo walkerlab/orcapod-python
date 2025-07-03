@@ -53,8 +53,6 @@ class Kernel(ABC, ContentIdentifiableBase):
     def __call__(
         self, *streams: "SyncStream", label: str | None = None, **kwargs
     ) -> "SyncStream":
-        if label is not None:
-            self.label = label
         # Special handling of Source: trigger call on source if passed as stream
         normalized_streams = [
             stream() if isinstance(stream, Source) else stream for stream in streams
@@ -64,7 +62,7 @@ class Kernel(ABC, ContentIdentifiableBase):
         output_stream = self.forward(*pre_processed_streams, **kwargs)
         post_processed_stream = self.post_forward_hook(output_stream, **kwargs)
         # create an invocation instance
-        invocation = Invocation(self, pre_processed_streams)
+        invocation = Invocation(self, pre_processed_streams, label=label)
         # label the output_stream with the invocation that produced the stream
         post_processed_stream.invocation = invocation
 
@@ -458,6 +456,7 @@ class SyncStream(Stream):
         packet_map: dict | None = None,
         tag_map: dict | None = None,
         drop_unmapped: bool = True,
+        label: str | None = None,
     ) -> "SyncStream":
         """
         Returns a new stream that is the result of mapping the packets and tags in the stream.
@@ -470,9 +469,11 @@ class SyncStream(Stream):
 
         output = self
         if packet_map is not None:
-            output = MapPackets(packet_map, drop_unmapped=drop_unmapped)(output)
+            output = MapPackets(packet_map, drop_unmapped=drop_unmapped, label=label)(
+                output
+            )
         if tag_map is not None:
-            output = MapTags(tag_map, drop_unmapped=drop_unmapped)(output)
+            output = MapTags(tag_map, drop_unmapped=drop_unmapped, label=label)(output)
 
         return output
 
