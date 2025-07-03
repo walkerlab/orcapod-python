@@ -7,7 +7,7 @@ import pytest
 
 from orcapod.hashing.types import LegacyPacketHasher
 from orcapod.stores.dict_data_stores import DirDataStore, NoOpDataStore
-from orcapod.stores.transfer_data_store import TransferDataStore
+from orcapod.stores.dict_transfer_data_store import TransferDataStore
 
 
 class MockPacketHasher(LegacyPacketHasher):
