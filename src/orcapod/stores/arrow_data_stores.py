@@ -17,8 +17,11 @@ logger = logging.getLogger(__name__)
 class MockArrowDataStore:
     """
     Mock Arrow data store for testing purposes.
-    This class simulates the behavior of ParquetArrowDataStore without actually saving anything.
-    It is useful for unit tests where you want to avoid filesystem dependencies.
+    This class simulates the behavior of ArrowDataStore without actually saving anything.
+    It is useful for unit tests where you want to avoid any I/O operations or when you need
+    to test the behavior of your code without relying on external systems. If you need some
+    persistence of saved data, consider using SimpleParquetDataStore without providing a
+    file path instead.
     """
 
     def __init__(self):
@@ -93,13 +96,20 @@ class MockArrowDataStore:
         return None
 
 
-class SimpleInMemoryDataStore:
+class SimpleParquetDataStore:
     """
-    In-memory Arrow data store, primarily to be used for testing purposes.
-    This class simulates the behavior of ParquetArrowDataStore without actual file I/O.
-    It is useful for unit tests where you want to avoid filesystem dependencies.
-
-    Uses dict of dict of Arrow tables for efficient storage and retrieval.
+    Simple Parquet-based Arrow data store, primarily to be used for development purposes.
+    If no file path is provided, it will not save anything to disk. Instead, all data will be stored in memory.
+    If a file path is provided, it will save data to a single Parquet files in a directory structure reflecting
+    the provided source_path. To speed up the process, data will be stored in memory and only saved to disk
+    when the `flush` method is called. If used as part of pipeline, flush is automatically called
+    at the end of pipeline execution.
+    Note that this store provides only very basic functionality and is not suitable for production use.
+    For each distinct source_path, only a single parquet file is created to store all data entries.
+    Appending is not efficient as it requires reading the entire file into the memory, appending new data,
+    and then writing the entire file back to disk. This is not suitable for large datasets or frequent updates.
+    However, for development/testing purposes, this data store provides a simple way to store and retrieve
+    data without the overhead of a full database or file system and provides very high performance.
     """
 
     def __init__(
@@ -462,7 +472,7 @@ class SimpleInMemoryDataStore:
         target_path = Path(base_path) / source_key
 
         if not target_path.exists():
-            logger.warning(f"Base path {base_path} does not exist")
+            logger.info(f"Base path {base_path} does not exist")
             return
 
         loaded_count = 0

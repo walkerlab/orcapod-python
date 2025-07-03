@@ -6,7 +6,7 @@ from orcapod.types import PacketLike
 
 class TransferDataStore(DataStore):
     """
-    A data store that allows transferring memoized packets between different data stores.
+    A data store that allows transferring recorded data between different data stores.
     This is useful for moving data between different storage backends.
     """
 
