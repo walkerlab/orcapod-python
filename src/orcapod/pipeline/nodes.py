@@ -196,13 +196,15 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
     def forward(self, *streams: SyncStream, **kwargs) -> SyncStream:
         if self._cache_computed:
             logger.info(f"Returning cached outputs for {self}")
-            if self.df is not None:
+            if (lazy_df := self.get_all_records_as_polars(flush=False)) is not None:
                 if self.tag_keys is None:
                     raise ValueError(
                         "CachedKernelWrapper has no tag keys defined, cannot return PolarsStream"
                     )
                 return PolarsStream(
-                    self.df, tag_keys=self.tag_keys, packet_keys=self.packet_keys
+                    lazy_df.collect(),
+                    tag_keys=self.tag_keys,
+                    packet_keys=self.packet_keys,
                 )
             else:
                 return EmptyStream(tag_keys=self.tag_keys, packet_keys=self.packet_keys)
@@ -235,7 +237,7 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         )
         # TODO: revisit this logic
         output_id = self.arrow_hasher.hash_table(output_table, prefix_hasher_id=True)
-        if not self.output_store.get_record(self.store_path, output_id):
+        if not self.output_store.get_record(self.store_path, output_id, flush=False):
             self.output_store.add_record(
                 self.store_path,
                 output_id,
@@ -248,6 +250,9 @@ class CachedKernelWrapper(KernelInvocationWrapper, Source):
         """
         logger.info(f"Results cached for {self}")
         self._cache_computed = True
+
+    def get_all_records_as_polars(self, flush: bool = True) -> pl.LazyFrame | None:
+        return self.output_store.get_all_records_as_polars(self.store_path, flush=flush)
 
     @property
     def lazy_df(self) -> pl.LazyFrame | None:
@@ -542,7 +547,9 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
 
         # TODO: add error handling
         # check if record already exists:
-        retrieved_table = self.tag_store.get_record(self.tag_store_path, entry_hash)
+        retrieved_table = self.tag_store.get_record(
+            self.tag_store_path, entry_hash, flush=False
+        )
         if retrieved_table is None:
             self.tag_store.add_record(self.tag_store_path, entry_hash, table)
 
@@ -565,6 +572,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
         arrow_table = self.output_store.get_record(
             self.output_store_path,
             packet_key,
+            flush=False,
         )
         if arrow_table is None:
             return None
@@ -626,7 +634,9 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
 
         output_packet = None
         if not self.skip_memoization_lookup:
-            output_packet = self._retrieve_memoized_with_packet_key(packet_key)
+            output_packet = self._retrieve_memoized_with_packet_key(
+                packet_key,
+            )
             if output_packet is not None:
                 logger.debug(
                     f"Memoized output for {packet} with {packet_key} found, skipping computation"
@@ -658,7 +668,7 @@ class CachedFunctionPodWrapper(FunctionPodInvocationWrapper, Source):
                 )
             return tag, None
 
-        # result was successfully computed -- save the tag
+        # result was successfully computed/retrieved -- save the tag
         if not self.skip_tag_record and self.tag_store is not None:
             self._add_pipeline_record_with_packet_key(
                 tag, packet_key, packet.source_info
