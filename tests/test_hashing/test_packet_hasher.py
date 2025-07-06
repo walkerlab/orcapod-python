@@ -1,14 +1,13 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_hashing/test_packet_hasher.py
 """Tests for the PacketHasher protocol implementation."""
 
 import pytest
 
-from orcapod.hashing.file_hashers import DefaultPacketHasher
-from orcapod.hashing.types import PathSetHasher
+from orcapod.hashing.file_hashers import LegacyDefaultPacketHasher
+from orcapod.hashing.types import LegacyPathSetHasher
 
 
-class MockPathSetHasher(PathSetHasher):
+class MockPathSetHasher(LegacyPathSetHasher):
     """Simple mock PathSetHasher for testing."""
 
     def __init__(self, hash_value="mock_hash"):
@@ -20,10 +19,10 @@ class MockPathSetHasher(PathSetHasher):
         return f"{self.hash_value}_{pathset}"
 
 
-def test_default_packet_hasher_empty_packet():
-    """Test DefaultPacketHasher with an empty packet."""
+def test_legacy_packet_hasher_empty_packet():
+    """Test LegacyPacketHasher with an empty packet."""
     pathset_hasher = MockPathSetHasher()
-    packet_hasher = DefaultPacketHasher(pathset_hasher)
+    packet_hasher = LegacyDefaultPacketHasher(pathset_hasher)
 
     # Test with empty packet
     packet = {}
@@ -37,10 +36,10 @@ def test_default_packet_hasher_empty_packet():
     assert isinstance(result, str)
 
 
-def test_default_packet_hasher_single_entry():
-    """Test DefaultPacketHasher with a packet containing a single entry."""
+def test_legacy_packet_hasher_single_entry():
+    """Test LegacyPacketHasher with a packet containing a single entry."""
     pathset_hasher = MockPathSetHasher()
-    packet_hasher = DefaultPacketHasher(pathset_hasher)
+    packet_hasher = LegacyDefaultPacketHasher(pathset_hasher)
 
     # Test with a single entry
     packet = {"input": "/path/to/file.txt"}
@@ -55,10 +54,10 @@ def test_default_packet_hasher_single_entry():
     assert isinstance(result, str)
 
 
-def test_default_packet_hasher_multiple_entries():
-    """Test DefaultPacketHasher with a packet containing multiple entries."""
+def test_legacy_packet_hasher_multiple_entries():
+    """Test LegacyPacketHasher with a packet containing multiple entries."""
     pathset_hasher = MockPathSetHasher()
-    packet_hasher = DefaultPacketHasher(pathset_hasher)
+    packet_hasher = LegacyDefaultPacketHasher(pathset_hasher)
 
     # Test with multiple entries
     packet = {
@@ -79,10 +78,10 @@ def test_default_packet_hasher_multiple_entries():
     assert isinstance(result, str)
 
 
-def test_default_packet_hasher_nested_structure():
-    """Test DefaultPacketHasher with a deeply nested packet structure."""
+def test_legacy_packet_hasher_nested_structure():
+    """Test LegacyPacketHasher with a deeply nested packet structure."""
     pathset_hasher = MockPathSetHasher()
-    packet_hasher = DefaultPacketHasher(pathset_hasher)
+    packet_hasher = LegacyDefaultPacketHasher(pathset_hasher)
 
     # Test with nested packet structure
     packet = {
@@ -104,16 +103,16 @@ def test_default_packet_hasher_nested_structure():
     assert isinstance(result, str)
 
 
-def test_default_packet_hasher_with_char_count():
-    """Test DefaultPacketHasher with different char_count values."""
+def test_legacy_packet_hasher_with_char_count():
+    """Test LegacyPacketHasher with different char_count values."""
     pathset_hasher = MockPathSetHasher()
 
     # Test with default char_count (32)
-    default_hasher = DefaultPacketHasher(pathset_hasher)
+    default_hasher = LegacyDefaultPacketHasher(pathset_hasher)
     default_result = default_hasher.hash_packet({"input": "/path/to/file.txt"})
 
     # Test with custom char_count
-    custom_hasher = DefaultPacketHasher(pathset_hasher, char_count=16)
+    custom_hasher = LegacyDefaultPacketHasher(pathset_hasher, char_count=16)
     custom_result = custom_hasher.hash_packet({"input": "/path/to/file.txt"})
 
     # Results should be different based on char_count

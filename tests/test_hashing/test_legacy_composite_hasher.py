@@ -5,9 +5,16 @@ from unittest.mock import patch
 
 import pytest
 
-from orcapod.hashing.core import hash_to_hex
-from orcapod.hashing.file_hashers import BasicFileHasher, DefaultCompositeFileHasher
-from orcapod.hashing.types import FileHasher, PacketHasher, PathSetHasher
+from orcapod.hashing.legacy_core import hash_to_hex
+from orcapod.hashing.file_hashers import (
+    LegacyDefaultFileHasher,
+    LegacyDefaultCompositeFileHasher,
+)
+from orcapod.hashing.types import (
+    LegacyFileHasher,
+    LegacyPacketHasher,
+    LegacyPathSetHasher,
+)
 
 
 # Custom implementation of hash_file for tests that doesn't check for file existence
@@ -89,9 +96,11 @@ def mock_hash_packet(
 def patch_hash_functions():
     """Patch the hash functions in the core module for all tests."""
     with (
-        patch("orcapod.hashing.core.hash_file", side_effect=mock_hash_file),
-        patch("orcapod.hashing.core.hash_pathset", side_effect=mock_hash_pathset),
-        patch("orcapod.hashing.core.hash_packet", side_effect=mock_hash_packet),
+        patch("orcapod.hashing.legacy_core.hash_file", side_effect=mock_hash_file),
+        patch(
+            "orcapod.hashing.legacy_core.hash_pathset", side_effect=mock_hash_pathset
+        ),
+        patch("orcapod.hashing.legacy_core.hash_packet", side_effect=mock_hash_packet),
     ):
         yield
 
@@ -99,15 +108,15 @@ def patch_hash_functions():
 def test_default_composite_hasher_implements_all_protocols():
     """Test that CompositeFileHasher implements all three protocols."""
     # Create a basic file hasher to be used within the composite hasher
-    file_hasher = BasicFileHasher()
+    file_hasher = LegacyDefaultFileHasher()
 
     # Create the composite hasher
-    composite_hasher = DefaultCompositeFileHasher(file_hasher)
+    composite_hasher = LegacyDefaultCompositeFileHasher(file_hasher)
 
     # Verify it implements all three protocols
-    assert isinstance(composite_hasher, FileHasher)
-    assert isinstance(composite_hasher, PathSetHasher)
-    assert isinstance(composite_hasher, PacketHasher)
+    assert isinstance(composite_hasher, LegacyFileHasher)
+    assert isinstance(composite_hasher, LegacyPathSetHasher)
+    assert isinstance(composite_hasher, LegacyPacketHasher)
 
 
 def test_default_composite_hasher_file_hashing():
@@ -121,7 +130,7 @@ def test_default_composite_hasher_file_hashing():
             return mock_hash_file(file_path)
 
     file_hasher = MockFileHasher()
-    composite_hasher = DefaultCompositeFileHasher(file_hasher)
+    composite_hasher = LegacyDefaultCompositeFileHasher(file_hasher)
 
     # Get hash from the composite hasher and directly from the file hasher
     direct_hash = file_hasher.hash_file(file_path)
@@ -136,11 +145,11 @@ def test_default_composite_hasher_pathset_hashing():
 
     # Create a custom mock file hasher that doesn't check for file existence
     class MockFileHasher:
-        def hash_file(self, file_path):
+        def hash_file(self, file_path) -> str:
             return mock_hash_file(file_path)
 
     file_hasher = MockFileHasher()
-    composite_hasher = DefaultCompositeFileHasher(file_hasher)
+    composite_hasher = LegacyDefaultCompositeFileHasher(file_hasher)
 
     # Simple path set with non-existent paths
     pathset = ["/path/to/file1.txt", "/path/to/file2.txt"]

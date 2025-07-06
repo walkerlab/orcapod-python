@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_hashing/test_file_hashes.py
 """
 Test file hash consistency.
 
@@ -12,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-# Add the parent directory to the path to import orcabridge
-from orcapod.hashing import hash_file
+# Add the parent directory to the path to import orcapod
+from orcapod.hashing.legacy_core import hash_file
 
 
 def load_hash_lut():

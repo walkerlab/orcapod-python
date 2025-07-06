@@ -26,7 +26,7 @@ RUN \
 USER vscode
 ENV PATH=/home/vscode/.local/bin:$PATH
 WORKDIR /home/vscode
-COPY --chown=vscode:nogroup src/orcabridge/requirements.txt /tmp/requirements.txt
+COPY --chown=vscode:nogroup src/orcapod/requirements.txt /tmp/requirements.txt
 RUN \
     # python setup
     curl -LsSf https://astral.sh/uv/install.sh | sh && \

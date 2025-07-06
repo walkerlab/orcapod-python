@@ -1,5 +1,37 @@
-from .types import FunctionInfoExtractor, ObjectHasher
-from .core import legacy_hash
+from orcapod.hashing.types import FunctionInfoExtractor, ObjectHasher
+from orcapod.hashing import legacy_core
+from orcapod.hashing import hash_utils
+
+
+class BasicObjectHasher(ObjectHasher):
+    """
+    Default object hasher used throughout the codebase.
+    """
+
+    def __init__(
+        self,
+        hasher_id: str,
+        function_info_extractor: FunctionInfoExtractor | None = None,
+    ):
+        self._hasher_id = hasher_id
+        self.function_info_extractor = function_info_extractor
+
+    def get_hasher_id(self) -> str:
+        return self._hasher_id
+
+    def hash(self, obj: object) -> bytes:
+        """
+        Hash an object to a byte representation.
+
+        Args:
+            obj (object): The object to hash.
+
+        Returns:
+            bytes: The byte representation of the hash.
+        """
+        return hash_utils.hash_object(
+            obj, function_info_extractor=self.function_info_extractor
+        )
 
 
 class LegacyObjectHasher(ObjectHasher):
@@ -13,7 +45,6 @@ class LegacyObjectHasher(ObjectHasher):
 
     def __init__(
         self,
-        char_count: int | None = 32,
         function_info_extractor: FunctionInfoExtractor | None = None,
     ):
         """
@@ -22,8 +53,13 @@ class LegacyObjectHasher(ObjectHasher):
         Args:
             function_info_extractor (FunctionInfoExtractor | None): Optional extractor for function information. This must be provided if an object containing function information is to be hashed.
         """
-        self.char_count = char_count
         self.function_info_extractor = function_info_extractor
+
+    def get_hasher_id(self) -> str:
+        """
+        Returns a unique identifier/name assigned to the hasher
+        """
+        return "legacy_object_hasher"
 
     def hash(self, obj: object) -> bytes:
         """
@@ -35,4 +71,6 @@ class LegacyObjectHasher(ObjectHasher):
         Returns:
             bytes: The byte representation of the hash.
         """
-        return legacy_hash(obj, function_info_extractor=self.function_info_extractor)
+        return legacy_core.legacy_hash(
+            obj, function_info_extractor=self.function_info_extractor
+        )

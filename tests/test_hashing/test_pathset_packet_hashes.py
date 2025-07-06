@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_hashing/test_pathset_packet_hashes.py
 """
 Test pathset and packet hash consistency.
 
@@ -12,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-# Add the parent directory to the path to import orcabridge
-from orcapod.hashing import hash_packet, hash_pathset
+# Add the parent directory to the path to import orcapod
+from orcapod.hashing.legacy_core import hash_packet, hash_pathset
 
 
 def load_pathset_hash_lut():

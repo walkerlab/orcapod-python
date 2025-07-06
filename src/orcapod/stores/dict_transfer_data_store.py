@@ -1,12 +1,12 @@
 # Implements transfer data store that lets you transfer memoized packets between data stores.
 
-from orcapod.store.types import DataStore
-from orcapod.types import Packet
+from orcapod.stores.types import DataStore
+from orcapod.types import PacketLike
 
 
 class TransferDataStore(DataStore):
     """
-    A data store that allows transferring memoized packets between different data stores.
+    A data store that allows transferring recorded data between different data stores.
     This is useful for moving data between different storage backends.
     """
 
@@ -14,7 +14,9 @@ class TransferDataStore(DataStore):
         self.source_store = source_store
         self.target_store = target_store
 
-    def transfer(self, function_name: str, content_hash: str, packet: Packet) -> Packet:
+    def transfer(
+        self, function_name: str, content_hash: str, packet: PacketLike
+    ) -> PacketLike:
         """
         Transfer a memoized packet from the source store to the target store.
         """
@@ -29,8 +31,8 @@ class TransferDataStore(DataStore):
         )
 
     def retrieve_memoized(
-        self, function_name: str, function_hash: str, packet: Packet
-    ) -> Packet | None:
+        self, function_name: str, function_hash: str, packet: PacketLike
+    ) -> PacketLike | None:
         """
         Retrieve a memoized packet from the target store.
         """
@@ -57,9 +59,9 @@ class TransferDataStore(DataStore):
         self,
         function_name: str,
         function_hash: str,
-        packet: Packet,
-        output_packet: Packet,
-    ) -> Packet:
+        packet: PacketLike,
+        output_packet: PacketLike,
+    ) -> PacketLike:
         """
         Memoize a packet in the target store.
         """

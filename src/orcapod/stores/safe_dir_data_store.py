@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Union
 
-from .file_ops import atomic_copy, atomic_write
+from .file_utils import atomic_copy, atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class FileLockError(Exception):
 
 @contextmanager
 def file_lock(
-    lock_path: Union[str, Path],
+    lock_path: str | Path,
     shared: bool = False,
     timeout: float = 30.0,
     delay: float = 0.1,
@@ -205,7 +205,7 @@ class SafeDirDataStore:
 
     def _get_output_dir(self, function_name, content_hash, packet):
         """Get the output directory for a specific packet"""
-        from orcapod.hashing.core import hash_dict
+        from orcapod.hashing.legacy_core import hash_dict
 
         packet_hash = hash_dict(packet)
         return self.store_dir / function_name / content_hash / str(packet_hash)

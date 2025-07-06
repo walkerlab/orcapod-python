@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_hashing/test_cached_file_hasher.py
 """Tests for CachedFileHasher implementation."""
 
 import json
@@ -11,11 +10,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from orcapod.hashing.file_hashers import (
-    BasicFileHasher,
-    CachedFileHasher,
+    LegacyDefaultFileHasher,
+    LegacyCachedFileHasher,
 )
 from orcapod.hashing.string_cachers import InMemoryCacher
-from orcapod.hashing.types import FileHasher, StringCacher
+from orcapod.hashing.types import LegacyFileHasher, StringCacher
 
 
 def verify_path_exists(rel_path):
@@ -74,15 +73,15 @@ def load_packet_hash_lut():
 def test_cached_file_hasher_construction():
     """Test that CachedFileHasher can be constructed with various parameters."""
     # Test with default parameters
-    file_hasher = BasicFileHasher()
+    file_hasher = LegacyDefaultFileHasher()
     string_cacher = InMemoryCacher()
 
-    cached_hasher1 = CachedFileHasher(file_hasher, string_cacher)
+    cached_hasher1 = LegacyCachedFileHasher(file_hasher, string_cacher)
     assert cached_hasher1.file_hasher == file_hasher
     assert cached_hasher1.string_cacher == string_cacher
 
     # Test that CachedFileHasher implements FileHasher protocol
-    assert isinstance(cached_hasher1, FileHasher)
+    assert isinstance(cached_hasher1, LegacyFileHasher)
 
 
 def test_cached_file_hasher_file_caching():
@@ -100,8 +99,8 @@ def test_cached_file_hasher_file_caching():
     mock_string_cacher = MagicMock(spec=StringCacher)
     mock_string_cacher.get_cached.return_value = None  # Initially no cached value
 
-    file_hasher = BasicFileHasher()
-    cached_hasher = CachedFileHasher(file_hasher, mock_string_cacher)
+    file_hasher = LegacyDefaultFileHasher()
+    cached_hasher = LegacyCachedFileHasher(file_hasher, mock_string_cacher)
 
     # First call should compute the hash and cache it
     result1 = cached_hasher.hash_file(file_path)
@@ -137,14 +136,14 @@ def test_cached_file_hasher_call_counts():
 
     try:
         # Mock the file_hasher to track calls
-        mock_file_hasher = MagicMock(spec=FileHasher)
+        mock_file_hasher = MagicMock(spec=LegacyFileHasher)
         mock_file_hasher.hash_file.return_value = "mock_file_hash"
 
         # Real cacher
         string_cacher = InMemoryCacher()
 
         # Create the cached file hasher with all caching enabled
-        cached_hasher = CachedFileHasher(
+        cached_hasher = LegacyCachedFileHasher(
             mock_file_hasher,
             string_cacher,
         )
@@ -182,11 +181,11 @@ def test_cached_file_hasher_performance():
     file_path = verify_path_exists(info["file"])
 
     # Setup non-cached hasher
-    file_hasher = BasicFileHasher()
+    file_hasher = LegacyDefaultFileHasher()
 
     # Setup cached hasher
     string_cacher = InMemoryCacher()
-    cached_hasher = CachedFileHasher(file_hasher, string_cacher)
+    cached_hasher = LegacyCachedFileHasher(file_hasher, string_cacher)
 
     # Measure time for multiple hash operations with non-cached hasher
     start_time = time.time()
@@ -222,11 +221,11 @@ def test_cached_file_hasher_with_different_cachers():
 
     try:
         file_path = temp_file.name
-        file_hasher = BasicFileHasher()
+        file_hasher = LegacyDefaultFileHasher()
 
         # Test with InMemoryCacher
         mem_cacher = InMemoryCacher(max_size=10)
-        cached_hasher1 = CachedFileHasher(file_hasher, mem_cacher)
+        cached_hasher1 = LegacyCachedFileHasher(file_hasher, mem_cacher)
 
         # First hash call
         hash1 = cached_hasher1.hash_file(file_path)
@@ -250,7 +249,7 @@ def test_cached_file_hasher_with_different_cachers():
                 self.storage.clear()
 
         custom_cacher = CustomCacher()
-        cached_hasher2 = CachedFileHasher(file_hasher, custom_cacher)
+        cached_hasher2 = LegacyCachedFileHasher(file_hasher, custom_cacher)
 
         # Get hash with custom cacher
         hash2 = cached_hasher2.hash_file(file_path)

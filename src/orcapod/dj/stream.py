@@ -5,7 +5,7 @@ from typing import Any, Collection, Union
 from datajoint.expression import QueryExpression
 from datajoint.table import Table
 
-from orcapod.streams import SyncStream
+from orcapod.core.streams import SyncStream
 
 logger = logging.getLogger(__name__)
 

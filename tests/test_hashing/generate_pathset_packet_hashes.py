@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_hashing/generate_pathset_packet_hashes.py
 """
 Generate sample pathsets and packets and record their hashes.
 
@@ -11,7 +10,7 @@ import json
 import sys
 from pathlib import Path
 
-# Add the parent directory to the path to import orcabridge
+# Add the parent directory to the path to import orcapod
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from orcapod.hashing import hash_packet, hash_pathset
 

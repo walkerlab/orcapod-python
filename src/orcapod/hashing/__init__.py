@@ -1,37 +1,25 @@
-from .core import (
-    HashableMixin,
-    function_content_hash,
-    get_function_signature,
-    hash_file,
-    hash_function,
-    hash_packet,
-    hash_pathset,
-    hash_to_hex,
-    hash_to_int,
-    hash_to_uuid,
-)
 from .defaults import (
-    get_default_composite_file_hasher,
     get_default_object_hasher,
     get_default_arrow_hasher,
 )
 from .types import (
-    FileHasher,
-    PacketHasher,
+    FileContentHasher,
+    LegacyPacketHasher,
     ArrowHasher,
     ObjectHasher,
     StringCacher,
     FunctionInfoExtractor,
-    CompositeFileHasher,
+    LegacyCompositeFileHasher,
 )
+from .content_identifiable import ContentIdentifiableBase
 
 __all__ = [
-    "FileHasher",
-    "PacketHasher",
+    "FileContentHasher",
+    "LegacyPacketHasher",
     "ArrowHasher",
     "StringCacher",
     "ObjectHasher",
-    "CompositeFileHasher",
+    "LegacyCompositeFileHasher",
     "FunctionInfoExtractor",
     "hash_file",
     "hash_pathset",
@@ -46,4 +34,5 @@ __all__ = [
     "get_default_composite_file_hasher",
     "get_default_object_hasher",
     "get_default_arrow_hasher",
+    "ContentIdentifiableBase",
 ]
