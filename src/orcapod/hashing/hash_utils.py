@@ -1,5 +1,6 @@
 from typing import Any
 from .function_info_extractors import FunctionInfoExtractor
+from orcapod.protocols.hashing_protocols import ContentIdentifiable
 import logging
 import json
 from uuid import UUID
@@ -71,9 +72,9 @@ def process_structure(
     if obj is None:
         return None
 
-    from .content_identifiable import ContentIdentifiableBase
-
-    if isinstance(obj, ContentIdentifiableBase):
+    # TODO: currently using runtime_checkable on ContentIdentifiable protocol
+    # Re-evaluate this strategy to see if a faster / more robust check could be used
+    if isinstance(obj, ContentIdentifiable):
         logger.debug(
             f"Processing ContentHashableBase instance of type {type(obj).__name__}"
         )

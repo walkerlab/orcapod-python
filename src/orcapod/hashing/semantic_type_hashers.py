@@ -1,4 +1,8 @@
-from orcapod.hashing.types import SemanticTypeHasher, FileContentHasher, StringCacher
+from orcapod.protocols.hashing_protocols import (
+    SemanticTypeHasher,
+    FileContentHasher,
+    StringCacher,
+)
 import os
 import hashlib
 import pyarrow as pa

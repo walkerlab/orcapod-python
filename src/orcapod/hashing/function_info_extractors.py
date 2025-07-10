@@ -1,4 +1,4 @@
-from .types import FunctionInfoExtractor
+from orcapod.protocols.hashing_protocols import FunctionInfoExtractor
 from collections.abc import Callable
 from typing import Any, Literal
 from orcapod.types import TypeSpec

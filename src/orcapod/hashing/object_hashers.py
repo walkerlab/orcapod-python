@@ -1,9 +1,57 @@
-from orcapod.hashing.types import FunctionInfoExtractor, ObjectHasher
+from orcapod.protocols.hashing_protocols import FunctionInfoExtractor, ObjectHasher
 from orcapod.hashing import legacy_core
 from orcapod.hashing import hash_utils
+from typing import Any
+import uuid
+from abc import ABC, abstractmethod
 
 
-class BasicObjectHasher(ObjectHasher):
+class ObjectHasherBase(ABC):
+    @abstractmethod
+    def hash(self, obj: object) -> bytes: ...
+
+    @abstractmethod
+    def get_hasher_id(self) -> str: ...
+
+    def hash_to_hex(
+        self, obj: Any, char_count: int | None = None, prefix_hasher_id: bool = False
+    ) -> str:
+        hash_bytes = self.hash(obj)
+        hex_str = hash_bytes.hex()
+
+        # TODO: clean up this logic, as char_count handling is messy
+        if char_count is not None:
+            if char_count > len(hex_str):
+                raise ValueError(
+                    f"Cannot truncate to {char_count} chars, hash only has {len(hex_str)}"
+                )
+            hex_str = hex_str[:char_count]
+        if prefix_hasher_id:
+            hex_str = self.get_hasher_id() + "@" + hex_str
+        return hex_str
+
+    def hash_to_int(self, obj: Any, hexdigits: int = 16) -> int:
+        """
+        Hash an object to an integer.
+
+        Args:
+            obj (Any): The object to hash.
+            hexdigits (int): Number of hexadecimal digits to use for the hash.
+
+        Returns:
+            int: The integer representation of the hash.
+        """
+        hex_hash = self.hash_to_hex(obj, char_count=hexdigits)
+        return int(hex_hash, 16)
+
+    def hash_to_uuid(
+        self, obj: Any, namespace: uuid.UUID = uuid.NAMESPACE_OID
+    ) -> uuid.UUID:
+        """Convert hash to proper UUID5."""
+        return uuid.uuid5(namespace, self.hash(obj))
+
+
+class BasicObjectHasher(ObjectHasherBase):
     """
     Default object hasher used throughout the codebase.
     """
@@ -34,7 +82,7 @@ class BasicObjectHasher(ObjectHasher):
         )
 
 
-class LegacyObjectHasher(ObjectHasher):
+class LegacyObjectHasher(ObjectHasherBase):
     """
     Legacy object hasher that returns the string representation of the object.
 

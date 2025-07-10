@@ -2,12 +2,25 @@ from typing import Protocol, Any, TypeAlias
 import os
 from collections.abc import Collection, Mapping
 
+import logging
+
 
 DataType: TypeAlias = type
 
 TypeSpec: TypeAlias = Mapping[
     str, DataType
 ]  # Mapping of parameter names to their types
+
+logger = logging.getLogger(__name__)
+
+
+# class TypeSpec(dict[str, DataType]):
+#     def __init__(self, *args, **kwargs):
+#         """
+#         TypeSpec is a mapping of parameter names to their types.
+#         It can be used to define the expected types of parameters in a function or a pod.
+#         """
+#         super().__init__(*args, **kwargs)
 
 
 # Convenience alias for anything pathlike
@@ -27,29 +40,27 @@ PathSet: TypeAlias = PathLike | Collection[PathLike | None]
 # Simple data types that we support (with clear Polars correspondence)
 SupportedNativePythonData: TypeAlias = str | int | float | bool | bytes
 
-ExtendedSupportedPythonData: TypeAlias = SupportedNativePythonData | PathLike
+ExtendedSupportedPythonData: TypeAlias = SupportedNativePythonData | PathSet
 
 # Extended data values that can be stored in packets
 # Either the original PathSet or one of our supported simple data types
-DataValue: TypeAlias = (
-    PathSet
-    | SupportedNativePythonData
-    | None
-    | Collection["DataValue"]
-    | Mapping[str, "DataValue"]
-)
+DataValue: TypeAlias = ExtendedSupportedPythonData | Collection["DataValue"] | None
+
+StoreValue: TypeAlias = SupportedNativePythonData | Collection["StoreValue"] | None
+
+PacketLike: TypeAlias = Mapping[str, DataValue]
 
 
-class PodFunction(Protocol):
-    """
-    A function suitable to be used in a FunctionPod.
-    It takes one or more named arguments, each corresponding to either:
-    - A path to a file or directory (PathSet) - for backward compatibility
-    - A simple data value (str, int, float, bool, bytes, Path)
-    and returns either None, a single value, or a list of values
-    """
+# class PodFunction(Protocol):
+#     """
+#     A function suitable to be used in a FunctionPod.
+#     It takes one or more named arguments, each corresponding to either:
+#     - A path to a file or directory (PathSet) - for backward compatibility
+#     - A simple data value (str, int, float, bool, bytes, Path)
+#     and returns either None, a single value, or a list of values
+#     """
 
-    def __call__(self, **kwargs: DataValue) -> None | DataValue | list[DataValue]: ...
+#     def __call__(self, **kwargs: DataValue) -> None | DataValue | list[DataValue]: ...
 
 
 class TypeHandler(Protocol):
