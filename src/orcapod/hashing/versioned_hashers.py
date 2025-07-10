@@ -1,6 +1,6 @@
 # A collection of versioned hashers that provide a "default" implementation of hashers.
 from .arrow_hashers import SemanticArrowHasher
-from .types import ObjectHasher
+from orcapod.protocols.hashing_protocols import ObjectHasher
 import importlib
 from typing import Any
 

@@ -6,7 +6,7 @@ import threading
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TYPE_CHECKING
 
-from orcapod.hashing.types import StringCacher
+from orcapod.protocols.hashing_protocols import StringCacher
 
 logger = logging.getLogger(__name__)
 

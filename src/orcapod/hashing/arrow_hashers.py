@@ -3,7 +3,7 @@ from typing import Any
 import pyarrow as pa
 import polars as pl
 import json
-from orcapod.hashing.types import SemanticTypeHasher, StringCacher
+from orcapod.protocols.hashing_protocols import SemanticTypeHasher, StringCacher
 from orcapod.hashing import arrow_serialization
 from collections.abc import Callable
 

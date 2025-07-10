@@ -1,18 +1,9 @@
-"""
-Stable Hashing Library
-======================
-
-A library for creating stable, content-based hashes that remain consistent across Python sessions,
-suitable for arbitrarily nested data structures and custom objects via HashableMixin.
-"""
-
-WARN_NONE_IDENTITY = False
 import hashlib
 import inspect
 import json
 import logging
 import zlib
-from .types import FunctionInfoExtractor
+from orcapod.protocols.hashing_protocols import FunctionInfoExtractor
 from functools import partial
 from os import PathLike
 from pathlib import Path
@@ -33,8 +24,18 @@ from uuid import UUID
 
 import xxhash
 
-from orcapod.types import Packet, PacketLike, PathSet
+from orcapod.types import PathSet, Packet, PacketLike
 from orcapod.utils.name import find_noncolliding_name
+
+WARN_NONE_IDENTITY = False
+"""
+Stable Hashing Library
+======================
+
+A library for creating stable, content-based hashes that remain consistent across Python sessions,
+suitable for arbitrarily nested data structures and custom objects via HashableMixin.
+"""
+
 
 # Configure logging with __name__ for proper hierarchy
 logger = logging.getLogger(__name__)
