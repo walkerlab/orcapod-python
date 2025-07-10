@@ -1,4 +1,4 @@
-from orcapod.types import TypeSpec
+from orcapod.types.core import DataType, TypeSpec
 from orcapod.types.semantic_type_registry import SemanticTypeRegistry
 import pyarrow as pa
 import datetime
@@ -38,7 +38,7 @@ def arrow_to_python_type(arrow_type: pa.DataType) -> type:
         raise TypeError(f"Conversion of arrow type {arrow_type} is not supported")
 
 
-class PythonSchema(dict[str, type]):
+class PythonSchema(dict[str, DataType]):
     """
     A schema for Python data types, mapping string keys to Python types.
 
@@ -69,6 +69,9 @@ class PythonSchema(dict[str, type]):
             A new schema including source info fields.
         """
         return {**self, **{f"_source_info_{k}": str for k in self.keys()}}
+
+    def copy(self) -> "PythonSchema":
+        return PythonSchema(self)
 
 
 class SemanticSchema(dict[str, tuple[type, str | None]]):
@@ -299,11 +302,16 @@ def from_arrow_schema_to_semantic_schema(
     """
     semantic_schema = {}
     for field in arrow_schema:
-        if field.metadata.get(b"field_type", b"") == b"source_info":
+        if field.name.startswith("_source_info_") or (
+            field.metadata and field.metadata.get(b"field_type", b"") == b"source_info"
+        ):
             # Skip source info fields
             continue
-        semantic_type = field.metadata.get(b"semantic_type", None)
-        semantic_type = semantic_type.decode() if semantic_type else None
+
+        semantic_type = None
+        if field.metadata is not None:
+            semantic_type = field.metadata.get(b"semantic_type", None)
+            semantic_type = semantic_type.decode() if semantic_type else None
         python_type = arrow_to_python_type(field.type)
         semantic_schema[field.name] = (python_type, semantic_type)
     return SemanticSchema(semantic_schema)
