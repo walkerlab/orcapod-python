@@ -55,8 +55,8 @@ def check_typespec_compatibility(
 def extract_function_typespecs(
     func: Callable,
     output_keys: Collection[str],
-    input_types: TypeSpec | None = None,
-    output_types: TypeSpec | Sequence[type] | None = None,
+    input_typespec: TypeSpec | None = None,
+    output_typespec: TypeSpec | Sequence[type] | None = None,
 ) -> tuple[TypeSpec, TypeSpec]:
     """
     Extract input and output data types from a function signature.
@@ -137,23 +137,23 @@ def extract_function_typespecs(
         {'count': <class 'int'>, 'total': <class 'float'>, 'repr': <class 'str'>}
     """
     verified_output_types: TypeSpec = {}
-    if output_types is not None:
-        if isinstance(output_types, dict):
-            verified_output_types = output_types
-        elif isinstance(output_types, Sequence):
+    if output_typespec is not None:
+        if isinstance(output_typespec, dict):
+            verified_output_types = output_typespec
+        elif isinstance(output_typespec, Sequence):
             # If output_types is a collection, convert it to a dict with keys from return_keys
-            if len(output_types) != len(output_keys):
+            if len(output_typespec) != len(output_keys):
                 raise ValueError(
-                    f"Output types collection length {len(output_types)} does not match return keys length {len(output_keys)}."
+                    f"Output types collection length {len(output_typespec)} does not match return keys length {len(output_keys)}."
                 )
-            verified_output_types = {k: v for k, v in zip(output_keys, output_types)}
+            verified_output_types = {k: v for k, v in zip(output_keys, output_typespec)}
 
     signature = inspect.signature(func)
 
     param_info: TypeSpec = {}
     for name, param in signature.parameters.items():
-        if input_types and name in input_types:
-            param_info[name] = input_types[name]
+        if input_typespec and name in input_typespec:
+            param_info[name] = input_typespec[name]
         else:
             # check if the parameter has annotation
             if param.annotation is not inspect.Signature.empty:
@@ -232,11 +232,7 @@ def get_compatible_type(type1: Any, type2: Any) -> Any:
     raise TypeError(f"Types {type1} and {type2} are not compatible")
 
 
-def union_typespecs(left: TypeSpec | None, right: TypeSpec | None) -> TypeSpec | None:
-    if left is None:
-        return right
-    if right is None:
-        return left
+def union_typespecs(left: TypeSpec, right: TypeSpec) -> TypeSpec:
     # Merge the two TypeSpecs but raise an error if conflicts in types are found
     merged = dict(left)
     for key, right_type in right.items():
@@ -248,15 +244,12 @@ def union_typespecs(left: TypeSpec | None, right: TypeSpec | None) -> TypeSpec |
     return merged
 
 
-def intersection_typespecs(
-    left: TypeSpec | None, right: TypeSpec | None
-) -> TypeSpec | None:
+def intersection_typespecs(left: TypeSpec, right: TypeSpec) -> TypeSpec:
     """
     Returns the intersection of two TypeSpecs, only returning keys that are present in both.
     If a key is present in both TypeSpecs, the type must be the same.
     """
-    if left is None or right is None:
-        return None
+
     # Find common keys and ensure types match
     common_keys = set(left.keys()).intersection(set(right.keys()))
     intersection = {}
