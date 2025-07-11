@@ -27,6 +27,7 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
 
     def __init__(
         self,
+        fixed_input_streams: tuple[dp.Stream, ...] | None = None,
         label: str | None = None,
         skip_tracking: bool = False,
         tracker_manager: dp.TrackerManager | None = None,
@@ -36,26 +37,61 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         self._label = label
         self._skip_tracking = skip_tracking
         self._tracker_manager = tracker_manager or DEFAULT_TRACKER_MANAGER
+        self.fixed_input_streams = fixed_input_streams
 
-    def record_kernel_invocation(self, upstreams: tuple[dp.Stream, ...]) -> None:
+    def resolve_input_streams(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
         """
-        Register the pod with the upstream streams. This is used to track the pod in the system.
+        Resolve the input streams for the kernel. If the kernel has fixed input streams,
+        it returns those. Otherwise, it returns the provided streams.
+        """
+        if self.fixed_input_streams is not None:
+            if len(streams) != 0:
+                raise ValueError(
+                    f"{self.__class__.__name__} has fixed input streams. Additional streams cannot be accepted."
+                )
+            return self.fixed_input_streams
+        return streams
+
+    def pre_processing_step(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
+        """
+        Pre-processing step that can be overridden by subclasses to perform any necessary pre-processing
+        on the input streams before the main computation. This is useful if you need to modify the input streams
+        or perform any other operations before the main computation. Critically, any Kernel/Pod invocations in the
+        pre-processing step will be tracked separately from the main computation in forward.
+        By default, it returns the input streams unchanged.
+        """
+        return streams
+
+    @abstractmethod
+    def validate_inputs(self, *streams: dp.Stream) -> None: ...
+
+    def prepare_output_stream(
+        self, *streams: dp.Stream, label: str | None = None
+    ) -> dp.LiveStream:
+        """
+        Prepare the output stream for the kernel invocation.
+        This method is called after the main computation is performed.
+        It creates a KernelStream with the provided streams and label.
+        """
+        return KernelStream(source=self, upstreams=streams, label=label)
+
+    def track_invocation(self, *streams: dp.Stream) -> None:
+        """
+        Track the invocation of the kernel with the provided streams.
+        This is a convenience method that calls record_kernel_invocation.
         """
         if not self._skip_tracking and self._tracker_manager is not None:
-            self._tracker_manager.record_kernel_invocation(self, upstreams)
+            self._tracker_manager.record_kernel_invocation(self, streams)
 
     def __call__(
         self, *streams: dp.Stream, label: str | None = None, **kwargs
     ) -> dp.LiveStream:
-        output_stream = KernelStream(source=self, upstreams=streams, label=label)
-        self.record_kernel_invocation(streams)
+        streams = self.resolve_input_streams(*streams)
+        processed_streams = self.pre_processing_step(*streams)
+        self.validate_inputs(*processed_streams)
+        output_stream = self.prepare_output_stream(*processed_streams, label=label)
+        self.track_invocation(*processed_streams)
         return output_stream
-
-    @abstractmethod
-    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]: ...
-
-    @abstractmethod
-    def validate_inputs(self, *streams: dp.Stream) -> None: ...
 
     @abstractmethod
     def forward(self, *streams: dp.Stream) -> dp.Stream:
@@ -64,6 +100,9 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         This method is called when the kernel is invoked with a collection of streams.
         Subclasses should override this method to provide the kernel with its unique behavior
         """
+
+    @abstractmethod
+    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]: ...
 
     def __repr__(self):
         return self.__class__.__name__
