@@ -35,33 +35,35 @@ class StreamBase(ABC, LabeledContentIdentifiableBase):
         self._source = source
         self._upstreams = upstreams
         self._last_modified: datetime | None = None
-        self._update_modified_time()
+        self._set_modified_time()
+
+    @property
+    def source(self) -> dp.Kernel | None:
+        """
+        The source of the stream, which is the kernel that generated the stream.
+        This is typically used to track the origin of the stream in the computational graph.
+        """
+        return self._source
+
+    @property
+    def upstreams(self) -> tuple[dp.Stream, ...]:
+        """
+        The upstream streams that are used to generate this stream.
+        This is typically used to track the origin of the stream in the computational graph.
+        """
+        return self._upstreams
+
+    def computed_label(self) -> str | None:
+        if self.source is not None:
+            # use the invocation operation label
+            return self.source.label
+        return None
 
     @abstractmethod
     def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]: ...
 
     @abstractmethod
     def types(self) -> tuple[TypeSpec, TypeSpec]: ...
-
-    @abstractmethod
-    def as_table(self) -> pa.Table: ...
-
-    @abstractmethod
-    def iter_packets(
-        self,
-    ) -> Iterator[tuple[dp.Tag, dp.Packet]]: ...
-
-    def _update_modified_time(
-        self, timestamp: datetime | None = None, invalidate: bool = False
-    ) -> None:
-        if invalidate:
-            self._last_modified = None
-            return
-
-        if timestamp is not None:
-            self._last_modified = timestamp
-        else:
-            self._last_modified = datetime.now(timezone.utc)
 
     @property
     def last_modified(self) -> datetime | None:
@@ -93,32 +95,30 @@ class StreamBase(ABC, LabeledContentIdentifiableBase):
                 return False
         return True
 
-    @property
-    def source(self) -> dp.Kernel | None:
-        """
-        The source of the stream, which is the kernel that generated the stream.
-        This is typically used to track the origin of the stream in the computational graph.
-        """
-        return self._source
+    def _set_modified_time(
+        self, timestamp: datetime | None = None, invalidate: bool = False
+    ) -> None:
+        if invalidate:
+            self._last_modified = None
+            return
 
-    @property
-    def upstreams(self) -> tuple[dp.Stream, ...]:
-        """
-        The upstream streams that are used to generate this stream.
-        This is typically used to track the origin of the stream in the computational graph.
-        """
-        return self._upstreams
-
-    def computed_label(self) -> str | None:
-        if self.source is not None:
-            # use the invocation operation label
-            return self.source.label
-        return None
+        if timestamp is not None:
+            self._last_modified = timestamp
+        else:
+            self._last_modified = datetime.now(timezone.utc)
 
     def __iter__(
         self,
     ) -> Iterator[tuple[dp.Tag, dp.Packet]]:
         return self.iter_packets()
+
+    @abstractmethod
+    def iter_packets(
+        self,
+    ) -> Iterator[tuple[dp.Tag, dp.Packet]]: ...
+
+    @abstractmethod
+    def as_table(self) -> pa.Table: ...
 
     def flow(self) -> Collection[tuple[dp.Tag, dp.Packet]]:
         """
@@ -185,14 +185,14 @@ class KernelStream(StreamBase):
         This is useful for re-processing the stream with the same kernel.
         """
         self._cached_stream = None
-        self._update_modified_time(invalidate=True)
+        self._set_modified_time(invalidate=True)
 
     def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """
         Returns the keys of the tag and packet columns in the stream.
         This is useful for accessing the columns in the stream.
         """
-        self.update_stream()
+        self.refresh()
         assert self._cached_stream is not None, (
             "_cached_stream should not be None here."
         )
@@ -203,7 +203,7 @@ class KernelStream(StreamBase):
         Returns the types of the tag and packet columns in the stream.
         This is useful for accessing the types of the columns in the stream.
         """
-        self.update_stream()
+        self.refresh()
         assert self._cached_stream is not None, (
             "_cached_stream should not be None here."
         )
@@ -212,12 +212,12 @@ class KernelStream(StreamBase):
     @property
     def is_current(self) -> bool:
         if self._cached_stream is None or not super().is_current:
-            status = self.update_stream()
+            status = self.refresh()
             if not status:  # if it failed to update for whatever reason
                 return False
         return True
 
-    def update_stream(self, force: bool = False) -> bool:
+    def refresh(self, force: bool = False) -> bool:
         updated = False
         if force or (self._cached_stream is not None and not super().is_current):
             self.clear_cache()
@@ -227,7 +227,7 @@ class KernelStream(StreamBase):
                 "Stream source must be set to recompute the stream."
             )
             self._cached_stream = self.source.forward(*self.upstreams)
-            self._update_modified_time()
+            self._set_modified_time()
             updated = True
 
         if self._cached_stream is None:
@@ -238,6 +238,14 @@ class KernelStream(StreamBase):
 
         return updated
 
+    def invalidate(self) -> None:
+        """
+        Invalidate the stream, marking it as needing recomputation.
+        This will clear the cached stream and set the last modified time to None.
+        """
+        self.clear_cache()
+        self._set_modified_time(invalidate=True)
+
     @property
     def last_modified(self) -> datetime | None:
         if self._cached_stream is None:
@@ -245,14 +253,14 @@ class KernelStream(StreamBase):
         return self._cached_stream.last_modified
 
     def as_table(self) -> pa.Table:
-        self.update_stream()
+        self.refresh()
         assert self._cached_stream is not None, (
             "Stream has not been updated or is empty."
         )
         return self._cached_stream.as_table()
 
     def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
-        self.update_stream()
+        self.refresh()
         assert self._cached_stream is not None, (
             "Stream has not been updated or is empty."
         )
@@ -307,7 +315,7 @@ class ImmutableTableStream(StreamBase):
         )
 
         self._cached_elements: list[tuple[dp.Tag, ArrowPacket]] | None = None
-        self._update_modified_time()  # set modified time to now
+        self._set_modified_time()  # set modified time to now
 
     def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """
@@ -402,13 +410,13 @@ class PodStream(StreamBase):
         This is useful for accessing the columns in the stream.
         """
         tag_keys, _ = self.input_stream.keys()
-        packet_keys = tuple(self.pod.output_typespec.keys())
+        packet_keys = tuple(self.pod.output_packet_types().keys())
         return tag_keys, packet_keys
 
     def types(self) -> tuple[TypeSpec, TypeSpec]:
         tag_typespec, _ = self.input_stream.types()
         # TODO: check if copying can be avoided
-        packet_typespec = dict(self.pod.output_typespec)
+        packet_typespec = dict(self.pod.output_packet_types())
         return tag_typespec, packet_typespec
 
     def clear_cache(self) -> None:
@@ -420,13 +428,22 @@ class PodStream(StreamBase):
         self._computation_complete = False
         self._cached_output_table = None
 
-    def validate_cache(self) -> None:
-        if not self.is_current:
-            self.clear_cache()
-            self._update_modified_time(invalidate=True)
+    def refresh(self, force: bool = False) -> bool:
+        if not self.is_current or force:
+            self.invalidate()
+            return True
+        return False
+
+    def invalidate(self) -> None:
+        """
+        Invalidate the stream, marking it as needing recomputation.
+        This will clear the cached stream and set the last modified time to None.
+        """
+        self.clear_cache()
+        self._set_modified_time(invalidate=True)
 
     def as_table(self) -> pa.Table:
-        self.validate_cache()
+        self.refresh()
         if self._cached_output_table is None:
             all_tags = []
             all_packets = []
@@ -452,7 +469,7 @@ class PodStream(StreamBase):
         return self._cached_output_table
 
     def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
-        self.validate_cache()
+        self.refresh()
         if not self._computation_complete or self._cached_output_packets is None:
             for i, (tag, packet) in enumerate(self.input_stream.iter_packets()):
                 if i not in self._cached_output_packets:
@@ -480,7 +497,7 @@ class PodStream(StreamBase):
                     self._cached_output_packets[i] = (processed_tag, processed_packet)
                     yield processed_tag, processed_packet
             self._computation_complete = True
-            self._update_modified_time()
+            self._set_modified_time()
 
         else:
             for i in range(len(self._cached_output_packets)):

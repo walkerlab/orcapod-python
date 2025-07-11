@@ -39,10 +39,9 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
 
     def __call__(
         self, *streams: dp.Stream, label: str | None = None, **kwargs
-    ) -> dp.Stream:
+    ) -> dp.LiveStream:
         output_stream = self.forward(*streams, **kwargs)
 
-        kernel_stream: dp.Stream
         if output_stream.source is not None:
             kernel_stream = KernelStream(output_stream, label=label)
         else:
@@ -62,7 +61,7 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         return kernel_stream
 
     @abstractmethod
-    def types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]: ...
+    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]: ...
 
     @abstractmethod
     def validate_inputs(self, *streams: dp.Stream) -> None: ...

@@ -53,10 +53,10 @@ class BinaryOperator(TrackedKernelBase):
         left_stream, right_stream = streams
         return self.op_forward(left_stream, right_stream)
 
-    def types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
         self.check_binary_inputs(*streams)
         left_stream, right_stream = streams
-        return self.op_types(left_stream, right_stream)
+        return self.op_output_types(left_stream, right_stream)
 
     def identity_structure(self, *streams: dp.Stream) -> Any:
         """
@@ -75,7 +75,7 @@ class BinaryOperator(TrackedKernelBase):
         ...
 
     @abstractmethod
-    def op_types(
+    def op_output_types(
         self, left_stream: dp.Stream, right_stream: dp.Stream
     ) -> tuple[TypeSpec, TypeSpec]:
         """
@@ -135,7 +135,7 @@ class Join(BinaryOperator):
             upstreams=(left_stream, right_stream),
         )
 
-    def op_types(self, left_stream, right_stream) -> tuple[TypeSpec, TypeSpec]:
+    def op_output_types(self, left_stream, right_stream) -> tuple[TypeSpec, TypeSpec]:
         left_tag_typespec, left_packet_typespec = left_stream.types()
         right_tag_typespec, right_packet_typespec = right_stream.types()
         joined_tag_typespec = union_typespecs(left_tag_typespec, right_tag_typespec)
@@ -148,7 +148,7 @@ class Join(BinaryOperator):
         self, left_stream: dp.Stream, right_stream: dp.Stream
     ) -> None:
         try:
-            self.op_types(left_stream, right_stream)
+            self.op_output_types(left_stream, right_stream)
         except Exception as e:
             raise InputValidationError(f"Input streams are not compatible: {e}")
 
