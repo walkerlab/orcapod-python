@@ -767,20 +767,39 @@ class Tracker(Protocol):
         """
         ...
 
-    def record(self, stream: Stream) -> None:
+    def record_kernel_invocation(
+        self, kernel: Kernel, upstreams: tuple[Stream, ...]
+    ) -> None:
         """
-        Record a stream in the computational graph.
+        Record a kernel invocation in the computational graph.
 
-        This method is called whenever a kernel produces a new stream.
-        The tracker should record:
-        - The stream and its properties
-        - The source kernel that created it
+        This method is called whenever a kernel is invoked. The tracker
+        should record:
+        - The kernel and its properties
+        - The input streams that were used as input
+        - Timing and performance information
+        - Any relevant metadata
+
+        Args:
+            kernel: The kernel that was invoked
+            upstreams: The input streams used for this invocation
+        """
+        ...
+
+    def record_pod_invocation(self, pod: Pod, upstreams: tuple[Stream, ...]) -> None:
+        """
+        Record a pod invocation in the computational graph.
+
+        This method is called whenever a pod is invoked. The tracker
+        should record:
+        - The pod and its properties
         - The upstream streams that were used as input
         - Timing and performance information
         - Any relevant metadata
 
         Args:
-            stream: The stream to record in the computational graph
+            pod: The pod that was invoked
+            upstreams: The input streams used for this invocation
         """
         ...
 
@@ -842,11 +861,26 @@ class TrackerManager(Protocol):
         """
         ...
 
-    def record(self, stream: Stream) -> None:
+    def record_kernel_invocation(
+        self, kernel: Kernel, upstreams: tuple[Stream, ...]
+    ) -> None:
         """
         Record a stream in all active trackers.
 
         This method broadcasts the stream recording to all currently
+        active and registered trackers. It provides a single point
+        of entry for recording events, simplifying kernel implementations.
+
+        Args:
+            stream: The stream to record in all active trackers
+        """
+        ...
+
+    def record_pod_invocation(self, pod: Pod, upstreams: tuple[Stream, ...]) -> None:
+        """
+        Record a stream in all active trackers.
+
+        This method broadcasts the stream recording to all currently`
         active and registered trackers. It provides a single point
         of entry for recording events, simplifying kernel implementations.
 
