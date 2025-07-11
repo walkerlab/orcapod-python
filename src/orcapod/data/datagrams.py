@@ -199,8 +199,7 @@ class PythonDictTag(dict[str, DataValue]):
     def as_table(self) -> pa.Table:
         return pa.Table.from_pylist([self])
 
-    @property
-    def typespec(self) -> schemas.PythonSchema:
+    def types(self) -> schemas.PythonSchema:
         # TODO: provide correct implementation
         return schemas.PythonSchema({k: str for k in self.keys()})
 
@@ -219,8 +218,7 @@ class ArrowTag:
     def keys(self) -> tuple[str, ...]:
         return tuple(self.table.column_names)
 
-    @property
-    def typespec(self) -> schemas.PythonSchema:
+    def types(self) -> schemas.PythonSchema:
         if self._cached_python_schema is None:
             self._cached_python_schema = schemas.from_arrow_schema_to_semantic_schema(
                 self.table.schema
@@ -262,7 +260,7 @@ class PythonDictPacket(dict[str, DataValue]):
         new_packet = PythonDictPacket(
             object.as_dict(include_source=False),
             object.source_info(),
-            dict(object.typespec),
+            dict(object.types()),
             finger_print=finger_print,
             semantic_converter=semantic_converter,
             semantic_type_registry=semantic_type_registry,
@@ -359,8 +357,9 @@ class PythonDictPacket(dict[str, DataValue]):
                 self._post_hash_callback(self._finger_print, self._cached_content_hash)
         return self._cached_content_hash
 
-    @property
-    def typespec(self) -> schemas.PythonSchema:
+    # use keys() implementation from dict
+
+    def types(self) -> schemas.PythonSchema:
         return self._python_schema.copy()
 
     def source_info(self) -> dict[str, str | None]:
@@ -562,8 +561,7 @@ class ArrowPacket:
                 self._post_hash_callback(self._finger_print, self._cached_content_hash)
         return self._cached_content_hash
 
-    @property
-    def typespec(self) -> schemas.PythonSchema:
+    def types(self) -> schemas.PythonSchema:
         return self.semantic_converter.python_schema.copy()
 
     def keys(self) -> tuple[str, ...]:

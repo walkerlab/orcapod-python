@@ -33,26 +33,24 @@ class PodBase(TrackedKernelBase):
     It allows for the execution of a function with a specific label and can be tracked by the system.
     """
 
-    def types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
         """
         Return the input and output typespecs for the pod.
         This is used to validate the input and output streams.
         """
         input_stream = self.process_and_verify_streams(*streams)
         tag_typespec, _ = input_stream.types()
-        return tag_typespec, self.output_typespec
+        return tag_typespec, self.output_packet_types()
 
-    @property
     @abstractmethod
-    def input_typespec(self) -> TypeSpec:
+    def input_packet_types(self) -> TypeSpec:
         """
         Return the input typespec for the pod. This is used to validate the input streams.
         """
         ...
 
-    @property
     @abstractmethod
-    def output_typespec(self) -> TypeSpec:
+    def output_packet_types(self) -> TypeSpec:
         """
         Return the output typespec for the pod. This is used to validate the output streams.
         """
@@ -99,12 +97,12 @@ class PodBase(TrackedKernelBase):
                 stream = Join()(stream, next_stream)
             combined_streams = [stream]
         input_stream = combined_streams[0]
-        _, input_typespec = input_stream.types()
+        _, incoming_packet_types = input_stream.types()
         if not tsutils.check_typespec_compatibility(
-            input_typespec, self.input_typespec
+            incoming_packet_types, self.input_packet_types()
         ):
             raise ValueError(
-                f"Input typespec {input_typespec} is not compatible with expected input typespec {self.input_typespec}"
+                f"Input typespec {incoming_packet_types} is not compatible with expected input typespec {self.input_packet_types}"
             )
         return input_stream
 
@@ -209,28 +207,28 @@ class FunctionPod(PodBase):
         self.function_info_extractor = function_info_extractor
 
         # extract input and output types from the function signature
-        self._input_typespec, self._output_typespec = extract_function_typespecs(
-            self.function,
-            self.output_keys,
-            input_typespec=input_typespec,
-            output_typespec=output_typespec,
+        self._input_packet_types, self._output_packet_types = (
+            extract_function_typespecs(
+                self.function,
+                self.output_keys,
+                input_typespec=input_typespec,
+                output_typespec=output_typespec,
+            )
         )
 
-    @property
-    def input_typespec(self) -> TypeSpec:
+    def input_packet_types(self) -> TypeSpec:
         """
         Return the input typespec for the function pod.
         This is used to validate the input streams.
         """
-        return self._input_typespec
+        return self._input_packet_types
 
-    @property
-    def output_typespec(self) -> TypeSpec:
+    def output_packet_types(self) -> TypeSpec:
         """
         Return the output typespec for the function pod.
         This is used to validate the output streams.
         """
-        return self._output_typespec
+        return self._output_packet_types
 
     def __repr__(self) -> str:
         return f"FunctionPod:{self.function!r}"
@@ -285,15 +283,15 @@ class FunctionPod(PodBase):
             function_info = self.function_info_extractor.extract_function_info(
                 self.function,
                 function_name=self.function_name,
-                input_typespec=self.input_typespec,
-                output_typespec=self.output_typespec,
+                input_typespec=self.input_packet_types(),
+                output_typespec=self.output_packet_types(),
             )
         else:
             # use basic information only
             function_info = {
                 "name": self.function_name,
-                "input_typespec": self.input_typespec,
-                "output_typespec": self.output_typespec,
+                "input_packet_types": self.input_packet_types,
+                "output_packet_types": self.output_packet_types,
             }
         function_info["output_keys"] = tuple(self.output_keys)
 
@@ -311,21 +309,19 @@ class StoredPod(PodBase):
     def computed_label(self) -> str | None:
         return self.pod.label
 
-    @property
-    def input_typespec(self) -> TypeSpec:
+    def input_packet_types(self) -> TypeSpec:
         """
         Return the input typespec for the stored pod.
         This is used to validate the input streams.
         """
-        return self.pod.input_typespec
+        return self.pod.input_packet_types()
 
-    @property
-    def output_typespec(self) -> TypeSpec:
+    def output_packet_types(self) -> TypeSpec:
         """
         Return the output typespec for the stored pod.
         This is used to validate the output streams.
         """
-        return self.pod.output_typespec
+        return self.pod.output_packet_types()
 
     def call(self, tag: dp.Tag, packet: dp.Packet) -> tuple[dp.Tag, dp.Packet | None]:
         return self.pod.call(tag, packet)
