@@ -1,3 +1,12 @@
+from .data import DEFAULT_TRACKER_MANAGER
+
+no_tracking = DEFAULT_TRACKER_MANAGER.no_tracking
+
+__all__ = [
+    "DEFAULT_TRACKER_MANAGER",
+    "no_tracking",
+]
+
 # from .core import operators, sources, streams
 # from .core.streams import SyncStreamFromLists, SyncStreamFromGenerator
 # from . import hashing, stores

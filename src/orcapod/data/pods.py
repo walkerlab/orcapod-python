@@ -1,46 +1,29 @@
-from orcapod.data.datagrams import PythonDictPacket
-from orcapod.data.streams import PodStream
-from orcapod.data.kernels import TrackedKernelBase
-from orcapod.protocols import data_protocols as dp, hashing_protocols as hp
-from orcapod.types import SemanticTypeRegistry, default_registry
-from orcapod.types import typespec_utils as tsutils
-from abc import abstractmethod
-
 import logging
 import sys
+from abc import abstractmethod
 from collections.abc import Callable, Collection, Iterable, Sequence
 from typing import Any, Literal, cast
 
-
-from orcapod.types.typespec_utils import (
-    extract_function_typespecs,
-    check_typespec_compatibility,
-)
-from orcapod.types import TypeSpec
-
-from orcapod.hashing.legacy_core import get_function_signature
+from orcapod.data.datagrams import PythonDictPacket
+from orcapod.data.kernels import TrackedKernelBase
 from orcapod.data.operators import Join
-
+from orcapod.data.streams import PodStream
+from orcapod.hashing.hash_utils import get_function_signature
+from orcapod.protocols import data_protocols as dp
+from orcapod.protocols import hashing_protocols as hp
+from orcapod.types import SemanticTypeRegistry, TypeSpec, default_registry
+from orcapod.types import typespec_utils as tsutils
 
 logger = logging.getLogger(__name__)
 
 error_handling_options = Literal["raise", "ignore", "warn"]
 
 
-class PodBase(TrackedKernelBase):
+class ActivatablePodBase(TrackedKernelBase):
     """
     FunctionPod is a specialized kernel that encapsulates a function to be executed on data streams.
     It allows for the execution of a function with a specific label and can be tracked by the system.
     """
-
-    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
-        """
-        Return the input and output typespecs for the pod.
-        This is used to validate the input and output streams.
-        """
-        input_stream = self.process_and_verify_streams(*streams)
-        tag_typespec, _ = input_stream.types()
-        return tag_typespec, self.output_packet_types()
 
     @abstractmethod
     def input_packet_types(self) -> TypeSpec:
@@ -63,13 +46,24 @@ class PodBase(TrackedKernelBase):
 
     def __init__(
         self,
+        fixed_input_streams: tuple[dp.Stream, ...] | None = None,
         error_handling: error_handling_options = "raise",
         label: str | None = None,
         **kwargs,
     ) -> None:
-        super().__init__(label=label, **kwargs)
+        super().__init__(fixed_input_streams=fixed_input_streams, label=label, **kwargs)
         self._active = True
         self.error_handling = error_handling
+
+    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+        """
+        Return the input and output typespecs for the pod.
+        This is used to validate the input and output streams.
+        """
+        input_streams = self.pre_processing_step(*streams)
+        self.validate_inputs(*input_streams)
+        tag_typespec, _ = input_streams[0].types()
+        return tag_typespec, self.output_packet_types()
 
     def is_active(self) -> bool:
         """
@@ -83,7 +77,22 @@ class PodBase(TrackedKernelBase):
         """
         self._active = active
 
-    def process_and_verify_streams(self, *streams: dp.Stream) -> dp.Stream:
+    def validate_inputs(self, *streams: dp.Stream) -> None:
+        if len(streams) != 1:
+            raise ValueError(
+                f"{self.__class__.__name__} expects exactly one input stream, got {len(streams)}"
+            )
+        input_stream = streams[0]
+        _, incoming_packet_types = input_stream.types()
+        if not tsutils.check_typespec_compatibility(
+            incoming_packet_types, self.input_packet_types()
+        ):
+            # TODO: use custom exception type for better error handling
+            raise ValueError(
+                f"Input typespec {incoming_packet_types} is not compatible with expected input typespec {self.input_packet_types}"
+            )
+
+    def pre_processing_step(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
         """
         Prepare the incoming streams for execution in the pod. This default implementation
         joins all the input streams together.
@@ -96,47 +105,22 @@ class PodBase(TrackedKernelBase):
             for next_stream in streams[1:]:
                 stream = Join()(stream, next_stream)
             combined_streams = [stream]
-        input_stream = combined_streams[0]
-        _, incoming_packet_types = input_stream.types()
-        if not tsutils.check_typespec_compatibility(
-            incoming_packet_types, self.input_packet_types()
-        ):
-            raise ValueError(
-                f"Input typespec {incoming_packet_types} is not compatible with expected input typespec {self.input_packet_types}"
-            )
-        return input_stream
 
-    def validate_inputs(self, *streams: dp.Stream) -> None:
-        self.process_and_verify_streams(*streams)
+        return tuple(combined_streams)
 
-    def record_pod_invocation(self, upstreams: tuple[dp.Stream, ...]) -> None:
-        """
-        Register the pod with the upstream streams. This is used to track the pod in the system.
-        """
+    def track_invocation(self, *streams: dp.Stream) -> None:
         if not self._skip_tracking and self._tracker_manager is not None:
-            self._tracker_manager.record_pod_invocation(self, upstreams)
+            self._tracker_manager.record_pod_invocation(self, streams)
 
     def forward(self, *streams: dp.Stream) -> PodStream:
-        input_stream = self.process_and_verify_streams(*streams)
-        # at this point, streams should have been joined into one
+        assert len(streams) == 1, "PodBase.forward expects exactly one input stream"
+        input_stream = streams[0]
 
         return PodStream(
             self,
             input_stream,
             error_handling=cast(error_handling_options, self.error_handling),
         )
-
-    def __call__(
-        self, *streams: dp.Stream, label: str | None = None, **kwargs
-    ) -> PodStream:
-        """
-        Invoke the pod with a collection of streams. This will process the streams and return a PodStream.
-        """
-        output_stream = self.forward(*streams, **kwargs)
-
-        self.record_pod_invocation(output_stream.upstreams)
-
-        return output_stream
 
 
 def function_pod(
@@ -189,7 +173,7 @@ def function_pod(
     return decorator
 
 
-class FunctionPod(PodBase):
+class FunctionPod(ActivatablePodBase):
     def __init__(
         self,
         function: dp.PodFunction,
@@ -227,7 +211,7 @@ class FunctionPod(PodBase):
 
         # extract input and output types from the function signature
         self._input_packet_types, self._output_packet_types = (
-            extract_function_typespecs(
+            tsutils.extract_function_typespecs(
                 self.function,
                 self.output_keys,
                 input_typespec=input_typespec,
@@ -250,7 +234,7 @@ class FunctionPod(PodBase):
         return self._output_packet_types
 
     def __repr__(self) -> str:
-        return f"FunctionPod:{self.function!r}"
+        return f"FunctionPod:{self.function_name}"
 
     def __str__(self) -> str:
         include_module = self.function.__module__ != "__main__"
@@ -271,7 +255,9 @@ class FunctionPod(PodBase):
             return tag, None
         output_values = []
 
-        values = self.function(**packet.as_dict(include_source=False))
+        # any kernel/pod invocation happening inside the function will NOT be tracked
+        with self._tracker_manager.no_tracking():
+            values = self.function(**packet.as_dict(include_source=False))
 
         if len(self.output_keys) == 0:
             output_values = []
@@ -297,6 +283,7 @@ class FunctionPod(PodBase):
 
     def identity_structure(self, *streams: dp.Stream) -> Any:
         # construct identity structure for the function
+
         # if function_info_extractor is available, use that but substitute the function_name
         if self.function_info_extractor is not None:
             function_info = self.function_info_extractor.extract_function_info(
@@ -309,20 +296,39 @@ class FunctionPod(PodBase):
             # use basic information only
             function_info = {
                 "name": self.function_name,
-                "input_packet_types": self.input_packet_types,
-                "output_packet_types": self.output_packet_types,
+                "input_packet_types": self.input_packet_types(),
+                "output_packet_types": self.output_packet_types(),
             }
         function_info["output_keys"] = tuple(self.output_keys)
 
-        return (
+        id_struct = (
             self.__class__.__name__,
             function_info,
-        ) + streams
+        )
+        # if streams are provided, perform pre-processing step, validate, and add the
+        # resulting single stream to the identity structure
+        if len(streams) > 0:
+            processed_streams = self.pre_processing_step(*streams)
+            self.validate_inputs(*processed_streams)
+            id_struct += (processed_streams[0],)
+
+        return id_struct
 
 
-class StoredPod(PodBase):
-    def __init__(self, pod: dp.Pod, label: str | None = None, **kwargs) -> None:
-        super().__init__(**kwargs)
+class WrappedPod(ActivatablePodBase):
+    """
+    A wrapper for a pod that allows it to be used as a kernel.
+    This class is meant to serve as a base class for other pods that need to wrap existing pods.
+    """
+
+    def __init__(
+        self,
+        pod: dp.Pod,
+        fixed_input_streams: tuple[dp.Stream, ...] | None = None,
+        label: str | None = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(fixed_input_streams=fixed_input_streams, label=label, **kwargs)
         self.pod = pod
 
     def computed_label(self) -> str | None:
@@ -349,7 +355,19 @@ class StoredPod(PodBase):
         return self.pod.identity_structure(*streams)
 
     def __repr__(self) -> str:
-        return f"StoredPod({self.pod!r})"
+        return f"WrappedPod({self.pod!r})"
 
     def __str__(self) -> str:
-        return f"StoredPod:{self.pod!s}"
+        return f"WrappedPod:{self.pod!s}"
+
+
+class CachedPod(WrappedPod):
+    """
+    A pod that caches the results of the wrapped pod.
+    This is useful for pods that are expensive to compute and can benefit from caching.
+    """
+
+    def __init__(self, pod: dp.Pod, cache_key: str, **kwargs):
+        super().__init__(pod, **kwargs)
+        self.cache_key = cache_key
+        self.cache: dict[str, dp.Packet] = {}

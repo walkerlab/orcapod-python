@@ -1,11 +1,22 @@
-from orcapod.protocols import data_protocols as dp
+from orcapod.protocols import data_protocols as dp, hashing_protocols as hp
+from orcapod.hashing.defaults import get_default_object_hasher
 from collections import defaultdict
 from abc import ABC, abstractmethod
+from typing import Any, ContextManager, Generator
+from contextlib import contextmanager
 
 
 class BasicTrackerManager:
     def __init__(self) -> None:
         self._active_trackers: list[dp.Tracker] = []
+        self._active = True
+
+    def set_active(self, active: bool = True) -> None:
+        """
+        Set the active state of the tracker manager.
+        This is used to enable or disable the tracker manager.
+        """
+        self._active = active
 
     def register_tracker(self, tracker: dp.Tracker) -> None:
         """
@@ -28,27 +39,43 @@ class BasicTrackerManager:
         Get the list of active trackers.
         This is used to retrieve the currently active trackers in the system.
         """
+        if not self._active:
+            return []
+        # Filter out inactive trackers
+        # This is to ensure that we only return trackers that are currently active
         return [t for t in self._active_trackers if t.is_active()]
 
     def record_kernel_invocation(
-        self, kernel: dp.Kernel, upstreams: tuple[dp.Stream, ...]
+        self,
+        kernel: dp.Kernel,
+        upstreams: tuple[dp.Stream, ...],
+        label: str | None = None,
     ) -> None:
         """
         Record the output stream of a kernel invocation in the tracker.
         This is used to track the computational graph and the invocations of kernels.
         """
         for tracker in self.get_active_trackers():
-            tracker.record_kernel_invocation(kernel, upstreams)
+            tracker.record_kernel_invocation(kernel, upstreams, label=label)
 
     def record_pod_invocation(
-        self, pod: dp.Pod, upstreams: tuple[dp.Stream, ...]
+        self, pod: dp.Pod, upstreams: tuple[dp.Stream, ...], label: str | None = None
     ) -> None:
         """
         Record the output stream of a pod invocation in the tracker.
         This is used to track the computational graph and the invocations of pods.
         """
         for tracker in self.get_active_trackers():
-            tracker.record_pod_invocation(pod, upstreams)
+            tracker.record_pod_invocation(pod, upstreams, label=label)
+
+    @contextmanager
+    def no_tracking(self) -> Generator[None, Any, None]:
+        original_state = self._active
+        self.set_active(False)
+        try:
+            yield
+        finally:
+            self.set_active(original_state)
 
 
 class AutoRegisteringContextBasedTracker(ABC):
@@ -68,12 +95,15 @@ class AutoRegisteringContextBasedTracker(ABC):
 
     @abstractmethod
     def record_kernel_invocation(
-        self, kernel: dp.Kernel, upstreams: tuple[dp.Stream, ...]
+        self,
+        kernel: dp.Kernel,
+        upstreams: tuple[dp.Stream, ...],
+        label: str | None = None,
     ) -> None: ...
 
     @abstractmethod
     def record_pod_invocation(
-        self, pod: dp.Pod, upstreams: tuple[dp.Stream, ...]
+        self, pod: dp.Pod, upstreams: tuple[dp.Stream, ...], label: str | None = None
     ) -> None: ...
 
     def __enter__(self):
@@ -84,6 +114,44 @@ class AutoRegisteringContextBasedTracker(ABC):
         self.set_active(False)
 
 
+class Invocation:
+    def __init__(
+        self,
+        kernel: dp.Kernel,
+        upstreams: tuple[dp.Stream, ...],
+        label: str | None = None,
+    ) -> None:
+        """
+        Represents an invocation of a kernel with its upstream streams.
+        This is used to track the computational graph and the invocations of kernels.
+        """
+        self.kernel = kernel
+        self.upstreams = upstreams
+        self._label = label
+
+    def parents(self) -> tuple["Invocation", ...]:
+        parent_invoctions = []
+        for stream in self.upstreams:
+            if stream.source is not None:
+                parent_invoctions.append(Invocation(stream.source, stream.upstreams))
+        return tuple(parent_invoctions)
+
+    @property
+    def label(self) -> str | None:
+        """
+        Return the label of the kernel invocation.
+        This is used to identify the invocation in the tracker.
+        """
+        return self._label or self.kernel.label or self.kernel.__class__.__name__
+
+    def identity_structure(self) -> Any:
+        """
+        Return a structure that represents the identity of this invocation.
+        This is used to uniquely identify the invocation in the tracker.
+        """
+        return self.kernel.identity_structure(*self.upstreams)
+
+
 class GraphTracker(AutoRegisteringContextBasedTracker):
     """
     A tracker that records the invocations of operations and generates a graph
@@ -92,11 +160,20 @@ class GraphTracker(AutoRegisteringContextBasedTracker):
 
     # Thread-local storage to track active trackers
 
-    def __init__(self, tracker_manager: dp.TrackerManager | None = None) -> None:
+    def __init__(
+        self,
+        tracker_manager: dp.TrackerManager | None = None,
+        object_hasher: hp.ObjectHasher | None = None,
+    ) -> None:
         super().__init__(tracker_manager=tracker_manager)
-        self.kernel_to_invoked_stream_lut: dict[dp.Kernel, list[dp.Stream]] = (
-            defaultdict(list)
-        )
+        if object_hasher is None:
+            object_hasher = get_default_object_hasher()
+        self.object_hasher = object_hasher
+        # Dictionary to map kernels to the streams they have invoked
+        # This is used to track the computational graph and the invocations of kernels
+        self.id_to_invocation_lut: dict[str, Invocation] = {}
+        self.id_to_label_lut: dict[str, list[str]] = defaultdict(list)
+        self.id_to_pod_lut: dict[str, dp.Pod] = {}
 
     def record(self, stream: dp.Stream) -> None:
         assert stream.source is not None, (
@@ -105,6 +182,43 @@ class GraphTracker(AutoRegisteringContextBasedTracker):
         stream_list = self.kernel_to_invoked_stream_lut[stream.source]
         if stream not in stream_list:
             stream_list.append(stream)
+
+    def _record_kernel_and_get_id(
+        self,
+        kernel: dp.Kernel,
+        upstreams: tuple[dp.Stream, ...],
+        label: str | None = None,
+    ) -> str:
+        invocation = Invocation(kernel, upstreams, label=label)
+        invocation_id = self.object_hasher.hash_to_hex(invocation)
+        if invocation_id not in self.id_to_invocation_lut:
+            self.id_to_invocation_lut[invocation_id] = invocation
+        label = label or kernel.label or kernel.__class__.__name__
+        existing_labels = self.id_to_label_lut[invocation_id]
+        if label not in existing_labels:
+            existing_labels.append(label)
+        return invocation_id
+
+    def record_kernel_invocation(
+        self,
+        kernel: dp.Kernel,
+        upstreams: tuple[dp.Stream, ...],
+        label: str | None = None,
+    ) -> None:
+        """
+        Record the output stream of a kernel invocation in the tracker.
+        This is used to track the computational graph and the invocations of kernels.
+        """
+        self._record_kernel_and_get_id(kernel, upstreams, label)
+
+    def record_pod_invocation(
+        self, pod: dp.Pod, upstreams: tuple[dp.Stream, ...], label: str | None = None
+    ) -> None:
+        """
+        Record the output stream of a pod invocation in the tracker.
+        """
+        invocation_id = self._record_kernel_and_get_id(pod, upstreams, label)
+        self.id_to_pod_lut[invocation_id] = pod
 
     def reset(self) -> dict[dp.Kernel, list[dp.Stream]]:
         """

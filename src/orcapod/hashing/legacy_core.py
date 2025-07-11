@@ -884,6 +884,7 @@ def get_function_signature(
     if sig.return_annotation is not inspect.Signature.empty:
         parts["returns"] = sig.return_annotation
 
+    # TODO: fix return handling
     fn_string = f"{parts['module'] + '.' if 'module' in parts else ''}{parts['name']}{parts['params']}"
     if "returns" in parts:
         fn_string = fn_string + f"-> {str(parts['returns'])}"

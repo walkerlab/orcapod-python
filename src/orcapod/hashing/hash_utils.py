@@ -5,10 +5,11 @@ import logging
 import json
 from uuid import UUID
 from pathlib import Path
-from collections.abc import Mapping, Collection
+from collections.abc import Mapping, Collection, Callable
 import hashlib
 import xxhash
 import zlib
+import inspect
 
 logger = logging.getLogger(__name__)
 
@@ -171,7 +172,7 @@ def process_structure(
     # handle data types
     if isinstance(obj, type):
         logger.debug(f"Processing class/type: {obj.__name__}")
-        return f"type:{obj.__class__.__module__}.{obj.__class__.__name__}"
+        return f"type:{obj.__name__}"
 
     # For other objects, attempt to create deterministic representation only if force_hash=True
     class_name = obj.__class__.__name__
@@ -310,3 +311,54 @@ def hash_file(file_path, algorithm="sha256", buffer_size=65536) -> bytes:
             hasher.update(data)
 
     return hasher.digest()
+
+
+def get_function_signature(
+    func: Callable,
+    name_override: str | None = None,
+    include_defaults: bool = True,
+    include_module: bool = True,
+    output_names: Collection[str] | None = None,
+) -> str:
+    """
+    Get a stable string representation of a function's signature.
+
+    Args:
+        func: The function to process
+        include_defaults: Whether to include default values
+        include_module: Whether to include the module name
+
+    Returns:
+        A string representation of the function signature
+    """
+    sig = inspect.signature(func)
+
+    # Build the signature string
+    parts = {}
+
+    # Add module if requested
+    if include_module and hasattr(func, "__module__"):
+        parts["module"] = func.__module__
+
+    # Add function name
+    parts["name"] = name_override or func.__name__
+
+    # Add parameters
+    param_strs = []
+    for name, param in sig.parameters.items():
+        param_str = str(param)
+        if not include_defaults and "=" in param_str:
+            param_str = param_str.split("=")[0].strip()
+        param_strs.append(param_str)
+
+    parts["params"] = f"({', '.join(param_strs)})"
+
+    # Add return annotation if present
+    if sig.return_annotation is not inspect.Signature.empty:
+        parts["returns"] = sig.return_annotation
+
+    # TODO: fix return handling
+    fn_string = f"{parts['module'] + '.' if 'module' in parts else ''}{parts['name']}{parts['params']}"
+    if "returns" in parts:
+        fn_string = fn_string + f"-> {str(parts['returns'])}"
+    return fn_string

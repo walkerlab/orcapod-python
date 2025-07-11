@@ -1,4 +1,4 @@
-from typing import Protocol
+from typing import Protocol, Any, ContextManager
 from orcapod.types import DataValue, TypeSpec
 from orcapod.protocols.hashing_protocols import ContentIdentifiable
 from collections.abc import Iterator, Collection
@@ -602,6 +602,27 @@ class Kernel(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
+    def identity_structure(self, *streams: Stream) -> Any:
+        """
+        Generate a unique identity structure for this kernel and/or kernel invocation.
+        When invoked without streams, it should return a structure
+        that uniquely identifies the kernel itself (e.g., class name, parameters).
+        When invoked with streams, it should include the identity of the streams
+        to distinguish different invocations of the same kernel.
+
+        This structure is used for:
+        - Caching and memoization
+        - Debugging and error reporting
+        - Tracking kernel invocations in computational graphs
+
+        Args:
+            *streams: Optional input streams for this invocation
+
+        Returns:
+            Any: Unique identity structure (e.g., tuple of class name and stream identities)
+        """
+        ...
+
 
 class Pod(Kernel, Protocol):
     """
@@ -768,7 +789,7 @@ class Tracker(Protocol):
         ...
 
     def record_kernel_invocation(
-        self, kernel: Kernel, upstreams: tuple[Stream, ...]
+        self, kernel: Kernel, upstreams: tuple[Stream, ...], label: str | None = None
     ) -> None:
         """
         Record a kernel invocation in the computational graph.
@@ -786,7 +807,9 @@ class Tracker(Protocol):
         """
         ...
 
-    def record_pod_invocation(self, pod: Pod, upstreams: tuple[Stream, ...]) -> None:
+    def record_pod_invocation(
+        self, pod: Pod, upstreams: tuple[Stream, ...], label: str | None = None
+    ) -> None:
         """
         Record a pod invocation in the computational graph.
 
@@ -862,7 +885,7 @@ class TrackerManager(Protocol):
         ...
 
     def record_kernel_invocation(
-        self, kernel: Kernel, upstreams: tuple[Stream, ...]
+        self, kernel: Kernel, upstreams: tuple[Stream, ...], label: str | None = None
     ) -> None:
         """
         Record a stream in all active trackers.
@@ -876,7 +899,9 @@ class TrackerManager(Protocol):
         """
         ...
 
-    def record_pod_invocation(self, pod: Pod, upstreams: tuple[Stream, ...]) -> None:
+    def record_pod_invocation(
+        self, pod: Pod, upstreams: tuple[Stream, ...], label: str | None = None
+    ) -> None:
         """
         Record a stream in all active trackers.
 
@@ -888,3 +913,5 @@ class TrackerManager(Protocol):
             stream: The stream to record in all active trackers
         """
         ...
+
+    def no_tracking(self) -> ContextManager[None]: ...
