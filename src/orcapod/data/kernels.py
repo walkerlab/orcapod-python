@@ -37,28 +37,19 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         self._skip_tracking = skip_tracking
         self._tracker_manager = tracker_manager or DEFAULT_TRACKER_MANAGER
 
+    def record_kernel_invocation(self, upstreams: tuple[dp.Stream, ...]) -> None:
+        """
+        Register the pod with the upstream streams. This is used to track the pod in the system.
+        """
+        if not self._skip_tracking and self._tracker_manager is not None:
+            self._tracker_manager.record_kernel_invocation(self, upstreams)
+
     def __call__(
         self, *streams: dp.Stream, label: str | None = None, **kwargs
     ) -> dp.LiveStream:
-        output_stream = self.forward(*streams, **kwargs)
-
-        if output_stream.source is not None:
-            kernel_stream = KernelStream(output_stream, label=label)
-        else:
-            logger.warning(
-                "Output stream does not have a source. "
-                "This may lead to unexpected behavior when tracking the kernel invocation."
-            )
-            kernel_stream = KernelStream(source=self, upstreams=streams, label=label)
-
-        # TODO: consider the logic around tracker manager more carefully
-        if not self._skip_tracking and self._tracker_manager is not None:
-            # register the invocation to all active trackers
-            active_trackers = self._tracker_manager.get_active_trackers()
-            for tracker in active_trackers:
-                tracker.record(kernel_stream)
-
-        return kernel_stream
+        output_stream = KernelStream(source=self, upstreams=streams, label=label)
+        self.record_kernel_invocation(streams)
+        return output_stream
 
     @abstractmethod
     def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]: ...

@@ -109,6 +109,13 @@ class PodBase(TrackedKernelBase):
     def validate_inputs(self, *streams: dp.Stream) -> None:
         self.process_and_verify_streams(*streams)
 
+    def record_pod_invocation(self, upstreams: tuple[dp.Stream, ...]) -> None:
+        """
+        Register the pod with the upstream streams. This is used to track the pod in the system.
+        """
+        if not self._skip_tracking and self._tracker_manager is not None:
+            self._tracker_manager.record_pod_invocation(self, upstreams)
+
     def forward(self, *streams: dp.Stream) -> PodStream:
         input_stream = self.process_and_verify_streams(*streams)
         # at this point, streams should have been joined into one
@@ -118,6 +125,18 @@ class PodBase(TrackedKernelBase):
             input_stream,
             error_handling=cast(error_handling_options, self.error_handling),
         )
+
+    def __call__(
+        self, *streams: dp.Stream, label: str | None = None, **kwargs
+    ) -> PodStream:
+        """
+        Invoke the pod with a collection of streams. This will process the streams and return a PodStream.
+        """
+        output_stream = self.forward(*streams, **kwargs)
+
+        self.record_pod_invocation(output_stream.upstreams)
+
+        return output_stream
 
 
 def function_pod(

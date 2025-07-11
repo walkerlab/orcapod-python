@@ -30,13 +30,25 @@ class BasicTrackerManager:
         """
         return [t for t in self._active_trackers if t.is_active()]
 
-    def record(self, stream: dp.Stream) -> None:
+    def record_kernel_invocation(
+        self, kernel: dp.Kernel, upstreams: tuple[dp.Stream, ...]
+    ) -> None:
         """
         Record the output stream of a kernel invocation in the tracker.
         This is used to track the computational graph and the invocations of kernels.
         """
         for tracker in self.get_active_trackers():
-            tracker.record(stream)
+            tracker.record_kernel_invocation(kernel, upstreams)
+
+    def record_pod_invocation(
+        self, pod: dp.Pod, upstreams: tuple[dp.Stream, ...]
+    ) -> None:
+        """
+        Record the output stream of a pod invocation in the tracker.
+        This is used to track the computational graph and the invocations of pods.
+        """
+        for tracker in self.get_active_trackers():
+            tracker.record_pod_invocation(pod, upstreams)
 
 
 class AutoRegisteringContextBasedTracker(ABC):
@@ -55,7 +67,14 @@ class AutoRegisteringContextBasedTracker(ABC):
         return self._active
 
     @abstractmethod
-    def record(self, stream: dp.Stream) -> None: ...
+    def record_kernel_invocation(
+        self, kernel: dp.Kernel, upstreams: tuple[dp.Stream, ...]
+    ) -> None: ...
+
+    @abstractmethod
+    def record_pod_invocation(
+        self, pod: dp.Pod, upstreams: tuple[dp.Stream, ...]
+    ) -> None: ...
 
     def __enter__(self):
         self.set_active(True)
