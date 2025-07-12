@@ -1,5 +1,5 @@
 from orcapod.types.core import DataValue, StoreValue
-from typing import TypeAlias, cast
+from typing import TypeAlias, cast, Self
 from collections.abc import Callable, Mapping, Collection
 from orcapod.types import TypeSpec, default_registry
 from orcapod.protocols import data_protocols as dp, hashing_protocols as hp
@@ -8,10 +8,45 @@ from orcapod.types.core import TypeHandler
 from orcapod.types import schemas
 from orcapod.types.typespec_utils import get_typespec_from_dict
 import pyarrow as pa
+import logging
 
 from orcapod.hashing.defaults import get_default_arrow_hasher
 
+# Constants used for source info keys
+SOURCE_INFO_PREFIX = "_source_info_"
 
+
+# TODO: move this to a separate module
+def hstack_tables(*tables: pa.Table) -> pa.Table:
+    if len(tables) == 0:
+        raise ValueError("At least one table is required for horizontal stacking.")
+    if len(tables) == 1:
+        return tables[0]
+
+    N = len(tables[0])
+    for table in tables[1:]:
+        if len(table) != N:
+            raise ValueError(
+                "All tables must have the same number of rows for horizontal stacking."
+            )
+
+    # create combined column names
+    all_column_names = []
+    all_columns = []
+    all_names = set()
+    for i, table in enumerate(tables):
+        if overlap := set(table.column_names).intersection(all_names):
+            raise ValueError(
+                f"Duplicate column names {overlap} found when stacking table at index {i}: {table}"
+            )
+        all_names.update(table.column_names)
+        all_column_names += table.column_names
+        all_columns += table.columns
+
+    return pa.Table.from_arrays(all_columns, names=all_column_names)
+
+
+logger = logging.getLogger(__name__)
 # A conveniece packet-like type that defines a value that can be
 # converted to a packet. It's broader than Packet and a simple mapping
 # from string keys to DataValue (e.g., int, float, str) can be regarded
@@ -192,6 +227,124 @@ class SemanticConverter:
             )
 
 
+class ImmutableDict(Mapping[str, DataValue]):
+    def __init__(self, data: Mapping[str, DataValue]):
+        self._data = dict(data)
+
+    def __getitem__(self, key: str) -> DataValue:
+        return self._data[key]
+
+    def __iter__(self):
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __repr__(self) -> str:
+        return self._data.__repr__()
+
+    def __str__(self) -> str:
+        return self._data.__str__()
+
+
+# TODO: Inherit from Mapping instead to provide immutable datagram
+class DictDatagram(ImmutableDict):
+    def __init__(
+        self,
+        data: Mapping[str, DataValue],
+        typespec: TypeSpec | None = None,
+        semantic_converter: SemanticConverter | None = None,
+        semantic_type_registry: SemanticTypeRegistry | None = None,
+        arrow_hasher: hp.ArrowHasher | None = None,
+    ) -> None:
+        # normalize the data content and remove any source info keys
+        super().__init__(data)
+
+        # combine provided typespec info with inferred typespec from content
+        verified_typespec = {}
+        if typespec is not None:
+            verified_typespec = dict(typespec)
+        # TODO: enhance get_typespec_from_dict to also use info from supplied typespec dict
+        inferred_typespec = get_typespec_from_dict(self)
+        for key in self:
+            if key not in verified_typespec:
+                verified_typespec[key] = inferred_typespec[key]
+        self._python_schema = schemas.PythonSchema(verified_typespec)
+
+        # create semantic converter
+        if semantic_converter is not None:
+            if semantic_converter.python_schema != self._python_schema:
+                raise ValueError(
+                    "Incompatible Python schema between packet and semantic converter: "
+                    + str(self._python_schema)
+                    + " vs "
+                    + str(semantic_converter.python_schema)
+                )
+        else:
+            semantic_converter = SemanticConverter.from_typespec(
+                self._python_schema,
+                semantic_type_registry or default_registry,
+            )
+        self.semantic_converter = semantic_converter
+
+        if arrow_hasher is None:
+            arrow_hasher = get_default_arrow_hasher()
+        self.arrow_hasher = arrow_hasher
+
+        self._cached_table: pa.Table | None = None
+        self._cached_content_hash: str | None = None
+
+    def as_table(
+        self,
+        keep_columns: Collection[str] | None = None,
+        drop_columns: Collection[str] | None = None,
+    ) -> pa.Table:
+        """Convert the packet to an Arrow table."""
+        if keep_columns is not None and drop_columns is not None:
+            logger.warning(
+                "It is not recommended to provide both keep_columns and drop_columns. The resulting behavior may not be as expected."
+            )
+        if self._cached_table is None:
+            self._cached_table = (
+                self.semantic_converter.from_python_store_to_arrow_table(self.as_dict())
+            )
+            assert self._cached_table is not None, "Cached table should not be None"
+        processed_table = self._cached_table
+        if keep_columns is not None:
+            processed_table = processed_table.select(list(keep_columns))
+
+        if drop_columns is not None:
+            processed_table = processed_table.drop(list(drop_columns))
+
+        return processed_table
+
+    def as_dict(self) -> dict[str, DataValue]:
+        return dict(self)
+
+    def content_hash(
+        self,
+    ) -> str:
+        if self._cached_content_hash is None:
+            self._cached_content_hash = self.arrow_hasher.hash_table(
+                self.as_table(),
+                prefix_hasher_id=True,
+            )
+        return self._cached_content_hash
+
+    # use keys() implementation from dict
+
+    def types(self) -> schemas.PythonSchema:
+        return self._python_schema.copy()
+
+    def copy(self) -> Self:
+        return self.__class__(
+            self,
+            typespec=self.types(),
+            semantic_converter=self.semantic_converter,
+            arrow_hasher=self.arrow_hasher,
+        )
+
+
 class PythonDictTag(dict[str, DataValue]):
     def as_dict(self) -> dict[str, DataValue]:
         return dict(self)
@@ -243,6 +396,99 @@ class ArrowTag:
         return f"{self.as_dict()}"
 
 
+class PythonDictPacket2(DictDatagram):
+    def __init__(
+        self,
+        data: Mapping[str, DataValue],
+        source_info: Mapping[str, str | None] | None = None,
+        typespec: TypeSpec | None = None,
+        semantic_converter: SemanticConverter | None = None,
+        semantic_type_registry: SemanticTypeRegistry | None = None,
+        arrow_hasher: hp.ArrowHasher | None = None,
+    ) -> None:
+        # normalize the data content and remove any source info keys
+        data_only = {
+            k: v for k, v in data.items() if not k.startswith(SOURCE_INFO_PREFIX)
+        }
+        contained_source_info = {
+            k.removeprefix(SOURCE_INFO_PREFIX): v
+            for k, v in data.items()
+            if k.startswith(SOURCE_INFO_PREFIX)
+        }
+
+        super().__init__(
+            data_only,
+            typespec=typespec,
+            semantic_converter=semantic_converter,
+            semantic_type_registry=semantic_type_registry,
+            arrow_hasher=arrow_hasher,
+        )
+
+        self._source_info = {**contained_source_info, **(source_info or {})}
+        self._cached_source_info_table: pa.Table | None = None
+
+    def as_table(
+        self,
+        keep_columns: Collection[str] | None = None,
+        drop_columns: Collection[str] | None = None,
+        include_source: bool = False,
+    ) -> pa.Table:
+        """Convert the packet to an Arrow table."""
+        table = super().as_table(keep_columns=keep_columns, drop_columns=drop_columns)
+        if include_source:
+            if self._cached_source_info_table is None:
+                source_info_data = {
+                    f"{SOURCE_INFO_PREFIX}{k}": v for k, v in self.source_info().items()
+                }
+                source_info_schema = pa.schema(
+                    {k: pa.large_string() for k in source_info_data}
+                )
+                self._cached_source_info_table = pa.Table.from_pylist(
+                    [source_info_data], schema=source_info_schema
+                )
+            assert self._cached_source_info_table is not None, (
+                "Cached source info table should not be None"
+            )
+            # subselect the corresponding _source_info as the columns present in the data table
+            source_info_table = self._cached_source_info_table.select(
+                [f"{SOURCE_INFO_PREFIX}{k}" for k in table.column_names]
+            )
+            table = hstack_tables(table, source_info_table)
+        return table
+
+    def as_dict(self, include_source: bool = False) -> dict[str, DataValue]:
+        dict_copy = dict(self)
+        if include_source:
+            for key, value in self.source_info().items():
+                dict_copy[f"{SOURCE_INFO_PREFIX}{key}"] = value
+        return dict_copy
+
+    def content_hash(self) -> str:
+        if self._cached_content_hash is None:
+            self._cached_content_hash = self.arrow_hasher.hash_table(
+                self.as_table(include_source=False), prefix_hasher_id=True
+            )
+        return self._cached_content_hash
+
+    # use keys() implementation from dict
+
+    def types(self) -> schemas.PythonSchema:
+        return self._python_schema.copy()
+
+    def source_info(self) -> dict[str, str | None]:
+        return {key: self._source_info.get(key, None) for key in self.keys()}
+
+    def copy(self) -> "PythonDictPacket2":
+        """Return a shallow copy of the packet."""
+        new_packet = PythonDictPacket2(self, self.source_info())
+        new_packet._cached_table = self._cached_table
+        new_packet._cached_content_hash = self._cached_content_hash
+        new_packet._python_schema = self._python_schema.copy()
+        new_packet.semantic_converter = self.semantic_converter
+        new_packet.arrow_hasher = self.arrow_hasher
+        return new_packet
+
+
 class PythonDictPacket(dict[str, DataValue]):
     @classmethod
     def create_from(
@@ -281,11 +527,11 @@ class PythonDictPacket(dict[str, DataValue]):
         post_hash_callback: Callable[[str, str], None] | None = None,
     ) -> None:
         # normalize the data content and remove any source info keys
-        data = {k: v for k, v in data.items() if not k.startswith("_source_info_")}
+        data = {k: v for k, v in data.items() if not k.startswith(SOURCE_INFO_PREFIX)}
         contained_source_info = {
-            k.removeprefix("_source_info_"): v
+            k.removeprefix(SOURCE_INFO_PREFIX): v
             for k, v in data.items()
-            if k.startswith("_source_info_")
+            if k.startswith(SOURCE_INFO_PREFIX)
         }
         super().__init__(data)
 
@@ -345,7 +591,7 @@ class PythonDictPacket(dict[str, DataValue]):
         dict_copy = self.copy()
         if include_source:
             for key, value in self.source_info().items():
-                dict_copy[f"_source_info_{key}"] = value
+                dict_copy[f"{SOURCE_INFO_PREFIX}{key}"] = value
         return dict_copy
 
     def content_hash(self) -> str:
@@ -401,9 +647,9 @@ def process_table_with_source_info(
     existing_source_info = {}
 
     for i, name in enumerate(table.column_names):
-        if name.startswith("_source_info_"):
+        if name.startswith(SOURCE_INFO_PREFIX):
             # Extract the base column name
-            base_name = name.removeprefix("_source_info_")
+            base_name = name.removeprefix(SOURCE_INFO_PREFIX)
             existing_source_info[base_name] = table.column(i)
         else:
             regular_columns.append(table.column(i))
@@ -421,7 +667,7 @@ def process_table_with_source_info(
     num_rows = table.num_rows
 
     for col_name in regular_names:
-        source_info_col_name = f"_source_info_{col_name}"
+        source_info_col_name = f"{SOURCE_INFO_PREFIX}{col_name}"
 
         # if col_name is in source_info, use that value
         if col_name in source_info:
@@ -501,12 +747,12 @@ class ArrowPacket:
             )
         else:
             self._keys: tuple[str, ...] = tuple(
-                [c for c in table.column_names if not c.startswith("_source_info_")]
+                [c for c in table.column_names if not c.startswith(SOURCE_INFO_PREFIX)]
             )
             for k in self._keys:
-                if f"_source_info_{k}" not in table.column_names:
+                if f"{SOURCE_INFO_PREFIX}{k}" not in table.column_names:
                     raise ValueError(
-                        f"Source info column '_source_info_{k}' is missing in the table."
+                        f"Source info column '{SOURCE_INFO_PREFIX}{k}' is missing in the table."
                     )
             self._arrow_table = table
 
@@ -571,7 +817,8 @@ class ArrowPacket:
     def source_info(self) -> dict[str, str | None]:
         if self._cached_source_info is None:
             self._cached_source_info = {
-                k: self._arrow_table[f"_source_info_{k}"][0].as_py() for k in self._keys
+                k: self._arrow_table[f"{SOURCE_INFO_PREFIX}{k}"][0].as_py()
+                for k in self._keys
             }
         return self._cached_source_info.copy()
 
