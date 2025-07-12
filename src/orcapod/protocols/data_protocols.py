@@ -66,6 +66,21 @@ class Datagram(Protocol):
         """
         ...
 
+    def content_hash(self) -> str:
+        """
+        Return a hash of the packet content for caching/comparison.
+
+        This hash should be deterministic and based only on the packet content,
+        not on source information or metadata. Used for:
+        - Caching computation results
+        - Detecting data changes
+        - Deduplication operations
+
+        Returns:
+            str: Deterministic hash of packet content
+        """
+        ...
+
 
 class Tag(Datagram, Protocol):
     """
@@ -134,18 +149,16 @@ class Packet(Datagram, Protocol):
         """
         ...
 
-    def content_hash(self) -> str:
+    def as_datagram(self, include_source: bool = False) -> Datagram:
         """
-        Return a hash of the packet content for caching/comparison.
+        Convert the packet to a Datagram.
 
-        This hash should be deterministic and based only on the packet content,
-        not on source information or metadata. Used for:
-        - Caching computation results
-        - Detecting data changes
-        - Deduplication operations
+        Args:
+            include_source: If True, source information is included in the datagram
+                          for debugging and lineage tracking
 
         Returns:
-            str: Deterministic hash of packet content
+            Datagram: Datagram representation of packet data
         """
         ...
 
@@ -382,7 +395,7 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
-    def as_table(self) -> pa.Table:
+    def as_table(self, include_content_hash: bool | str = False) -> pa.Table:
         """
         Convert the entire stream to a PyArrow Table.
 
@@ -390,8 +403,9 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         analysis and processing. This operation may be expensive for
         large streams or live streams that need computation.
 
-        Tag fields are prefixed with "_tag_" to avoid naming conflicts
-        with packet fields.
+        If include_content_hash is True, an additional column called "_content_hash"
+        containing the content hash of each packet is included. If include_content_hash
+        is a string, it is used as the name of the content hash column.
 
         Returns:
             pa.Table: Complete stream data as a PyArrow Table
