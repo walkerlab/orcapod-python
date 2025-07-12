@@ -335,11 +335,20 @@ class ImmutableTableStream(StreamBase):
             self._packet_converter.python_schema.copy(),
         )
 
-    def as_table(self) -> pa.Table:
+    def as_table(self, include_content_hash: bool | str = False) -> pa.Table:
         """
         Returns the underlying table representation of the stream.
         This is useful for converting the stream to a table format.
         """
+        if not include_content_hash:
+            return self._table
+        hash_column_name = (
+            "_content_hash" if include_content_hash is True else include_content_hash
+        )
+        content_hashes = [packet.content_hash() for _, packet in self.iter_packets()]
+        self._table = self._table.append_column(
+            hash_column_name, pa.array(content_hashes, type=pa.large_string())
+        )
         return self._table
 
     def clear_cache(self) -> None:
@@ -354,6 +363,7 @@ class ImmutableTableStream(StreamBase):
         Iterates over the packets in the stream.
         Each packet is represented as a tuple of (Tag, Packet).
         """
+        # TODO: make it work with table batch stream
         if self._cached_elements is None:
             self._cached_elements = []
             tags = self._table.select(self._tag_columns)
@@ -395,6 +405,7 @@ class PodStream(StreamBase):
         self._cached_output_packets: dict[int, tuple[dp.Tag, dp.Packet]] = {}
         self._computation_complete: bool = False
         self._cached_output_table: pa.Table | None = None
+        self._cached_content_hash_column: pa.Array | None = None
 
     @property
     def source(self) -> dp.Pod | None:
@@ -427,6 +438,7 @@ class PodStream(StreamBase):
         self._cached_output_packets = {}
         self._computation_complete = False
         self._cached_output_table = None
+        self._cached_content_hash_column = None
 
     def refresh(self, force: bool = False) -> bool:
         if not self.is_current or force:
@@ -442,7 +454,8 @@ class PodStream(StreamBase):
         self.clear_cache()
         self._set_modified_time(invalidate=True)
 
-    def as_table(self) -> pa.Table:
+    def as_table(self, include_content_hash: bool | str = False) -> pa.Table:
+        # TODO: note that this is likely NOT multi-thread safe
         self.refresh()
         if self._cached_output_table is None:
             all_tags = []
@@ -450,7 +463,8 @@ class PodStream(StreamBase):
             for tag, packet in self.iter_packets():
                 # TODO: evaluate handling efficiency here
                 all_tags.append(tag.as_dict())
-                all_packets.append(packet.as_dict())
+                all_packets.append(packet.as_dict(include_source=True))
+
             all_tags: pa.Table = pa.Table.from_pylist(all_tags)
             all_packets: pa.Table = pa.Table.from_pylist(all_packets)
             # assert that column names do not overlap
@@ -466,6 +480,26 @@ class PodStream(StreamBase):
                 names=all_tags.column_names + all_packets.column_names,
             )
 
+        # lazily prepare content hash column if requested
+        if include_content_hash:
+            if self._cached_content_hash_column is None:
+                content_hashes = []
+                for tag, packet in self.iter_packets():
+                    content_hashes.append(packet.content_hash())
+                self._cached_content_hash_column = pa.array(
+                    content_hashes, type=pa.large_string()
+                )
+            assert self._cached_output_table is not None, (
+                "_cached_output_table should not be None here."
+            )
+            hash_column_name = (
+                "_content_hash"
+                if include_content_hash is True
+                else include_content_hash
+            )
+            return self._cached_output_table.append_column(
+                hash_column_name, self._cached_content_hash_column
+            )
         return self._cached_output_table
 
     def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
