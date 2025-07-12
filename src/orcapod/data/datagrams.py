@@ -1,3 +1,21 @@
+"""
+Data structures and utilities for working with datagrams in OrcaPod.
+
+This module provides classes and functions for handling packet-like data structures
+that can represent data in various formats (Python dicts, Arrow tables, etc.) while
+maintaining type information, source metadata, and semantic type conversion capability.
+
+Key classes:
+- SemanticConverter: Converts between different data representations. Intended for internal use.
+- DictDatagram: Immutable dict-based data structure
+- PythonDictPacket: Python dict-based packet with source info
+- ArrowPacket: Arrow table-based packet implementation
+- PythonDictTag/ArrowTag: Tag implementations for data identification
+
+The module also provides utilities for schema validation, table operations,
+and type conversions between semantic stores, Python stores, and Arrow tables.
+"""
+
 from orcapod.types.core import DataValue, StoreValue
 from typing import TypeAlias, cast, Self
 from collections.abc import Callable, Mapping, Collection
@@ -18,6 +36,21 @@ SOURCE_INFO_PREFIX = "_source_info_"
 
 # TODO: move this to a separate module
 def hstack_tables(*tables: pa.Table) -> pa.Table:
+    """
+    Horizontally stack multiple PyArrow tables by concatenating their columns.
+
+    All input tables must have the same number of rows and unique column names.
+
+    Args:
+        *tables: Variable number of PyArrow tables to stack horizontally
+
+    Returns:
+        Combined PyArrow table with all columns from input tables
+
+    Raises:
+        ValueError: If no tables provided, tables have different row counts,
+                   or duplicate column names are found
+    """
     if len(tables) == 0:
         raise ValueError("At least one table is required for horizontal stacking.")
     if len(tables) == 1:
@@ -122,11 +155,29 @@ def check_arrow_schema_compatibility(
 
 
 class SemanticConverter:
+    """
+    Converts data between different representations (Python, semantic stores, Arrow tables).
+
+    This class handles the conversion between Python data structures, semantic stores
+    (which use storage-optimized types), and Arrow tables while maintaining type
+    information and semantic type metadata.
+    """
+
     @staticmethod
     def prepare_handler(
         semantic_schema: schemas.SemanticSchema,
         semantic_type_registry: SemanticTypeRegistry,
     ) -> dict[str, TypeHandler]:
+        """
+        Prepare type handlers for semantic type conversion.
+
+        Args:
+            semantic_schema: Schema containing semantic type information
+            semantic_type_registry: Registry for looking up type handlers
+
+        Returns:
+            Dictionary mapping field names to their type handlers
+        """
         handler_lut = {}
         for key, (_, semantic_type) in semantic_schema.items():
             if semantic_type is None:
@@ -140,6 +191,16 @@ class SemanticConverter:
     def from_typespec(
         cls, typespec: TypeSpec, semantic_type_registry: SemanticTypeRegistry
     ) -> "SemanticConverter":
+        """
+        Create a SemanticConverter from a basic Python type specification dictionary (TypeSpec).
+
+        Args:
+            typespec: Type specification dictionary
+            semantic_type_registry: Registry for semantic type lookup
+
+        Returns:
+            New SemanticConverter instance
+        """
         semantic_schema = schemas.from_typespec_to_semantic_schema(
             typespec, semantic_type_registry
         )
@@ -151,6 +212,16 @@ class SemanticConverter:
     def from_arrow_schema(
         cls, arrow_schema: pa.Schema, semantic_type_registry: SemanticTypeRegistry
     ) -> "SemanticConverter":
+        """
+        Create a SemanticConverter from an Arrow schema.
+
+        Args:
+            arrow_schema: PyArrow schema with semantic type metadata
+            semantic_type_registry: Registry for semantic type lookup
+
+        Returns:
+            New SemanticConverter instance
+        """
         semantic_schema = schemas.from_arrow_schema_to_semantic_schema(arrow_schema)
         python_schema = schemas.from_semantic_schema_to_python_schema(
             semantic_schema, semantic_type_registry=semantic_type_registry
@@ -164,6 +235,15 @@ class SemanticConverter:
         semantic_schema: schemas.SemanticSchema,
         handler_lut: dict[str, TypeHandler] | None = None,
     ):
+        """
+        Initialize SemanticConverter with schemas and type handlers. This is not meant to be called directly.
+        Use class methods like `from_arrow_schema` or `from_typespec` instead.
+
+        Args:
+            python_schema: Schema for Python data types
+            semantic_schema: Schema for semantic types
+            handler_lut: Optional dictionary of type handlers for conversion
+        """
         self.python_schema = python_schema
         self.semantic_schema = semantic_schema
         self.arrow_schema = schemas.from_semantic_schema_to_arrow_schema(
@@ -176,6 +256,15 @@ class SemanticConverter:
     def from_semantic_store_to_python_store(
         self, semantic_store: SemanticStore
     ) -> PythonStore:
+        """
+        Convert a semantic store to a Python store.
+
+        Args:
+            semantic_store: Store (dict) with data stored in semantic (storage-optimized) types
+
+        Returns:
+            Store with Python native types
+        """
         python_store = dict(semantic_store)
         for key, handler in self.handler_lut.items():
             python_store[key] = handler.storage_to_python(semantic_store[key])
@@ -184,6 +273,15 @@ class SemanticConverter:
     def from_python_store_to_semantic_store(
         self, python_store: PythonStore
     ) -> SemanticStore:
+        """
+        Convert a Python store to a semantic store.
+
+        Args:
+            python_store: Store with Python native types
+
+        Returns:
+            Store with semantic (storage-optimized) types
+        """
         semantic_store = dict(python_store)
         for key, handler in self.handler_lut.items():
             semantic_store[key] = handler.python_to_storage(python_store[key])
@@ -210,13 +308,22 @@ class SemanticConverter:
     def from_arrow_table_to_python_stores(
         self, arrow_table: pa.Table
     ) -> list[PythonStore]:
-        """Convert an Arrow table to a Python store."""
+        """Convert an Arrow table to a list of Python stores."""
         return [
             self.from_semantic_store_to_python_store(semantic_store)
             for semantic_store in self.from_arrow_table_to_semantic_stores(arrow_table)
         ]
 
     def verify_compatible_arrow_schema(self, arrow_schema: pa.Schema):
+        """
+        Verify that an Arrow schema is compatible with the expected schema.
+
+        Args:
+            arrow_schema: Schema to verify
+
+        Raises:
+            ValueError: If schemas are incompatible
+        """
         compatible, errors = check_arrow_schema_compatibility(
             arrow_schema, self.arrow_schema
         )
@@ -228,6 +335,17 @@ class SemanticConverter:
 
 
 class ImmutableDict(Mapping[str, DataValue]):
+    """
+    An immutable dictionary-like container for DataValues.
+
+    Provides a read-only view of a dictionary mapping strings to DataValues,
+    implementing the Mapping protocol for compatibility with dict-like operations.
+
+    Initialize with data from a mapping.
+    Args:
+        data: Source mapping to copy data from
+    """
+
     def __init__(self, data: Mapping[str, DataValue]):
         self._data = dict(data)
 
@@ -249,6 +367,24 @@ class ImmutableDict(Mapping[str, DataValue]):
 
 # TODO: Inherit from Mapping instead to provide immutable datagram
 class DictDatagram(ImmutableDict):
+    """
+    An immutable datagram implementation using a dictionary backend.
+
+    Extends ImmutableDict to provide additional functionality for type handling,
+    semantic conversion, and Arrow table representation while maintaining
+    immutability of the underlying data.
+
+
+    Initialize DictDatagram with data and optional type information.
+
+    Args:
+        data: Source data mapping
+        typespec: Optional type specification for fields
+        semantic_converter: Optional converter for semantic types
+        semantic_type_registry: Registry for semantic type lookup
+        arrow_hasher: Optional hasher for Arrow table content
+    """
+
     def __init__(
         self,
         data: Mapping[str, DataValue],
@@ -319,11 +455,18 @@ class DictDatagram(ImmutableDict):
         return processed_table
 
     def as_dict(self) -> dict[str, DataValue]:
+        """Return dictionary representation of the datagram."""
         return dict(self)
 
     def content_hash(
         self,
     ) -> str:
+        """
+        Calculate and return content hash of the datagram.
+
+        Returns:
+            Hash string of the datagram content
+        """
         if self._cached_content_hash is None:
             self._cached_content_hash = self.arrow_hasher.hash_table(
                 self.as_table(),
@@ -334,9 +477,11 @@ class DictDatagram(ImmutableDict):
     # use keys() implementation from dict
 
     def types(self) -> schemas.PythonSchema:
+        """Return copy of the Python schema."""
         return self._python_schema.copy()
 
     def copy(self) -> Self:
+        """Return a copy of the datagram."""
         return self.__class__(
             self,
             typespec=self.types(),
@@ -346,18 +491,47 @@ class DictDatagram(ImmutableDict):
 
 
 class PythonDictTag(dict[str, DataValue]):
+    """
+    A simple tag implementation using Python dictionary.
+
+    Represents a tag (metadata) as a dictionary that can be converted
+    to different representations like Arrow tables.
+    """
+
     def as_dict(self) -> dict[str, DataValue]:
+        """Return dictionary representation."""
         return dict(self)
 
     def as_table(self) -> pa.Table:
+        """Convert to Arrow table representation."""
         return pa.Table.from_pylist([self])
 
     def types(self) -> schemas.PythonSchema:
+        """
+        Return Python schema (basic implementation).
+
+        Note: This is a simplified implementation that assumes all values are strings.
+        """
         # TODO: provide correct implementation
         return schemas.PythonSchema({k: str for k in self.keys()})
 
 
 class ArrowTag:
+    """
+    A tag implementation using Arrow table backend.
+
+    Represents a single-row Arrow table that can be converted to Python
+    dictionary representation while caching computed values for efficiency.
+
+    Initialize with an Arrow table.
+
+        Args:
+            table: Single-row Arrow table representing the tag
+
+        Raises:
+            ValueError: If table doesn't contain exactly one row
+    """
+
     def __init__(self, table: pa.Table) -> None:
         self.table = table
         if len(table) != 1:
@@ -369,9 +543,16 @@ class ArrowTag:
         self._cached_python_dict: dict[str, DataValue] | None = None
 
     def keys(self) -> tuple[str, ...]:
+        """Return column names as a tuple."""
         return tuple(self.table.column_names)
 
     def types(self) -> schemas.PythonSchema:
+        """
+        Return Python schema derived from Arrow schema.
+
+        Returns:
+            TypeSpec information returned as PythonSchema.
+        """
         if self._cached_python_schema is None:
             self._cached_python_schema = schemas.from_arrow_schema_to_semantic_schema(
                 self.table.schema
@@ -379,6 +560,12 @@ class ArrowTag:
         return self._cached_python_schema.copy()
 
     def as_dict(self) -> dict[str, DataValue]:
+        """
+        Convert to Python dictionary representation.
+
+        Returns:
+            Dictionary with tag data
+        """
         if self._cached_python_dict is None:
             self._cached_python_dict = cast(
                 dict[str, DataValue], self.table.to_pylist()[0]
@@ -386,17 +573,38 @@ class ArrowTag:
         return self._cached_python_dict
 
     def as_table(self) -> pa.Table:
+        """Return the underlying Arrow table."""
         return self.table
 
     def clear_cache(self) -> None:
+        """Clear cached Python representations."""
         self._cached_python_schema = None
         self._cached_python_dict = None
 
     def __repr__(self) -> str:
+        """Return string representation."""
         return f"{self.as_dict()}"
 
 
 class PythonDictPacket2(DictDatagram):
+    """
+    Enhanced packet implementation with source information support.
+
+    Extends DictDatagram to include source information tracking and
+    enhanced table conversion capabilities that can include or exclude
+    source metadata.
+
+    Initialize packet with data and optional source information.
+
+    Args:
+        data: Primary data content
+        source_info: Optional mapping of field names to source information
+        typespec: Optional type specification
+        semantic_converter: Optional semantic converter
+        semantic_type_registry: Registry for semantic types. Defaults to system default registry.
+        arrow_hasher: Optional Arrow hasher. Defaults to system default arrow hasher.
+    """
+
     def __init__(
         self,
         data: Mapping[str, DataValue],
@@ -457,6 +665,15 @@ class PythonDictPacket2(DictDatagram):
         return table
 
     def as_dict(self, include_source: bool = False) -> dict[str, DataValue]:
+        """
+        Return dictionary representation.
+
+        Args:
+            include_source: Whether to include source info fields
+
+        Returns:
+            Dictionary representation of the packet
+        """
         dict_copy = dict(self)
         if include_source:
             for key, value in self.source_info().items():
@@ -464,6 +681,12 @@ class PythonDictPacket2(DictDatagram):
         return dict_copy
 
     def content_hash(self) -> str:
+        """
+        Calculate content hash excluding source information.
+
+        Returns:
+            Hash string of the packet content
+        """
         if self._cached_content_hash is None:
             self._cached_content_hash = self.arrow_hasher.hash_table(
                 self.as_table(include_source=False), prefix_hasher_id=True
@@ -473,9 +696,19 @@ class PythonDictPacket2(DictDatagram):
     # use keys() implementation from dict
 
     def types(self) -> schemas.PythonSchema:
+        """
+        Returns:
+            Packet type information as PythonSchema (dict mapping field names to types).
+        """
         return self._python_schema.copy()
 
     def source_info(self) -> dict[str, str | None]:
+        """
+        Return source information for all keys.
+
+        Returns:
+            Dictionary mapping field names to their source info
+        """
         return {key: self._source_info.get(key, None) for key in self.keys()}
 
     def copy(self) -> "PythonDictPacket2":
@@ -490,6 +723,27 @@ class PythonDictPacket2(DictDatagram):
 
 
 class PythonDictPacket(dict[str, DataValue]):
+    """
+    Dictionary-based Packet with source tracking and hashing.
+
+    A dictionary-based packet that maintains source information, supports
+    type specifications, and provides content hashing with optional callbacks.
+    Includes comprehensive conversion capabilities to Arrow tables.
+
+    Initialize packet with comprehensive configuration options.
+
+    Args:
+        data: Primary packet data
+        source_info: Optional source information mapping
+        typespec: Optional type specification
+        finger_print: Optional fingerprint for tracking
+        semantic_converter: Optional semantic converter
+        semantic_type_registry: Registry for semantic types
+        arrow_hasher: Optional Arrow hasher
+        post_hash_callback: Optional callback after hash calculation
+
+    """
+
     @classmethod
     def create_from(
         cls,
@@ -500,6 +754,20 @@ class PythonDictPacket(dict[str, DataValue]):
         arrow_hasher: hp.ArrowHasher | None = None,
         post_hash_callback: Callable[[str, str], None] | None = None,
     ) -> "PythonDictPacket":
+        """
+        Create a PythonDictPacket from another packet object.
+
+        Args:
+            object: Source packet to copy from
+            finger_print: Optional fingerprint identifier
+            semantic_converter: Optional semantic converter
+            semantic_type_registry: Registry for semantic types
+            arrow_hasher: Optional Arrow hasher
+            post_hash_callback: Optional callback after hash calculation
+
+        Returns:
+            New PythonDictPacket instance
+        """
         if isinstance(object, PythonDictPacket):
             return object.copy()
 
@@ -588,6 +856,15 @@ class PythonDictPacket(dict[str, DataValue]):
             return self._cached_table.select(list(self.keys()))
 
     def as_dict(self, include_source: bool = False) -> dict[str, DataValue]:
+        """
+        Return dictionary representation.
+
+        Args:
+            include_source: Whether to include source info fields
+
+        Returns:
+            Dictionary representation of the packet
+        """
         dict_copy = self.copy()
         if include_source:
             for key, value in self.source_info().items():
@@ -595,6 +872,15 @@ class PythonDictPacket(dict[str, DataValue]):
         return dict_copy
 
     def content_hash(self) -> str:
+        """
+        Calculate and return content hash.
+
+        Computes hash of packet data content (thus excluding source info) and
+        optionally triggers post-hash callback if configured.
+
+        Returns:
+            Hash string of the packet content
+        """
         if self._cached_content_hash is None:
             self._cached_content_hash = self.arrow_hasher.hash_table(
                 self.as_table(include_source=False), prefix_hasher_id=True
@@ -606,9 +892,16 @@ class PythonDictPacket(dict[str, DataValue]):
     # use keys() implementation from dict
 
     def types(self) -> schemas.PythonSchema:
+        """Return packet data type information as PythonSchema (dict mapping field names to types)."""
         return self._python_schema.copy()
 
     def source_info(self) -> dict[str, str | None]:
+        """
+        Return source information for all keys.
+
+        Returns:
+            Dictionary mapping field names to their source info
+        """
         return {key: self._source_info.get(key, None) for key in self.keys()}
 
     def copy(self) -> "PythonDictPacket":
@@ -697,6 +990,30 @@ def process_table_with_source_info(
 
 
 class ArrowPacket:
+    """
+    Arrow table-based packet implementation with comprehensive features.
+
+    A packet implementation that uses Arrow tables as the primary storage format,
+    providing efficient memory usage and columnar data operations while supporting
+    source information tracking and content hashing.
+
+
+    Initialize ArrowPacket with Arrow table and configuration.
+
+        Args:
+            table: Single-row Arrow table representing the packet
+            source_info: Optional source information mapping
+            semantic_converter: Optional semantic converter
+            semantic_type_registry: Registry for semantic types
+            finger_print: Optional fingerprint for tracking
+            arrow_hasher: Optional Arrow hasher
+            post_hash_callback: Optional callback after hash calculation
+            skip_source_info_extraction: Whether to skip source info processing
+
+        Raises:
+            ValueError: If table doesn't contain exactly one row
+    """
+
     @classmethod
     def create_from(
         cls,
@@ -707,6 +1024,20 @@ class ArrowPacket:
         arrow_hasher: hp.ArrowHasher | None = None,
         post_hash_callback: Callable[[str, str], None] | None = None,
     ) -> "ArrowPacket":
+        """
+        Create an ArrowPacket from another packet object.
+
+        Args:
+            object: Source packet to copy from
+            semantic_converter: Optional semantic converter
+            semantic_type_registry: Registry for semantic types
+            finger_print: Optional fingerprint identifier
+            arrow_hasher: Optional Arrow hasher
+            post_hash_callback: Optional callback after hash calculation
+
+        Returns:
+            New ArrowPacket instance
+        """
         if isinstance(object, ArrowPacket):
             return object.copy()
 
@@ -787,6 +1118,15 @@ class ArrowPacket:
         return base_table
 
     def as_dict(self, include_source: bool = False) -> dict[str, DataValue]:
+        """
+        Convert to dictionary representation.
+
+        Args:
+            include_source: Whether to include source info fields
+
+        Returns:
+            Dictionary representation of the packet
+        """
         if self._cached_python_packet is None:
             self._cached_python_packet = (
                 self.semantic_converter.from_arrow_table_to_python_stores(
@@ -799,6 +1139,15 @@ class ArrowPacket:
         return {k: self._cached_python_packet[k] for k in self._keys}
 
     def content_hash(self) -> str:
+        """
+        Calculate and return content hash.
+
+        Computes hash of the Arrow table content and optionally
+        triggers post-hash callback if configured.
+
+        Returns:
+            Hash string of the packet content
+        """
         if self._cached_content_hash is None:
             self._cached_content_hash = self.arrow_hasher.hash_table(
                 self._arrow_table, prefix_hasher_id=True
@@ -808,6 +1157,7 @@ class ArrowPacket:
         return self._cached_content_hash
 
     def types(self) -> schemas.PythonSchema:
+        """Return packet data type information as PythonSchema (dict mapping field names to types)."""
         return self.semantic_converter.python_schema.copy()
 
     def keys(self) -> tuple[str, ...]:
@@ -815,6 +1165,12 @@ class ArrowPacket:
         return tuple(self._keys)
 
     def source_info(self) -> dict[str, str | None]:
+        """
+        Return source information for all keys.
+
+        Returns:
+            Copy of the dictionary mapping field names to their source info
+        """
         if self._cached_source_info is None:
             self._cached_source_info = {
                 k: self._arrow_table[f"{SOURCE_INFO_PREFIX}{k}"][0].as_py()
@@ -846,8 +1202,10 @@ class ArrowPacket:
         return new_packet
 
     def __repr__(self) -> str:
+        """Return string representation."""
         return f"{self.as_dict(include_source=False)}"
 
 
 # a batch is a tuple of a tag and a list of packets
 Batch: TypeAlias = tuple[dp.Tag, Collection[dp.Packet]]
+"""Type alias for a batch: a tuple containing a tag and collection of packets."""
