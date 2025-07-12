@@ -108,6 +108,13 @@ class ActivatablePodBase(TrackedKernelBase):
 
         return tuple(combined_streams)
 
+    def prepare_output_stream(
+        self, *streams: dp.Stream, label: str | None = None
+    ) -> dp.LiveStream:
+        output_stream = self.forward(*streams)
+        output_stream.label = label
+        return output_stream
+
     def track_invocation(self, *streams: dp.Stream) -> None:
         if not self._skip_tracking and self._tracker_manager is not None:
             self._tracker_manager.record_pod_invocation(self, streams)
