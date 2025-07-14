@@ -39,20 +39,7 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         self._tracker_manager = tracker_manager or DEFAULT_TRACKER_MANAGER
         self.fixed_input_streams = fixed_input_streams
 
-    def resolve_input_streams(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
-        """
-        Resolve the input streams for the kernel. If the kernel has fixed input streams,
-        it returns those. Otherwise, it returns the provided streams.
-        """
-        if self.fixed_input_streams is not None:
-            if len(streams) != 0:
-                raise ValueError(
-                    f"{self.__class__.__name__} has fixed input streams. Additional streams cannot be accepted."
-                )
-            return self.fixed_input_streams
-        return streams
-
-    def pre_processing_step(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
+    def pre_process_input_streams(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
         """
         Pre-processing step that can be overridden by subclasses to perform any necessary pre-processing
         on the input streams before the main computation. This is useful if you need to modify the input streams
@@ -60,6 +47,12 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         pre-processing step will be tracked separately from the main computation in forward.
         By default, it returns the input streams unchanged.
         """
+        if self.fixed_input_streams is not None:
+            if len(streams) != 0:
+                raise ValueError(
+                    f"{self.__class__.__name__} has fixed input streams. Additional streams cannot be accepted."
+                )
+            return self.fixed_input_streams
         return streams
 
     @abstractmethod
@@ -86,8 +79,7 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
     def __call__(
         self, *streams: dp.Stream, label: str | None = None, **kwargs
     ) -> dp.LiveStream:
-        streams = self.resolve_input_streams(*streams)
-        processed_streams = self.pre_processing_step(*streams)
+        processed_streams = self.pre_process_input_streams(*streams)
         self.validate_inputs(*processed_streams)
         output_stream = self.prepare_output_stream(*processed_streams, label=label)
         self.track_invocation(*processed_streams)
