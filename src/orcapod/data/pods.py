@@ -60,7 +60,7 @@ class ActivatablePodBase(TrackedKernelBase):
         Return the input and output typespecs for the pod.
         This is used to validate the input and output streams.
         """
-        input_streams = self.pre_processing_step(*streams)
+        input_streams = self.pre_process_input_streams(*streams)
         self.validate_inputs(*input_streams)
         tag_typespec, _ = input_streams[0].types()
         return tag_typespec, self.output_packet_types()
@@ -92,21 +92,40 @@ class ActivatablePodBase(TrackedKernelBase):
                 f"Input typespec {incoming_packet_types} is not compatible with expected input typespec {self.input_packet_types}"
             )
 
-    def pre_processing_step(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
+    @staticmethod
+    def _join_streams(*streams: dp.Stream) -> dp.Stream:
+        if not streams:
+            raise ValueError("No streams provided for joining")
+        # Join the streams using a suitable join strategy
+        if len(streams) == 1:
+            return streams[0]
+
+        joined_stream = streams[0]
+        for next_stream in streams[1:]:
+            joined_stream = Join()(joined_stream, next_stream)
+        return joined_stream
+
+    def pre_process_input_streams(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
         """
-        Prepare the incoming streams for execution in the pod. This default implementation
-        joins all the input streams together.
+        Prepare the incoming streams for execution in the pod. If fixed_input_streams are present,
+        they will be used as the input streams and the newly provided streams would be used to
+        restrict (semijoin) the fixed streams.
+        Otherwise, the join of the provided streams will be returned.
         """
         # if multiple streams are provided, join them
         # otherwise, return as is
-        combined_streams = list(streams)
-        if len(streams) > 1:
-            stream = streams[0]
-            for next_stream in streams[1:]:
-                stream = Join()(stream, next_stream)
-            combined_streams = [stream]
-
-        return tuple(combined_streams)
+        if self.fixed_input_streams is not None and len(streams) > 0:
+            output_stream = self._join_streams(*self.fixed_input_streams)
+            if len(streams) > 0:
+                restrict_stream = self._join_streams(*streams)
+                # output_stream = SemiJoin()(output_stream, restrict_stream)
+        else:
+            if len(streams) == 0:
+                raise ValueError(
+                    f"{self.__class__.__name__} expects at least one input stream"
+                )
+            output_stream = self._join_streams(*streams)
+        return (output_stream,)
 
     def prepare_output_stream(
         self, *streams: dp.Stream, label: str | None = None
