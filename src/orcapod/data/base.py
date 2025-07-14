@@ -10,35 +10,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class DatagramBase(ABC):
-    """
-    Base class for data packets that can be processed in a pipeline.
-    This class provides a common interface for data packets, allowing them to be processed
-    and transformed in a consistent manner.
-    """
-
-    @property
-    @abstractmethod
-    def typespec(self) -> TypeSpec:
-        """Return the type specification of the data packet."""
-        pass
-
-    @abstractmethod
-    def keys(self) -> tuple[str, ...]:
-        """Return the keys of the data packet."""
-        pass
-
-    @abstractmethod
-    def as_table(self) -> pa.Table:
-        """Convert the data packet to a PyArrow Table."""
-        pass
-
-    @abstractmethod
-    def as_dict(self) -> dict[str, Any]:
-        """Convert the data packet to a dictionary."""
-        pass
-
-
 class LabeledContentIdentifiableBase:
     """
     Base class for content-identifiable objects.
