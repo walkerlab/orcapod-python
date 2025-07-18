@@ -232,34 +232,62 @@ def get_compatible_type(type1: Any, type2: Any) -> Any:
     raise TypeError(f"Types {type1} and {type2} are not compatible")
 
 
-def union_typespecs(left: TypeSpec, right: TypeSpec) -> TypeSpec:
+def union_typespecs(*typespecs: TypeSpec) -> TypeSpec:
     # Merge the two TypeSpecs but raise an error if conflicts in types are found
-    merged = dict(left)
-    for key, right_type in right.items():
-        merged[key] = (
-            get_compatible_type(merged[key], right_type)
-            if key in merged
-            else right_type
-        )
+    merged = dict(typespecs[0])
+    for typespec in typespecs[1:]:
+        for key, right_type in typespec.items():
+            merged[key] = (
+                get_compatible_type(merged[key], right_type)
+                if key in merged
+                else right_type
+            )
     return merged
 
 
-def intersection_typespecs(left: TypeSpec, right: TypeSpec) -> TypeSpec:
+def intersection_typespecs(*typespecs: TypeSpec) -> TypeSpec:
     """
-    Returns the intersection of two TypeSpecs, only returning keys that are present in both.
+    Returns the intersection of all TypeSpecs, only returning keys that are present in all typespecs.
     If a key is present in both TypeSpecs, the type must be the same.
     """
 
     # Find common keys and ensure types match
-    common_keys = set(left.keys()).intersection(set(right.keys()))
-    intersection = {}
-    for key in common_keys:
-        try:
-            intersection[key] = get_compatible_type(left[key], right[key])
-        except TypeError:
-            # If types are not compatible, raise an error
-            raise TypeError(
-                f"Type conflict for key '{key}': {left[key]} vs {right[key]}"
-            )
 
+    common_keys = set(typespecs[0].keys())
+    for typespec in typespecs[1:]:
+        common_keys.intersection_update(typespec.keys())
+
+    intersection = {k: typespecs[0][k] for k in common_keys}
+    for typespec in typespecs[1:]:
+        for key in common_keys:
+            try:
+                intersection[key] = get_compatible_type(
+                    intersection[key], typespec[key]
+                )
+            except TypeError:
+                # If types are not compatible, raise an error
+                raise TypeError(
+                    f"Type conflict for key '{key}': {intersection[key]} vs {typespec[key]}"
+                )
     return intersection
+
+
+# def intersection_typespecs(left: TypeSpec, right: TypeSpec) -> TypeSpec:
+#     """
+#     Returns the intersection of two TypeSpecs, only returning keys that are present in both.
+#     If a key is present in both TypeSpecs, the type must be the same.
+#     """
+
+#     # Find common keys and ensure types match
+#     common_keys = set(left.keys()).intersection(set(right.keys()))
+#     intersection = {}
+#     for key in common_keys:
+#         try:
+#             intersection[key] = get_compatible_type(left[key], right[key])
+#         except TypeError:
+#             # If types are not compatible, raise an error
+#             raise TypeError(
+#                 f"Type conflict for key '{key}': {left[key]} vs {right[key]}"
+#             )
+
+#     return intersection

@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from orcapod.hashing.types import LegacyPacketHasher
-from orcapod.stores.dict_data_stores import DirDataStore, NoOpDataStore
-from orcapod.stores.dict_transfer_data_store import TransferDataStore
+from orcapod.stores.legacy.dict_data_stores import DirDataStore, NoOpDataStore
+from orcapod.stores.legacy.dict_transfer_data_store import TransferDataStore
 
 
 class MockPacketHasher(LegacyPacketHasher):

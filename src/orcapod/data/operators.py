@@ -261,6 +261,16 @@ class Join(NonZeroInputOperator):
         all_tag_typespecs = []
         all_packet_typespecs = []
 
+        joined_stream = streams[0]
+        for stream in streams[1:]:
+            joined_tag_typespec, joined_packet_typespec = joined_stream.types()
+            stream_tag_typespec, stream_packet_typespec = stream.types()
+            joined_table = joined_stream.as_table().join(
+                stream.as_table(),
+                keys=intersection_typespecs(joined_tag_typespec, stream_tag_typespec),
+                join_type="inner",
+            )
+
         for stream in streams:
             tag_typespec, packet_typespec = stream.types()
             all_tag_typespecs.append(tag_typespec)

@@ -4,9 +4,10 @@ from orcapod.core.streams import PolarsStream
 from orcapod.core.streams import EmptyStream
 from orcapod.stores import ArrowDataStore
 from orcapod.types import Tag, Packet, PacketLike, TypeSpec, default_registry
+from orcapod.types.legacy import packets
 from orcapod.types.typespec_utils import union_typespecs
-from orcapod.types.semantic_type_registry import SemanticTypeRegistry
-from orcapod.types import packets, schemas
+from orcapod.types.legacy.semantic_type_registry import SemanticTypeRegistry
+from orcapod.types import schemas
 from orcapod.hashing import ObjectHasher, ArrowHasher
 from orcapod.hashing.defaults import get_default_object_hasher, get_default_arrow_hasher
 from typing import Any, Literal

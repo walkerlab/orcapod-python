@@ -12,7 +12,7 @@ from orcapod.types.typespec_utils import (
     extract_function_typespecs,
     check_typespec_compatibility,
 )
-from orcapod.types.packets import PacketConverter
+from orcapod.types.legacy.packets import PacketConverter
 
 from orcapod.hashing import (
     FunctionInfoExtractor,

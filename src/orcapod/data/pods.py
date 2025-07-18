@@ -4,14 +4,19 @@ from abc import abstractmethod
 from collections.abc import Callable, Collection, Iterable, Sequence
 from typing import Any, Literal, cast
 
-from orcapod.data.datagrams import PythonDictPacket
+from orcapod.data.datagrams import DictPacket, DictTag
 from orcapod.data.kernels import TrackedKernelBase
 from orcapod.data.operators import Join
 from orcapod.data.streams import PodStream
+from orcapod.hashing import get_default_arrow_hasher
 from orcapod.hashing.hash_utils import get_function_signature
 from orcapod.protocols import data_protocols as dp
 from orcapod.protocols import hashing_protocols as hp
-from orcapod.types import SemanticTypeRegistry, TypeSpec, default_registry
+from orcapod.protocols.store_protocols import ArrowDataStore
+from orcapod.types import TypeSpec, default_registry
+from orcapod.types.schemas import PythonSchema
+from orcapod.types.semantic_converter import SemanticConverter
+from orcapod.types.semantic_types import SemanticTypeRegistry
 from orcapod.types import typespec_utils as tsutils
 
 logger = logging.getLogger(__name__)
@@ -209,6 +214,7 @@ class FunctionPod(ActivatablePodBase):
         output_typespec: TypeSpec | Sequence[type] | None = None,
         label: str | None = None,
         semantic_type_registry: SemanticTypeRegistry | None = None,
+        arrow_hasher: hp.ArrowHasher | None = None,
         function_info_extractor: hp.FunctionInfoExtractor | None = None,
         **kwargs,
     ) -> None:
@@ -228,36 +234,37 @@ class FunctionPod(ActivatablePodBase):
         self.function_name = function_name
         super().__init__(label=label or self.function_name, **kwargs)
 
-        if semantic_type_registry is None:
-            # TODO: reconsider the use of default registry here
-            semantic_type_registry = default_registry
-
-        self.semantic_type_registry = semantic_type_registry
-        self.function_info_extractor = function_info_extractor
-
         # extract input and output types from the function signature
-        self._input_packet_types, self._output_packet_types = (
-            tsutils.extract_function_typespecs(
-                self.function,
-                self.output_keys,
-                input_typespec=input_typespec,
-                output_typespec=output_typespec,
-            )
+        input_packet_types, output_packet_types = tsutils.extract_function_typespecs(
+            self.function,
+            self.output_keys,
+            input_typespec=input_typespec,
+            output_typespec=output_typespec,
+        )
+        self._input_packet_schema = PythonSchema(input_packet_types)
+        self._output_packet_schema = PythonSchema(output_packet_types)
+
+        semantic_type_registry = semantic_type_registry or default_registry
+        self._output_semantic_converter = SemanticConverter.from_semantic_schema(
+            self._output_packet_schema.to_semantic_schema(semantic_type_registry)
         )
 
-    def input_packet_types(self) -> TypeSpec:
+        self.arrow_hasher = arrow_hasher or get_default_arrow_hasher()
+        self.function_info_extractor = function_info_extractor
+
+    def input_packet_types(self) -> PythonSchema:
         """
         Return the input typespec for the function pod.
         This is used to validate the input streams.
         """
-        return self._input_packet_types
+        return self._input_packet_schema.copy()
 
-    def output_packet_types(self) -> TypeSpec:
+    def output_packet_types(self) -> PythonSchema:
         """
         Return the output typespec for the function pod.
         This is used to validate the output streams.
         """
-        return self._output_packet_types
+        return self._output_packet_schema.copy()
 
     def __repr__(self) -> str:
         return f"FunctionPod:{self.function_name}"
@@ -271,9 +278,7 @@ class FunctionPod(ActivatablePodBase):
         )
         return f"FunctionPod:{func_sig}"
 
-    def call(
-        self, tag: dp.Tag, packet: dp.Packet
-    ) -> tuple[dp.Tag, PythonDictPacket | None]:
+    def call(self, tag: dp.Tag, packet: dp.Packet) -> tuple[dp.Tag, DictPacket | None]:
         if not self.is_active():
             logger.info(
                 f"Pod is not active: skipping computation on input packet {packet}"
@@ -302,8 +307,11 @@ class FunctionPod(ActivatablePodBase):
             )
 
         # TODO: add source info based on this function call
-        output_packet = PythonDictPacket(
-            {k: v for k, v in zip(self.output_keys, output_values)}
+        output_packet = DictPacket(
+            {k: v for k, v in zip(self.output_keys, output_values)},
+            typespec=self.output_packet_types(),
+            semantic_converter=self._output_semantic_converter,
+            arrow_hasher=self.arrow_hasher,
         )
         return tag, output_packet
 
@@ -325,7 +333,6 @@ class FunctionPod(ActivatablePodBase):
                 "input_packet_types": self.input_packet_types(),
                 "output_packet_types": self.output_packet_types(),
             }
-        function_info["output_keys"] = tuple(self.output_keys)
 
         id_struct = (
             self.__class__.__name__,
@@ -334,7 +341,8 @@ class FunctionPod(ActivatablePodBase):
         # if streams are provided, perform pre-processing step, validate, and add the
         # resulting single stream to the identity structure
         if len(streams) > 0:
-            processed_streams = self.pre_processing_step(*streams)
+            # TODO: extract the common handling of input streams
+            processed_streams = self.pre_process_input_streams(*streams)
             self.validate_inputs(*processed_streams)
             id_struct += (processed_streams[0],)
 
@@ -393,7 +401,19 @@ class CachedPod(WrappedPod):
     This is useful for pods that are expensive to compute and can benefit from caching.
     """
 
-    def __init__(self, pod: dp.Pod, cache_key: str, **kwargs):
+    def __init__(
+        self,
+        pod: dp.Pod,
+        result_store: ArrowDataStore,
+        lineage_store: ArrowDataStore | None,
+        record_path_prefix: tuple[str, ...] = (),
+        **kwargs,
+    ):
         super().__init__(pod, **kwargs)
-        self.cache_key = cache_key
-        self.cache: dict[str, dp.Packet] = {}
+        self.record_path_prefix = record_path_prefix
+        self.result_store = result_store
+        self.lineage_store = lineage_store
+
+    def call(
+        self, tag: dp.Tag, packet: dp.Packet
+    ) -> tuple[DictTag, DictPacket | None]: ...

@@ -3,7 +3,7 @@
 
 import pytest
 
-from orcapod.stores.dict_data_stores import NoOpDataStore
+from orcapod.stores.legacy.dict_data_stores import NoOpDataStore
 
 
 def test_noop_data_store_memoize():

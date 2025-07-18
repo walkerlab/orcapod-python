@@ -30,31 +30,31 @@ class PathHasher(SemanticTypeHasher):
         self.cacher = string_cacher
         self.cache_key_prefix = cache_key_prefix
 
-    def _hash_file_content(self, file_path: str) -> str:
-        """Hash the content of a single file and return hex string."""
+    def _hash_file_content(self, file_path: str) -> bytes:
+        """Hash the content of a single file"""
         import os
 
         # if cacher exists, check if the hash is cached
         if self.cacher:
             cache_key = f"{self.cache_key_prefix}:{file_path}"
-            cached_hash = self.cacher.get_cached(cache_key)
-            if cached_hash is not None:
-                return cached_hash
+            cached_hash_hex = self.cacher.get_cached(cache_key)
+            if cached_hash_hex is not None:
+                return bytes.fromhex(cached_hash_hex)
 
         try:
             if not os.path.exists(file_path):
                 if self.handle_missing == "error":
                     raise FileNotFoundError(f"File not found: {file_path}")
                 elif self.handle_missing == "skip":
-                    return hashlib.sha256(b"<FILE_NOT_FOUND>").hexdigest()
+                    return hashlib.sha256(b"<FILE_NOT_FOUND>").digest()
                 elif self.handle_missing == "null_hash":
-                    return hashlib.sha256(b"<FILE_NOT_FOUND>").hexdigest()
+                    return hashlib.sha256(b"<FILE_NOT_FOUND>").digest()
 
-            hashed_value = self.file_hasher.hash_file(file_path).hex()
+            hashed_value = self.file_hasher.hash_file(file_path)
             if self.cacher:
-                # Cache the computed hash
+                # Cache the computed hash hex
                 self.cacher.set_cached(
-                    f"{self.cache_key_prefix}:{file_path}", hashed_value
+                    f"{self.cache_key_prefix}:{file_path}", hashed_value.hex()
                 )
             return hashed_value
 
@@ -63,7 +63,7 @@ class PathHasher(SemanticTypeHasher):
                 raise IOError(f"Cannot read file {file_path}: {e}")
             else:  # skip or null_hash
                 error_msg = f"<FILE_ERROR:{type(e).__name__}>"
-                return hashlib.sha256(error_msg.encode("utf-8")).hexdigest()
+                return hashlib.sha256(error_msg.encode("utf-8")).digest()
 
     def hash_column(self, column: pa.Array) -> pa.Array:
         """

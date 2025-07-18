@@ -1,6 +1,6 @@
 import logging
 import pyarrow as pa
-from .core import TypeHandler
+from ..core import TypeHandler
 from dataclasses import dataclass
 
 # This mapping is expected to be stable

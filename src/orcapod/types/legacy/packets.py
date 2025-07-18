@@ -2,7 +2,7 @@ from orcapod.types.core import DataValue
 from typing import TypeAlias, Any
 from collections.abc import Mapping, Collection
 from orcapod.types.core import TypeSpec, Tag, TypeHandler
-from orcapod.types.semantic_type_registry import SemanticTypeRegistry
+from orcapod.types.legacy.semantic_type_registry import SemanticTypeRegistry
 from orcapod.types import schemas
 from orcapod.types.typespec_utils import get_typespec_from_dict
 import pyarrow as pa

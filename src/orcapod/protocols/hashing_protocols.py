@@ -127,6 +127,11 @@ class FunctionInfoExtractor(Protocol):
 class SemanticTypeHasher(Protocol):
     """Abstract base class for semantic type-specific hashers."""
 
+    @property
+    def hasher_id(self) -> str:
+        """Unique identifier for this semantic type hasher."""
+        ...
+
     def hash_column(
         self,
         column: pa.Array,

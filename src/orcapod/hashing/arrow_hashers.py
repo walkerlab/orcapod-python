@@ -56,6 +56,7 @@ class SemanticArrowHasher:
         handle_missing: str = "error",
         semantic_type_hashers: dict[str, SemanticTypeHasher] | None = None,
         serialization_method: str = "logical",
+        # TODO: consider passing options for serialization method
     ):
         """
         Initialize SemanticArrowHasher.
@@ -111,7 +112,11 @@ class SemanticArrowHasher:
         return None
 
     def _create_hash_column(
-        self, original_column: pa.Array, hash_bytes: bytes, original_field: pa.Field
+        self,
+        original_column: pa.Array,
+        hash_algorithm: str,
+        hash_bytes: bytes,
+        original_field: pa.Field,
     ) -> tuple[pa.Array, pa.Field]:
         """Create a new column containing the hash bytes."""
         # Create array of hash bytes (one hash value repeated for each row)
@@ -124,11 +129,11 @@ class SemanticArrowHasher:
             "semantic_type", "unknown"
         )
         new_metadata["semantic_type"] = "hash"
-        new_metadata["hash_algorithm"] = "sha256"
+        new_metadata["hash_algorithm"] = hash_algorithm_id
 
         new_field = pa.field(
             original_field.name,
-            pa.string(),  # Hash stored as string
+            pa.large_string(),  # Hash stored as large string
             nullable=original_field.nullable,
             metadata=new_metadata,
         )
@@ -152,7 +157,7 @@ class SemanticArrowHasher:
 
                 # Replace column with hash
                 hash_column, hash_field = self._create_hash_column(
-                    column, hash_bytes, field
+                    column, hasher.hasher_id, hash_bytes, field
                 )
                 new_columns.append(hash_column)
                 new_fields.append(hash_field)
