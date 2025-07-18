@@ -1,6 +1,8 @@
+from orcapod.hashing.types import ArrowHasher
 from orcapod.protocols import data_protocols as dp
-from orcapod.types import SemanticTypeRegistry, default_registry, schemas, TypeSpec
-from orcapod.data.datagrams import ArrowPacket, ArrowTag, SemanticConverter
+from orcapod.types import schemas, TypeSpec
+from orcapod.types.semantic_types import SemanticTypeRegistry
+from orcapod.data.datagrams import ArrowPacket, ArrowTag, DictTag, SemanticConverter
 from orcapod.data.base import LabeledContentIdentifiableBase
 import pyarrow as pa
 from collections.abc import Iterator, Collection
@@ -9,6 +11,7 @@ from datetime import timezone, datetime
 from typing import Any, Literal
 import logging
 import warnings
+from itertools import repeat
 
 # TODO: consider using this instead of making copy of dicts
 # from types import MappingProxyType
@@ -118,7 +121,7 @@ class StreamBase(ABC, LabeledContentIdentifiableBase):
     ) -> Iterator[tuple[dp.Tag, dp.Packet]]: ...
 
     @abstractmethod
-    def as_table(self) -> pa.Table: ...
+    def as_table(self, include_content_hash: bool | str = False) -> pa.Table: ...
 
     def flow(self) -> Collection[tuple[dp.Tag, dp.Packet]]:
         """
@@ -252,12 +255,12 @@ class KernelStream(StreamBase):
             return None
         return self._cached_stream.last_modified
 
-    def as_table(self) -> pa.Table:
+    def as_table(self, include_content_hash: bool | str = False) -> pa.Table:
         self.refresh()
         assert self._cached_stream is not None, (
             "Stream has not been updated or is empty."
         )
-        return self._cached_stream.as_table()
+        return self._cached_stream.as_table(include_content_hash=include_content_hash)
 
     def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
         self.refresh()
@@ -289,6 +292,7 @@ class ImmutableTableStream(StreamBase):
         source: dp.Kernel | None = None,
         upstreams: tuple[dp.Stream, ...] = (),
         semantic_type_registry: SemanticTypeRegistry | None = None,
+        arrow_hasher: ArrowHasher | None = None,
         **kwargs,
     ) -> None:
         super().__init__(source=source, upstreams=upstreams, **kwargs)
@@ -299,20 +303,30 @@ class ImmutableTableStream(StreamBase):
         self._packet_columns = tuple(
             c for c in table.column_names if c not in tag_columns
         )
+        if len(self._packet_columns) == 0:
+            raise ValueError(
+                "No packet columns found in the table. At least one packet column is required."
+            )
 
-        semantic_type_registry = semantic_type_registry or default_registry
         tag_schema = pa.schema(
             f for f in self._table.schema if f.name in self._tag_columns
         )
         packet_schema = pa.schema(
             f for f in self._table.schema if f.name in self._packet_columns
         )
-        self._tag_converter = SemanticConverter.from_arrow_schema(
-            tag_schema, semantic_type_registry
+
+        self._tag_schema = tag_schema
+        self._packet_schema = packet_schema
+        self._tag_converter = SemanticConverter.from_semantic_schema(
+            schemas.SemanticSchema.from_arrow_schema(tag_schema, semantic_type_registry)
         )
-        self._packet_converter = SemanticConverter.from_arrow_schema(
-            packet_schema, semantic_type_registry
+        self._packet_converter = SemanticConverter.from_semantic_schema(
+            schemas.SemanticSchema.from_arrow_schema(
+                packet_schema, semantic_type_registry
+            )
         )
+
+        self._arrow_hasher = arrow_hasher
 
         self._cached_elements: list[tuple[dp.Tag, ArrowPacket]] | None = None
         self._set_modified_time()  # set modified time to now
@@ -331,8 +345,12 @@ class ImmutableTableStream(StreamBase):
         """
         # TODO: consider using MappingProxyType to avoid copying the dicts
         return (
-            self._tag_converter.python_schema.copy(),
-            self._packet_converter.python_schema.copy(),
+            schemas.PythonSchema.from_arrow_schema(
+                self._tag_schema, converters=self._tag_converter.as_dict()
+            ),
+            schemas.PythonSchema.from_arrow_schema(
+                self._packet_schema, converters=self._packet_converter.as_dict()
+            ),
         )
 
     def as_table(self, include_content_hash: bool | str = False) -> pa.Table:
@@ -346,10 +364,10 @@ class ImmutableTableStream(StreamBase):
             "_content_hash" if include_content_hash is True else include_content_hash
         )
         content_hashes = [packet.content_hash() for _, packet in self.iter_packets()]
-        self._table = self._table.append_column(
+        table_with_hash = self._table.append_column(
             hash_column_name, pa.array(content_hashes, type=pa.large_string())
         )
-        return self._table
+        return table_with_hash
 
     def clear_cache(self) -> None:
         """
@@ -366,14 +384,35 @@ class ImmutableTableStream(StreamBase):
         # TODO: make it work with table batch stream
         if self._cached_elements is None:
             self._cached_elements = []
-            tags = self._table.select(self._tag_columns)
+            tag_present = len(self._tag_columns) > 0
+            if tag_present:
+                tags = self._table.select(self._tag_columns)
+                tag_batches = tags.to_batches()
+            else:
+                tag_batches = repeat(DictTag({}))
+
+            # TODO: come back and clean up this logic
+
             packets = self._table.select(self._packet_columns)
-            for tag_batch, packet_batch in zip(tags.to_batches(), packets.to_batches()):
-                for i in range(len(tag_batch)):
+            for tag_batch, packet_batch in zip(tag_batches, packets.to_batches()):
+                for i in range(len(packet_batch)):
+                    if tag_present:
+                        tag = ArrowTag(
+                            tag_batch.slice(i, 1),  # type: ignore
+                            semantic_converter=self._tag_converter,
+                            arrow_hasher=self._arrow_hasher,
+                        )
+
+                    else:
+                        tag = tag_batch
                     self._cached_elements.append(
                         (
-                            ArrowTag(tag_batch.slice(i, 1)),
-                            ArrowPacket(packet_batch.slice(i, 1)),
+                            tag,
+                            ArrowPacket(
+                                packet_batch.slice(i, 1),
+                                semantic_converter=self._packet_converter,
+                                arrow_hasher=self._arrow_hasher,
+                            ),
                         )
                     )
         yield from self._cached_elements

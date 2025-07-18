@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional, Union
 
-from .file_utils import atomic_copy, atomic_write
+from ..file_utils import atomic_copy, atomic_write
 
 logger = logging.getLogger(__name__)
 

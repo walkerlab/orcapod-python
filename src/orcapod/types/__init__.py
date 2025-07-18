@@ -1,30 +1,16 @@
-from .core import Tag, PathLike, PathSet, TypeSpec, DataValue, StoreValue
-from .semantic_type_registry import SemanticTypeRegistry
-from .semantic_type_handlers import PathHandler, UUIDHandler, DateTimeHandler
-from . import semantic_type_handlers
+from .core import PathLike, PathSet, TypeSpec, DataValue
 from . import typespec_utils
+from .defaults import DEFAULT_REGISTRY as default_registry
 
 Packet = dict[str, str]
 PacketLike = Packet
 
-# Create default registry and register handlers
-default_registry = SemanticTypeRegistry()
-
-# Register with semantic names - registry extracts supported types automatically
-default_registry.register("path", PathHandler())
-default_registry.register("uuid", UUIDHandler())
-default_registry.register(
-    "datetime", DateTimeHandler()
-)  # Registers for datetime, date, time
 
 __all__ = [
-    "default_registry",
-    "Tag",
     "TypeSpec",
     "PathLike",
     "PathSet",
-    "semantic_type_handlers",
     "typespec_utils",
     "DataValue",
-    "StoreValue",
+    "default_registry",
 ]

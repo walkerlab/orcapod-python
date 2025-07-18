@@ -12,7 +12,7 @@ from orcapod.hashing.file_hashers import (
     LegacyDefaultCompositeFileHasher,
 )
 from orcapod.hashing.string_cachers import InMemoryCacher
-from orcapod.stores.dict_data_stores import DirDataStore, NoOpDataStore
+from orcapod.stores.legacy.dict_data_stores import DirDataStore, NoOpDataStore
 
 
 def test_integration_with_cached_file_hasher(temp_dir, sample_files):

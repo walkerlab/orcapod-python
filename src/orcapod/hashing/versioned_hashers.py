@@ -1,7 +1,7 @@
 # A collection of versioned hashers that provide a "default" implementation of hashers.
 from .arrow_hashers import SemanticArrowHasher
+from orcapod.utils.object_spec import parse_objectspec
 from orcapod.protocols.hashing_protocols import ObjectHasher
-import importlib
 from typing import Any
 
 CURRENT_VERSION = "v0.1"
@@ -9,7 +9,7 @@ CURRENT_VERSION = "v0.1"
 versioned_semantic_arrow_hashers = {
     "v0.1": {
         "_class": "orcapod.hashing.arrow_hashers.SemanticArrowHasher",
-        "config": {
+        "_config": {
             "hasher_id": "arrow_v0.1",
             "hash_algorithm": "sha256",
             "chunk_size": 8192,
@@ -17,10 +17,10 @@ versioned_semantic_arrow_hashers = {
             "semantic_type_hashers": {
                 "path": {
                     "_class": "orcapod.hashing.semantic_type_hashers.PathHasher",
-                    "config": {
+                    "_config": {
                         "file_hasher": {
                             "_class": "orcapod.hashing.file_hashers.BasicFileHasher",
-                            "config": {
+                            "_config": {
                                 "algorithm": "sha256",
                             },
                         }
@@ -34,34 +34,15 @@ versioned_semantic_arrow_hashers = {
 versioned_object_hashers = {
     "v0.1": {
         "_class": "orcapod.hashing.object_hashers.BasicObjectHasher",
-        "config": {
+        "_config": {
             "hasher_id": "object_v0.1",
             "function_info_extractor": {
                 "_class": "orcapod.hashing.function_info_extractors.FunctionSignatureExtractor",
-                "config": {"include_module": True, "include_defaults": True},
+                "_config": {"include_module": True, "include_defaults": True},
             },
         },
     }
 }
-
-
-def parse_objectspec(obj_spec: dict) -> Any:
-    if "_class" in obj_spec:
-        # if _class is specified, treat the dict as an object specification
-        module_name, class_name = obj_spec["_class"].rsplit(".", 1)
-        module = importlib.import_module(module_name)
-        cls = getattr(module, class_name)
-        configs = parse_objectspec(obj_spec.get("config", {}))
-        return cls(**configs)
-    else:
-        # otherwise, parse through the dictionary recursively
-        parsed_object = obj_spec
-        for k, v in obj_spec.items():
-            if isinstance(v, dict):
-                parsed_object[k] = parse_objectspec(v)
-            else:
-                parsed_object[k] = v
-        return parsed_object
 
 
 def get_versioned_semantic_arrow_hasher(
