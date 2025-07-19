@@ -18,6 +18,27 @@ class Datagram(Protocol):
     enabling type checking and validation throughout the computational graph.
     """
 
+    @property
+    def data_context_key(self) -> str:
+        """
+        Return the data context key for this datagram.
+
+        This key identifies the semantic type registry, arrow hasher, and other
+        contextual information needed to properly interpret and work with this
+        datagram across various operations (storage, visualization, processing, etc.).
+
+        Context key formats:
+        - Standard contexts: "std:v1.2.3:fingerprint"
+        - Custom contexts: "custom:user_provided_id"
+
+        Concrete implementation can make use of this context key to ensure necessary background
+        informaton / object is available for correct processing of the datagram.
+
+        Returns:
+            str: Context key for proper datagram interpretation
+        """
+        ...
+
     def types(self) -> TypeSpec:
         """
         Return the type specification for this datagram.
@@ -42,7 +63,7 @@ class Datagram(Protocol):
         """
         ...
 
-    def as_table(self) -> pa.Table:
+    def as_table(self, include_data_context: bool = False) -> pa.Table:
         """
         Convert to PyArrow Table format.
 
@@ -54,7 +75,7 @@ class Datagram(Protocol):
         """
         ...
 
-    def as_dict(self) -> dict[str, DataValue]:
+    def as_dict(self, include_data_context: bool = False) -> dict[str, DataValue]:
         """
         Convert to dictionary format.
 
@@ -123,7 +144,9 @@ class Packet(Datagram, Protocol):
     data flow: Tags provide context, Packets provide content.
     """
 
-    def as_table(self, include_source: bool = False) -> pa.Table:
+    def as_table(
+        self, include_data_context: bool = False, include_source: bool = False
+    ) -> pa.Table:
         """
         Convert the packet to a PyArrow Table.
 
@@ -136,7 +159,9 @@ class Packet(Datagram, Protocol):
         """
         ...
 
-    def as_dict(self, include_source: bool = False) -> dict[str, DataValue]:
+    def as_dict(
+        self, include_data_context: bool = False, include_source: bool = False
+    ) -> dict[str, DataValue]:
         """
         Convert the packet to a dictionary.
 
@@ -395,7 +420,12 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
-    def as_table(self, include_content_hash: bool | str = False) -> pa.Table:
+    def as_table(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_content_hash: bool | str = False,
+    ) -> pa.Table:
         """
         Convert the entire stream to a PyArrow Table.
 
@@ -508,6 +538,34 @@ class Kernel(ContentIdentifiable, Labelable, Protocol):
     The distinction between these modes enables both production use (with
     full tracking) and testing/debugging (without side effects).
     """
+
+    @property
+    def data_context_key(self) -> str:
+        """
+        Return the data context key for this kernel.
+
+        This key identifies the semantic type registry, arrow hasher, and other
+        contextual information needed to properly interpret and work with this
+        kernel across various operations (storage, visualization, processing, etc.).
+
+        Returns:
+            str: Context key for proper kernel interpretation
+        """
+        ...
+
+    @property
+    def kernel_id(self) -> tuple[str, ...]:
+        """
+        Return a unique identifier for this Pod.
+
+        The pod_id is used for caching and tracking purposes. It should
+        uniquely identify the Pod's computational logic, parameters, and
+        any relevant metadata that affects its behavior.
+
+        Returns:
+            tuple[str, ...]: Unique identifier for this Pod
+        """
+        ...
 
     def __call__(
         self, *streams: Stream, label: str | None = None, **kwargs

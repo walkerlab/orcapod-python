@@ -4,19 +4,21 @@ from abc import abstractmethod
 from collections.abc import Callable, Collection, Iterable, Sequence
 from typing import Any, Literal, cast
 
-from orcapod.data.datagrams import DictPacket, DictTag
+from orcapod.data.datagrams import (
+    DictPacket,
+    ArrowPacket,
+)
+from orcapod.data.context import DataContext
 from orcapod.data.kernels import TrackedKernelBase
 from orcapod.data.operators import Join
 from orcapod.data.streams import PodStream
-from orcapod.hashing import get_default_arrow_hasher
 from orcapod.hashing.hash_utils import get_function_signature
 from orcapod.protocols import data_protocols as dp
 from orcapod.protocols import hashing_protocols as hp
 from orcapod.protocols.store_protocols import ArrowDataStore
-from orcapod.types import TypeSpec, default_registry
+from orcapod.types import TypeSpec
 from orcapod.types.schemas import PythonSchema
 from orcapod.types.semantic_converter import SemanticConverter
-from orcapod.types.semantic_types import SemanticTypeRegistry
 from orcapod.types import typespec_utils as tsutils
 
 logger = logging.getLogger(__name__)
@@ -213,12 +215,11 @@ class FunctionPod(ActivatablePodBase):
         input_typespec: TypeSpec | None = None,
         output_typespec: TypeSpec | Sequence[type] | None = None,
         label: str | None = None,
-        semantic_type_registry: SemanticTypeRegistry | None = None,
-        arrow_hasher: hp.ArrowHasher | None = None,
         function_info_extractor: hp.FunctionInfoExtractor | None = None,
         **kwargs,
     ) -> None:
         self.function = function
+
         if output_keys is None:
             output_keys = []
         if isinstance(output_keys, str):
@@ -243,14 +244,17 @@ class FunctionPod(ActivatablePodBase):
         )
         self._input_packet_schema = PythonSchema(input_packet_types)
         self._output_packet_schema = PythonSchema(output_packet_types)
-
-        semantic_type_registry = semantic_type_registry or default_registry
         self._output_semantic_converter = SemanticConverter.from_semantic_schema(
-            self._output_packet_schema.to_semantic_schema(semantic_type_registry)
+            self._output_packet_schema.to_semantic_schema(
+                semantic_type_registry=self.data_context.semantic_type_registry
+            )
         )
 
-        self.arrow_hasher = arrow_hasher or get_default_arrow_hasher()
-        self.function_info_extractor = function_info_extractor
+        self._function_info_extractor = function_info_extractor
+
+    @property
+    def kernel_id(self) -> tuple[str, ...]:
+        return (self.function_name,)
 
     def input_packet_types(self) -> PythonSchema:
         """
@@ -311,7 +315,7 @@ class FunctionPod(ActivatablePodBase):
             {k: v for k, v in zip(self.output_keys, output_values)},
             typespec=self.output_packet_types(),
             semantic_converter=self._output_semantic_converter,
-            arrow_hasher=self.arrow_hasher,
+            data_context=self._data_context,
         )
         return tag, output_packet
 
@@ -319,8 +323,8 @@ class FunctionPod(ActivatablePodBase):
         # construct identity structure for the function
 
         # if function_info_extractor is available, use that but substitute the function_name
-        if self.function_info_extractor is not None:
-            function_info = self.function_info_extractor.extract_function_info(
+        if self._function_info_extractor is not None:
+            function_info = self._function_info_extractor.extract_function_info(
                 self.function,
                 function_name=self.function_name,
                 input_typespec=self.input_packet_types(),
@@ -357,13 +361,37 @@ class WrappedPod(ActivatablePodBase):
 
     def __init__(
         self,
-        pod: dp.Pod,
+        pod: FunctionPod,
         fixed_input_streams: tuple[dp.Stream, ...] | None = None,
         label: str | None = None,
         **kwargs,
     ) -> None:
         super().__init__(fixed_input_streams=fixed_input_streams, label=label, **kwargs)
         self.pod = pod
+
+    @property
+    def data_context_key(self) -> str:
+        """
+        Return the data context for the wrapped pod.
+        This is used to resolve semantic types and other context-specific information.
+        """
+        return self.pod.data_context_key
+
+    @property
+    def data_context(self) -> DataContext:
+        """
+        Return the data context for the wrapped pod.
+        This is used to resolve semantic types and other context-specific information.
+        """
+        return self.pod.data_context
+
+    @property
+    def kernel_id(self) -> tuple[str, ...]:
+        """
+        Return the pod ID, which is the function name of the wrapped pod.
+        This is used to identify the pod in the system.
+        """
+        return self.pod.kernel_id
 
     def computed_label(self) -> str | None:
         return self.pod.label
@@ -403,10 +431,11 @@ class CachedPod(WrappedPod):
 
     def __init__(
         self,
-        pod: dp.Pod,
+        pod: FunctionPod,
         result_store: ArrowDataStore,
         lineage_store: ArrowDataStore | None,
         record_path_prefix: tuple[str, ...] = (),
+        data_context: str | DataContext | None = None,
         **kwargs,
     ):
         super().__init__(pod, **kwargs)
@@ -414,6 +443,72 @@ class CachedPod(WrappedPod):
         self.result_store = result_store
         self.lineage_store = lineage_store
 
-    def call(
-        self, tag: dp.Tag, packet: dp.Packet
-    ) -> tuple[DictTag, DictPacket | None]: ...
+        self.pod_hash = self.data_context.object_hasher.hash_to_hex(
+            self.pod, prefix_hasher_id=True
+        )
+
+    @property
+    def pod_id(self) -> tuple[str, ...]:
+        """
+        Return the pod ID, which is the function name of the wrapped pod.
+        This is used to identify the pod in the system.
+        """
+        return self.pod.kernel_id + (self.pod_hash,)
+
+    @property
+    def record_path(self) -> tuple[str, ...]:
+        """
+        Return the path to the record in the result store.
+        This is used to store the results of the pod.
+        """
+        return self.record_path_prefix + self.pod_id
+
+    def call(self, tag: dp.Tag, packet: dp.Packet) -> tuple[dp.Tag, dp.Packet | None]:
+        output_packet = self.get_recorded_output_packet(packet)
+        if output_packet is not None:
+            return tag, output_packet
+        output_tag, output_packet = self.pod.call(tag, packet)
+        if output_packet is not None:
+            self.record_packet(packet, output_packet)
+        return output_tag, output_packet
+
+    def record_packet(
+        self,
+        input_packet: dp.Packet,
+        output_packet: dp.Packet,
+        ignore_duplicates: bool = False,
+    ) -> dp.Packet:
+        """
+        Record the output packet against the input packet in the result store.
+        """
+        result_flag = self.result_store.record_data(
+            self.record_path,
+            input_packet.content_hash(),
+            output_packet.as_table(include_source=True),
+            ignore_duplicates=ignore_duplicates,
+        )
+        if result_flag is None:
+            # TODO: do more specific error handling
+            raise ValueError(
+                f"Failed to record packet {input_packet} in result store {self.result_store}"
+            )
+        # TODO: make store return retrieved table
+        return output_packet
+
+    def get_recorded_output_packet(self, input_packet: dp.Packet) -> dp.Packet | None:
+        """
+        Retrieve the output packet from the result store based on the input packet.
+        If the output packet is not found, return None.
+        """
+        result_table = self.result_store.get_recorded_data(
+            self.record_path, input_packet.content_hash()
+        )
+        if result_table is None:
+            return None
+
+        return ArrowPacket(
+            result_table,
+            semantic_converter=self.pod._output_semantic_converter,
+            data_context=self.data_context,
+            skip_source_info_extraction=True,
+        )

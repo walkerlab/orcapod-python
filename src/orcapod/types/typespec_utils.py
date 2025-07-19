@@ -214,12 +214,15 @@ def extract_function_typespecs(
     return param_info, inferred_output_types
 
 
-def get_typespec_from_dict(dict: Mapping) -> TypeSpec:
+def get_typespec_from_dict(data: Mapping, typespec: TypeSpec | None = None) -> TypeSpec:
     """
     Returns a TypeSpec for the given dictionary.
-    The TypeSpec is a mapping from field name to Python type.
+    The TypeSpec is a mapping from field name to Python type. If typespec is provided, then
+    it is used as a base when inferring types for the fields in dict
     """
-    return {key: type(value) for key, value in dict.items()}
+    if typespec is None:
+        typespec = {}
+    return {key: typespec.get(key, type(value)) for key, value in data.items()}
 
 
 def get_compatible_type(type1: Any, type2: Any) -> Any:

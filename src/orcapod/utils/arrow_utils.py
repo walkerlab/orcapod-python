@@ -1,6 +1,10 @@
 # TODO: move this to a separate module
 
+from collections import defaultdict
+from matplotlib.pylab import f
 import pyarrow as pa
+from collections.abc import Mapping, Collection
+from typing import Any
 
 
 def join_arrow_schemas(*schemas: pa.Schema) -> pa.Schema:
@@ -124,3 +128,123 @@ def check_arrow_schema_compatibility(
                 errors.append(f"Unexpected field '{field_name}' in incoming schema")
 
     return len(errors) == 0, errors
+
+
+def split_by_column_groups(
+    table,
+    *column_groups: Collection[str],
+) -> tuple[pa.Table | None, ...]:
+    """
+    Split the table into multiple tables based on the provided column groups.
+    Each group is a collection of column names that should be included in the same table.
+    The remaining columns that are not part of any group will be returned as the first table/None.
+    """
+    if not column_groups:
+        return (table,)
+
+    tables = []
+    remaining_columns = set(table.column_names)
+
+    for group in column_groups:
+        group_columns = [col for col in group if col in remaining_columns]
+        if group_columns:
+            tables.append(table.select(group_columns))
+            remaining_columns.difference_update(group_columns)
+        else:
+            tables.append(None)
+
+    remaining_table = None
+    if remaining_columns:
+        ordered_remaining_columns = [
+            col for col in table.column_names if col in remaining_columns
+        ]
+        remaining_table = table.select(ordered_remaining_columns)
+    return (remaining_table, *tables)
+
+
+def prepare_prefixed_columns(
+    table: pa.Table,
+    prefix_info: Collection[str]
+    | Mapping[str, Any | None]
+    | Mapping[str, Mapping[str, Any | None]],
+) -> tuple[pa.Table, dict[str, pa.Table]]:
+    """ """
+    all_prefix_info = {}
+    if isinstance(prefix_info, Mapping):
+        for prefix, info in prefix_info.items():
+            if isinstance(info, Mapping):
+                all_prefix_info[prefix] = info
+            else:
+                all_prefix_info[prefix] = info
+    elif isinstance(prefix_info, Collection):
+        for prefix in prefix_info:
+            all_prefix_info[prefix] = {}
+    else:
+        raise TypeError(
+            "prefix_group must be a Collection of strings or a Mapping of string to string or None."
+        )
+
+    # split column into prefix groups
+    data_column_names = []
+    data_columns = []
+    existing_prefixed_columns = defaultdict(list)
+
+    for col_name in table.column_names:
+        prefix_found = False
+        for prefix in all_prefix_info:
+            if col_name.startswith(prefix):
+                # Remove the prefix from the column name
+                base_name = col_name.removeprefix(prefix)
+                existing_prefixed_columns[prefix].append(base_name)
+                prefix_found = True
+        if not prefix_found:
+            # if no prefix found, consider this as a data column
+            data_column_names.append(col_name)
+            data_columns.append(table[col_name])
+
+    # Create source_info columns for each regular column
+    num_rows = table.num_rows
+
+    prefixed_column_names = defaultdict(list)
+    prefixed_columns = defaultdict(list)
+
+    for prefix, value_lut in all_prefix_info.items():
+        target_prefixed_column_names = prefixed_column_names[prefix]
+        target_prefixed_columns = prefixed_columns[prefix]
+
+        for col_name in data_column_names:
+            prefixed_col_name = f"{prefix}{col_name}"
+            existing_columns = existing_prefixed_columns[prefix]
+
+            if isinstance(value_lut, Mapping):
+                value = value_lut.get(col_name)
+            else:
+                value = value_lut
+
+            if value is not None:
+                # Use value from source_info dictionary
+                column_values = pa.array([value] * num_rows, type=pa.large_string())
+            # if col_name is in existing_source_info, use that column
+            elif col_name in existing_columns:
+                # Use existing source_info column, but convert to large_string
+                existing_col = table[prefixed_col_name]
+
+                if existing_col.type == pa.string():
+                    # Convert to large_string
+                    column_values = pa.compute.cast(existing_col, pa.large_string())  # type: ignore
+                else:
+                    column_values = existing_col
+            else:
+                # Use null values
+                column_values = pa.array([None] * num_rows, type=pa.large_string())
+            target_prefixed_column_names.append(prefixed_col_name)
+            target_prefixed_columns.append(column_values)
+
+    # Step 3: Create the final table
+    data_table: pa.Table = pa.Table.from_arrays(data_columns, names=data_column_names)
+    result_tables = {}
+    for prefix in all_prefix_info:
+        result_tables[prefix] = pa.Table.from_arrays(
+            prefixed_columns[prefix], names=prefixed_column_names[prefix]
+        )
+    return data_table, result_tables

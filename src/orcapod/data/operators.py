@@ -245,6 +245,14 @@ class BinaryJoin(BinaryOperator):
 
 
 class Join(NonZeroInputOperator):
+    @property
+    def kernel_id(self) -> tuple[str, ...]:
+        """
+        Returns a unique identifier for the kernel.
+        This is used to identify the kernel in the computational graph.
+        """
+        return (f"{self.__class__.__name__}",)
+
     def op_identity_structure(self, *streams: dp.Stream) -> Any:
         # Join does not depend on the order of the streams -- convert it onto a set
         id_struct = (self.__class__.__name__,)

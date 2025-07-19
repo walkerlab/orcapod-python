@@ -1,9 +1,15 @@
-from orcapod.hashing.types import ArrowHasher
 from orcapod.protocols import data_protocols as dp
-from orcapod.types import schemas, TypeSpec
-from orcapod.types.semantic_types import SemanticTypeRegistry
-from orcapod.data.datagrams import ArrowPacket, ArrowTag, DictTag, SemanticConverter
+from orcapod.data.context import DataContext
+from orcapod.data.datagrams import (
+    ArrowPacket,
+    ArrowTag,
+    DictTag,
+    SemanticConverter,
+    SOURCE_INFO_PREFIX,
+)
+from orcapod.utils import arrow_utils
 from orcapod.data.base import LabeledContentIdentifiableBase
+from orcapod.types import TypeSpec, schemas
 import pyarrow as pa
 from collections.abc import Iterator, Collection
 from abc import ABC, abstractmethod
@@ -32,6 +38,7 @@ class StreamBase(ABC, LabeledContentIdentifiableBase):
         self,
         source: dp.Kernel | None = None,
         upstreams: tuple[dp.Stream, ...] = (),
+        data_context: str | DataContext | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -39,6 +46,15 @@ class StreamBase(ABC, LabeledContentIdentifiableBase):
         self._upstreams = upstreams
         self._last_modified: datetime | None = None
         self._set_modified_time()
+        self._data_context = DataContext.resolve_data_context(data_context)
+
+    @property
+    def data_context(self) -> DataContext:
+        """
+        Returns the data context for the stream.
+        This is used to resolve semantic types and other context-specific information.
+        """
+        return self._data_context
 
     @property
     def source(self) -> dp.Kernel | None:
@@ -121,7 +137,12 @@ class StreamBase(ABC, LabeledContentIdentifiableBase):
     ) -> Iterator[tuple[dp.Tag, dp.Packet]]: ...
 
     @abstractmethod
-    def as_table(self, include_content_hash: bool | str = False) -> pa.Table: ...
+    def as_table(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_content_hash: bool | str = False,
+    ) -> pa.Table: ...
 
     def flow(self) -> Collection[tuple[dp.Tag, dp.Packet]]:
         """
@@ -255,12 +276,21 @@ class KernelStream(StreamBase):
             return None
         return self._cached_stream.last_modified
 
-    def as_table(self, include_content_hash: bool | str = False) -> pa.Table:
+    def as_table(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_content_hash: bool | str = False,
+    ) -> pa.Table:
         self.refresh()
         assert self._cached_stream is not None, (
             "Stream has not been updated or is empty."
         )
-        return self._cached_stream.as_table(include_content_hash=include_content_hash)
+        return self._cached_stream.as_table(
+            include_data_context=include_data_context,
+            include_source=include_source,
+            include_content_hash=include_content_hash,
+        )
 
     def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
         self.refresh()
@@ -288,16 +318,32 @@ class ImmutableTableStream(StreamBase):
     def __init__(
         self,
         table: pa.Table,
+        source_info: dict[str, str | None] | None = None,
         tag_columns: Collection[str] = (),
         source: dp.Kernel | None = None,
         upstreams: tuple[dp.Stream, ...] = (),
-        semantic_type_registry: SemanticTypeRegistry | None = None,
-        arrow_hasher: ArrowHasher | None = None,
         **kwargs,
     ) -> None:
         super().__init__(source=source, upstreams=upstreams, **kwargs)
 
+        table, data_context_table = arrow_utils.split_by_column_groups(
+            table, [DataContext.get_data_context_column()]
+        )
+        if data_context_table is None:
+            data_context_table = pa.table(
+                {
+                    DataContext.get_data_context_column(): pa.nulls(
+                        len(table), pa.large_string()
+                    )
+                }
+            )
+
+        prefix_info = {SOURCE_INFO_PREFIX: source_info}
+
+        table, prefix_tables = arrow_utils.prepare_prefixed_columns(table, prefix_info)
         self._table = table
+        self._source_info_table = prefix_tables[SOURCE_INFO_PREFIX]
+        self._data_context_table = data_context_table
 
         self._tag_columns = tuple(c for c in tag_columns if c in table.column_names)
         self._packet_columns = tuple(
@@ -318,15 +364,15 @@ class ImmutableTableStream(StreamBase):
         self._tag_schema = tag_schema
         self._packet_schema = packet_schema
         self._tag_converter = SemanticConverter.from_semantic_schema(
-            schemas.SemanticSchema.from_arrow_schema(tag_schema, semantic_type_registry)
+            schemas.SemanticSchema.from_arrow_schema(
+                tag_schema, self._data_context.semantic_type_registry
+            )
         )
         self._packet_converter = SemanticConverter.from_semantic_schema(
             schemas.SemanticSchema.from_arrow_schema(
-                packet_schema, semantic_type_registry
+                packet_schema, self._data_context.semantic_type_registry
             )
         )
-
-        self._arrow_hasher = arrow_hasher
 
         self._cached_elements: list[tuple[dp.Tag, ArrowPacket]] | None = None
         self._set_modified_time()  # set modified time to now
@@ -353,21 +399,35 @@ class ImmutableTableStream(StreamBase):
             ),
         )
 
-    def as_table(self, include_content_hash: bool | str = False) -> pa.Table:
+    def as_table(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_content_hash: bool | str = False,
+    ) -> pa.Table:
         """
         Returns the underlying table representation of the stream.
         This is useful for converting the stream to a table format.
         """
-        if not include_content_hash:
-            return self._table
-        hash_column_name = (
-            "_content_hash" if include_content_hash is True else include_content_hash
-        )
-        content_hashes = [packet.content_hash() for _, packet in self.iter_packets()]
-        table_with_hash = self._table.append_column(
-            hash_column_name, pa.array(content_hashes, type=pa.large_string())
-        )
-        return table_with_hash
+        output_table = self._table
+        if include_content_hash:
+            hash_column_name = (
+                "_content_hash"
+                if include_content_hash is True
+                else include_content_hash
+            )
+            content_hashes = [
+                packet.content_hash() for _, packet in self.iter_packets()
+            ]
+            output_table = output_table.append_column(
+                hash_column_name, pa.array(content_hashes, type=pa.large_string())
+            )
+        table_stack = (output_table,)
+        if include_data_context:
+            table_stack += (self._data_context_table,)
+        if include_source:
+            table_stack += (self._source_info_table,)
+        return arrow_utils.hstack_tables(*table_stack)
 
     def clear_cache(self) -> None:
         """
@@ -400,7 +460,7 @@ class ImmutableTableStream(StreamBase):
                         tag = ArrowTag(
                             tag_batch.slice(i, 1),  # type: ignore
                             semantic_converter=self._tag_converter,
-                            arrow_hasher=self._arrow_hasher,
+                            data_context=self._data_context,
                         )
 
                     else:
@@ -411,7 +471,7 @@ class ImmutableTableStream(StreamBase):
                             ArrowPacket(
                                 packet_batch.slice(i, 1),
                                 semantic_converter=self._packet_converter,
-                                arrow_hasher=self._arrow_hasher,
+                                data_context=self._data_context,
                             ),
                         )
                     )
@@ -459,6 +519,7 @@ class PodStream(StreamBase):
         Returns the keys of the tag and packet columns in the stream.
         This is useful for accessing the columns in the stream.
         """
+
         tag_keys, _ = self.input_stream.keys()
         packet_keys = tuple(self.pod.output_packet_types().keys())
         return tag_keys, packet_keys
@@ -493,7 +554,12 @@ class PodStream(StreamBase):
         self.clear_cache()
         self._set_modified_time(invalidate=True)
 
-    def as_table(self, include_content_hash: bool | str = False) -> pa.Table:
+    def as_table(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_content_hash: bool | str = False,
+    ) -> pa.Table:
         # TODO: note that this is likely NOT multi-thread safe
         self.refresh()
         if self._cached_output_table is None:
@@ -502,7 +568,9 @@ class PodStream(StreamBase):
             for tag, packet in self.iter_packets():
                 # TODO: evaluate handling efficiency here
                 all_tags.append(tag.as_dict())
-                all_packets.append(packet.as_dict(include_source=True))
+                all_packets.append(
+                    packet.as_dict(include_data_context=True, include_source=True)
+                )
 
             all_tags: pa.Table = pa.Table.from_pylist(all_tags)
             all_packets: pa.Table = pa.Table.from_pylist(all_packets)
@@ -518,6 +586,17 @@ class PodStream(StreamBase):
                 all_tags.columns + all_packets.columns,
                 names=all_tags.column_names + all_packets.column_names,
             )
+        assert self._cached_output_table is not None, (
+            "_cached_output_table should not be None here."
+        )
+
+        drop_columns = []
+        if not include_source:
+            drop_columns.extend(f"{SOURCE_INFO_PREFIX}{c}" for c in self.keys()[1])
+        if not include_data_context:
+            drop_columns.append(DataContext.get_data_context_column())
+
+        output_table = self._cached_output_table.drop(drop_columns)
 
         # lazily prepare content hash column if requested
         if include_content_hash:
@@ -528,18 +607,18 @@ class PodStream(StreamBase):
                 self._cached_content_hash_column = pa.array(
                     content_hashes, type=pa.large_string()
                 )
-            assert self._cached_output_table is not None, (
-                "_cached_output_table should not be None here."
+            assert self._cached_content_hash_column is not None, (
+                "_cached_content_hash_column should not be None here."
             )
             hash_column_name = (
                 "_content_hash"
                 if include_content_hash is True
                 else include_content_hash
             )
-            return self._cached_output_table.append_column(
+            output_table = output_table.append_column(
                 hash_column_name, self._cached_content_hash_column
             )
-        return self._cached_output_table
+        return output_table
 
     def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
         self.refresh()

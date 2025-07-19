@@ -4,6 +4,7 @@ from orcapod.protocols import data_protocols as dp
 import logging
 from orcapod.data.streams import KernelStream
 from orcapod.data.base import LabeledContentIdentifiableBase
+from orcapod.data.context import DataContext
 from orcapod.data.trackers import DEFAULT_TRACKER_MANAGER
 from orcapod.types import TypeSpec
 
@@ -29,15 +30,31 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         self,
         fixed_input_streams: tuple[dp.Stream, ...] | None = None,
         label: str | None = None,
+        data_context: str | DataContext | None = None,
         skip_tracking: bool = False,
         tracker_manager: dp.TrackerManager | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self._label = label
+
+        self._data_context = DataContext.resolve_data_context(data_context)
+
         self._skip_tracking = skip_tracking
         self._tracker_manager = tracker_manager or DEFAULT_TRACKER_MANAGER
         self.fixed_input_streams = fixed_input_streams
+
+    @property
+    def data_context_key(self) -> str:
+        return self._data_context.context_key
+
+    @property
+    def data_context(self) -> DataContext:
+        return self._data_context
+
+    @property
+    @abstractmethod
+    def kernel_id(self) -> tuple[str, ...]: ...
 
     def pre_process_input_streams(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
         """
