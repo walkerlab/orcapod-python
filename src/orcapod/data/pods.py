@@ -20,6 +20,7 @@ from orcapod.types import TypeSpec
 from orcapod.types.schemas import PythonSchema
 from orcapod.types.semantic_converter import SemanticConverter
 from orcapod.types import typespec_utils as tsutils
+import pyarrow as pa
 
 logger = logging.getLogger(__name__)
 
@@ -361,29 +362,13 @@ class WrappedPod(ActivatablePodBase):
 
     def __init__(
         self,
-        pod: FunctionPod,
+        pod: dp.Pod,
         fixed_input_streams: tuple[dp.Stream, ...] | None = None,
         label: str | None = None,
         **kwargs,
     ) -> None:
         super().__init__(fixed_input_streams=fixed_input_streams, label=label, **kwargs)
         self.pod = pod
-
-    @property
-    def data_context_key(self) -> str:
-        """
-        Return the data context for the wrapped pod.
-        This is used to resolve semantic types and other context-specific information.
-        """
-        return self.pod.data_context_key
-
-    @property
-    def data_context(self) -> DataContext:
-        """
-        Return the data context for the wrapped pod.
-        This is used to resolve semantic types and other context-specific information.
-        """
-        return self.pod.data_context
 
     @property
     def kernel_id(self) -> tuple[str, ...]:
@@ -431,24 +416,24 @@ class CachedPod(WrappedPod):
 
     def __init__(
         self,
-        pod: FunctionPod,
+        pod: dp.Pod,
         result_store: ArrowDataStore,
         lineage_store: ArrowDataStore | None,
         record_path_prefix: tuple[str, ...] = (),
-        data_context: str | DataContext | None = None,
         **kwargs,
     ):
         super().__init__(pod, **kwargs)
         self.record_path_prefix = record_path_prefix
         self.result_store = result_store
         self.lineage_store = lineage_store
+        # unset data_context native to the object
 
         self.pod_hash = self.data_context.object_hasher.hash_to_hex(
             self.pod, prefix_hasher_id=True
         )
 
     @property
-    def pod_id(self) -> tuple[str, ...]:
+    def kernel_id(self) -> tuple[str, ...]:
         """
         Return the pod ID, which is the function name of the wrapped pod.
         This is used to identify the pod in the system.
@@ -461,7 +446,7 @@ class CachedPod(WrappedPod):
         Return the path to the record in the result store.
         This is used to store the results of the pod.
         """
-        return self.record_path_prefix + self.pod_id
+        return self.record_path_prefix + self.kernel_id
 
     def call(self, tag: dp.Tag, packet: dp.Packet) -> tuple[dp.Tag, dp.Packet | None]:
         output_packet = self.get_recorded_output_packet(packet)
@@ -481,10 +466,19 @@ class CachedPod(WrappedPod):
         """
         Record the output packet against the input packet in the result store.
         """
+        data_table = output_packet.as_table(
+            include_data_context=True, include_source=True
+        )
+
+        data_table = data_table.append_column(
+            f"_input_packet{DataContext.get_data_context_column()}",
+            pa.array([input_packet.data_context_key], type=pa.large_string()),
+        )
+
         result_flag = self.result_store.record_data(
             self.record_path,
             input_packet.content_hash(),
-            output_packet.as_table(include_source=True),
+            data_table,
             ignore_duplicates=ignore_duplicates,
         )
         if result_flag is None:
@@ -507,8 +501,7 @@ class CachedPod(WrappedPod):
             return None
 
         return ArrowPacket(
-            result_table,
-            semantic_converter=self.pod._output_semantic_converter,
-            data_context=self.data_context,
-            skip_source_info_extraction=True,
+            result_table.drop(
+                [f"_input_packet{DataContext.get_data_context_column()}"]
+            ),
         )

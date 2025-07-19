@@ -12,7 +12,7 @@ class ArrowDataStore(Protocol):
         record_path: tuple[str, ...],
         record_id: str,
         data: pa.Table,
-        ignore_duplicates: bool = False,
+        ignore_duplicates: bool | None = None,
     ) -> str | None: ...
 
     def get_recorded_data(

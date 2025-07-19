@@ -167,6 +167,7 @@ def prepare_prefixed_columns(
     prefix_info: Collection[str]
     | Mapping[str, Any | None]
     | Mapping[str, Mapping[str, Any | None]],
+    exclude_columns: Collection[str] = (),
 ) -> tuple[pa.Table, dict[str, pa.Table]]:
     """ """
     all_prefix_info = {}
@@ -208,11 +209,13 @@ def prepare_prefixed_columns(
     prefixed_column_names = defaultdict(list)
     prefixed_columns = defaultdict(list)
 
+    target_column_names = [c for c in data_column_names if c not in exclude_columns]
+
     for prefix, value_lut in all_prefix_info.items():
         target_prefixed_column_names = prefixed_column_names[prefix]
         target_prefixed_columns = prefixed_columns[prefix]
 
-        for col_name in data_column_names:
+        for col_name in target_column_names:
             prefixed_col_name = f"{prefix}{col_name}"
             existing_columns = existing_prefixed_columns[prefix]
 
@@ -248,3 +251,17 @@ def prepare_prefixed_columns(
             prefixed_columns[prefix], names=prefixed_column_names[prefix]
         )
     return data_table, result_tables
+
+
+def drop_schema_columns(schema: pa.Schema, columns: Collection[str]) -> pa.Schema:
+    """
+    Drop specified columns from a PyArrow schema.
+
+    Args:
+        schema (pa.Schema): The original schema.
+        columns (list[str]): List of column names to drop.
+
+    Returns:
+        pa.Schema: New schema with specified columns removed.
+    """
+    return pa.schema([field for field in schema if field.name not in columns])
