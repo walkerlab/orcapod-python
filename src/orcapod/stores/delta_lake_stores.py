@@ -385,15 +385,15 @@ class BasicDeltaTableArrowStore:
         entry_id: str,
         data: pa.Table,
         force_flush: bool = False,
-        error_on_duplicate: bool | None = None,
+        ignore_duplicates: bool | None = None,
     ) -> pa.Table:
         self._validate_source_path(record_path)
         source_key = self._get_source_key(record_path)
 
         # Check for existing entry
-        if error_on_duplicate is None:
-            error_on_duplicate = self.duplicate_entry_behavior == "error"
-        if error_on_duplicate:
+        if ignore_duplicates is None:
+            ignore_duplicates = self.duplicate_entry_behavior != "error"
+        if not ignore_duplicates:
             pending_table = self._pending_batches[source_key].get(entry_id, None)
             if pending_table is not None:
                 raise ValueError(
@@ -480,8 +480,10 @@ class BasicDeltaTableArrowStore:
         # check if entry_id is found in pending batches
         source_key = self._get_source_key(record_path)
         if entry_id in self._pending_batches[source_key]:
-            # Return the pending record directly
-            return self._pending_batches[source_key][entry_id]
+            # Return the pending record after removing the entry id column
+            return self._remove_entry_id_column(
+                self._pending_batches[source_key][entry_id]
+            )
 
         delta_table = self._get_existing_delta_table(record_path)
         if delta_table is None:

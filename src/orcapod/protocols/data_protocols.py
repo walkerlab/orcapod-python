@@ -39,7 +39,7 @@ class Datagram(Protocol):
         """
         ...
 
-    def types(self) -> TypeSpec:
+    def types(self, include_data_context: bool = False) -> TypeSpec:
         """
         Return the type specification for this datagram.
 
@@ -48,6 +48,19 @@ class Datagram(Protocol):
 
         Returns:
             TypeSpec: Dictionary mapping field names to Python types
+        """
+        ...
+
+    def arrow_schema(self, include_data_context: bool = False) -> pa.Schema:
+        """
+        Return the PyArrow schema for this datagram.
+
+        The schema provides a structured representation of the datagram's
+        fields and their types, enabling efficient serialization and
+        deserialization with PyArrow.
+
+        Returns:
+            pa.Schema: PyArrow schema representation of the datagram
         """
         ...
 
@@ -200,6 +213,36 @@ class Packet(Datagram, Protocol):
 
         Returns:
             dict[str, str | None]: Source metadata for debugging/lineage
+        """
+        ...
+
+    def types(
+        self, include_data_context: bool = False, include_source: bool = False
+    ) -> TypeSpec:
+        """
+        Return the type specification for this packet.
+
+        Args:
+            include_source: If True, source information is included in the typespec
+                          for debugging and lineage tracking
+
+        Returns:
+            TypeSpec: Dictionary mapping field names to Python types
+        """
+        ...
+
+    def arrow_schema(
+        self, include_data_context: bool = False, include_source: bool = False
+    ) -> pa.Schema:
+        """
+        Return the PyArrow schema for this packet.
+
+        Args:
+            include_source: If True, source information is included in the schema
+                          for debugging and lineage tracking
+
+        Returns:
+            pa.Schema: PyArrow schema representation of packet data
         """
         ...
 
@@ -538,20 +581,6 @@ class Kernel(ContentIdentifiable, Labelable, Protocol):
     The distinction between these modes enables both production use (with
     full tracking) and testing/debugging (without side effects).
     """
-
-    @property
-    def data_context_key(self) -> str:
-        """
-        Return the data context key for this kernel.
-
-        This key identifies the semantic type registry, arrow hasher, and other
-        contextual information needed to properly interpret and work with this
-        kernel across various operations (storage, visualization, processing, etc.).
-
-        Returns:
-            str: Context key for proper kernel interpretation
-        """
-        ...
 
     @property
     def kernel_id(self) -> tuple[str, ...]:

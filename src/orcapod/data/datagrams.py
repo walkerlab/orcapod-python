@@ -127,6 +127,7 @@ class DictDatagram(ImmutableDict):
 
         self._cached_table: pa.Table | None = None
         self._cached_content_hash: str | None = None
+        self._cached_arrow_schema: pa.Schema | None = None
 
     @property
     def data_context_key(self) -> str:
@@ -137,10 +138,9 @@ class DictDatagram(ImmutableDict):
         """Convert the packet to an Arrow table."""
 
         if self._cached_table is None:
-            typespec = self.types()
-            typespec[DataContext.get_data_context_column()] = str
             self._cached_table = self.semantic_converter.from_python_to_arrow(
-                self.as_dict(include_data_context=True), typespec
+                self.as_dict(include_data_context=True),
+                self.types(include_data_context=True),
             )
         assert self._cached_table is not None, "Cached table should not be None"
         if include_data_context:
@@ -171,9 +171,35 @@ class DictDatagram(ImmutableDict):
             )
         return self._cached_content_hash
 
-    def types(self) -> schemas.PythonSchema:
+    def types(self, include_data_context: bool = False) -> schemas.PythonSchema:
         """Return copy of the Python schema."""
-        return self._python_schema.copy()
+        schema = self._python_schema.copy()
+        if include_data_context:
+            schema[DataContext.get_data_context_column()] = str
+        return schema
+
+    def arrow_schema(self, include_data_context: bool = False) -> pa.Schema:
+        """
+        Return the PyArrow schema for this datagram.
+
+        Args:
+            include_data_context: Whether to include data context column in the schema
+
+        Returns:
+            PyArrow schema representing the datagram's structure
+        """
+        if self._cached_arrow_schema is None:
+            self._cached_arrow_schema = (
+                self.semantic_converter.from_python_to_arrow_schema(
+                    self.types(include_data_context=True)
+                )
+            )
+        if not include_data_context:
+            return arrow_utils.drop_schema_columns(
+                self._cached_arrow_schema,
+                [DataContext.get_data_context_column()],
+            )
+        return self._cached_arrow_schema
 
     @classmethod
     def _from_copy(
@@ -261,6 +287,15 @@ class DictPacket(DictDatagram):
 
         self._source_info = {**contained_source_info, **(source_info or {})}
         self._cached_source_info_table: pa.Table | None = None
+        self._cached_source_info_schema: pa.Schema | None = None
+
+    @property
+    def _source_info_schema(self) -> pa.Schema:
+        if self._cached_source_info_schema is None:
+            self._cached_source_info_schema = pa.schema(
+                {f"{SOURCE_INFO_PREFIX}{k}": pa.large_string() for k in self.keys()}
+            )
+        return self._cached_source_info_schema
 
     def as_table(
         self,
@@ -274,18 +309,19 @@ class DictPacket(DictDatagram):
                 source_info_data = {
                     f"{SOURCE_INFO_PREFIX}{k}": v for k, v in self.source_info().items()
                 }
-                source_info_schema = pa.schema(
-                    {k: pa.large_string() for k in source_info_data}
-                )
                 self._cached_source_info_table = pa.Table.from_pylist(
-                    [source_info_data], schema=source_info_schema
+                    [source_info_data], schema=self._source_info_schema
                 )
             assert self._cached_source_info_table is not None, (
                 "Cached source info table should not be None"
             )
             # subselect the corresponding _source_info as the columns present in the data table
             source_info_table = self._cached_source_info_table.select(
-                [f"{SOURCE_INFO_PREFIX}{k}" for k in table.column_names]
+                [
+                    f"{SOURCE_INFO_PREFIX}{k}"
+                    for k in table.column_names
+                    if k in self.keys()
+                ]
             )
             table = arrow_utils.hstack_tables(table, source_info_table)
         return table
@@ -308,6 +344,34 @@ class DictPacket(DictDatagram):
                 dict_copy[f"{SOURCE_INFO_PREFIX}{key}"] = value
         return dict_copy
 
+    def types(
+        self, include_data_context: bool = False, include_source: bool = False
+    ) -> schemas.PythonSchema:
+        """Return copy of the Python schema."""
+        schema = super().types(include_data_context=include_data_context)
+        if include_source:
+            for key in self.keys():
+                schema[f"{SOURCE_INFO_PREFIX}{key}"] = str
+        return schema
+
+    def arrow_schema(
+        self, include_data_context: bool = False, include_source: bool = False
+    ) -> pa.Schema:
+        """
+        Return the PyArrow schema for this datagram.
+
+        Args:
+            include_data_context: Whether to include data context column in the schema
+            include_source: Whether to include source info columns in the schema
+
+        Returns:
+            PyArrow schema representing the datagram's structure
+        """
+        schema = super().arrow_schema(include_data_context=include_data_context)
+        if include_source:
+            return arrow_utils.join_arrow_schemas(schema, self._source_info_schema)
+        return schema
+
     def as_datagram(self, include_source: bool = False) -> DictDatagram:
         """
         Convert the packet to a DictDatagram.
@@ -319,33 +383,13 @@ class DictPacket(DictDatagram):
             DictDatagram representation of the packet
         """
         data = self.as_dict(include_source=include_source)
-        typespec = self.types()
-        # append source info to typespec if requested
-        if include_source:
-            for key in self.keys():
-                typespec[f"{SOURCE_INFO_PREFIX}{key}"] = str
+        typespec = self.types(include_source=include_source)
         return DictDatagram(
             data,
             typespec=typespec,
             semantic_converter=self.semantic_converter,
             data_context=self._data_context,
         )
-
-    # def content_hash2(self) -> str:
-    #     """
-    #     Calculate content hash excluding source information.
-
-    #     Returns:
-    #         Hash string of the packet content
-    #     """
-    #     # TODO: check if this is identical to DictDatagram.content_hash
-    #     if self._cached_content_hash is None:
-    #         self._cached_content_hash = self._arrow_hasher.hash_table(
-    #             self.as_table(include_source=False), prefix_hasher_id=True
-    #         )
-    #     return self._cached_content_hash
-
-    # use keys() implementation from dict
 
     def source_info(self) -> dict[str, str | None]:
         """
@@ -364,76 +408,76 @@ class DictPacket(DictDatagram):
         return instance
 
 
-def prepare_system_data_tables(
-    table: pa.Table,
-    source_info: dict[str, str | None] | None = None,
-) -> tuple[pa.Table, pa.Table]:
-    """
-    Process a table to ensure proper source_info columns.
+# def prepare_system_data_tables(
+#     table: pa.Table,
+#     source_info: dict[str, str | None] | None = None,
+# ) -> tuple[pa.Table, pa.Table]:
+#     """
+#     Process a table to ensure proper source_info columns.
 
-    Args:
-        table: Input PyArrow table
-        source_info: optional dictionary mapping column names to source info values. If present,
-                     it will take precedence over existing source_info columns in the table.
+#     Args:
+#         table: Input PyArrow table
+#         source_info: optional dictionary mapping column names to source info values. If present,
+#                      it will take precedence over existing source_info columns in the table.
 
-    Returns:
-        tuple of table without any source info and another table only containing source info columns (with prefix)
-    """
-    if source_info is None:
-        source_info = {}
+#     Returns:
+#         tuple of table without any source info and another table only containing source info columns (with prefix)
+#     """
+#     if source_info is None:
+#         source_info = {}
 
-    # Step 1: Separate source_info columns from regular columns
-    data_columns = []
-    data_column_names = []
-    existing_source_info = {}
+#     # Step 1: Separate source_info columns from regular columns
+#     data_columns = []
+#     data_column_names = []
+#     existing_source_info = {}
 
-    for i, name in enumerate(table.column_names):
-        if name.startswith(SOURCE_INFO_PREFIX):
-            # Extract the base column name
-            base_name = name.removeprefix(SOURCE_INFO_PREFIX)
-            existing_source_info[base_name] = table.column(i)
-        else:
-            data_columns.append(table.column(i))
-            data_column_names.append(name)
+#     for i, name in enumerate(table.column_names):
+#         if name.startswith(SOURCE_INFO_PREFIX):
+#             # Extract the base column name
+#             base_name = name.removeprefix(SOURCE_INFO_PREFIX)
+#             existing_source_info[base_name] = table.column(i)
+#         else:
+#             data_columns.append(table.column(i))
+#             data_column_names.append(name)
 
-    # Step 2: Create source_info columns for each regular column
-    source_info_columns = []
-    source_info_column_names = []
+#     # Step 2: Create source_info columns for each regular column
+#     source_info_columns = []
+#     source_info_column_names = []
 
-    # Create source_info columns for each regular column
-    num_rows = table.num_rows
+#     # Create source_info columns for each regular column
+#     num_rows = table.num_rows
 
-    for col_name in data_column_names:
-        source_info_col_name = f"{SOURCE_INFO_PREFIX}{col_name}"
+#     for col_name in data_column_names:
+#         source_info_col_name = f"{SOURCE_INFO_PREFIX}{col_name}"
 
-        # if col_name is in source_info, use that value
-        if col_name in source_info:
-            # Use value from source_info dictionary
-            source_value = source_info[col_name]
-            source_values = pa.array([source_value] * num_rows, type=pa.large_string())
-        # if col_name is in existing_source_info, use that column
-        elif col_name in existing_source_info:
-            # Use existing source_info column, but convert to large_string
-            existing_col = existing_source_info[col_name]
-            if existing_col.type == pa.large_string():
-                source_values = existing_col
-            else:
-                # Convert to large_string
-                source_values = pa.compute.cast(existing_col, pa.large_string())  # type: ignore
+#         # if col_name is in source_info, use that value
+#         if col_name in source_info:
+#             # Use value from source_info dictionary
+#             source_value = source_info[col_name]
+#             source_values = pa.array([source_value] * num_rows, type=pa.large_string())
+#         # if col_name is in existing_source_info, use that column
+#         elif col_name in existing_source_info:
+#             # Use existing source_info column, but convert to large_string
+#             existing_col = existing_source_info[col_name]
+#             if existing_col.type == pa.large_string():
+#                 source_values = existing_col
+#             else:
+#                 # Convert to large_string
+#                 source_values = pa.compute.cast(existing_col, pa.large_string())  # type: ignore
 
-        else:
-            # Use null values
-            source_values = pa.array([None] * num_rows, type=pa.large_string())
+#         else:
+#             # Use null values
+#             source_values = pa.array([None] * num_rows, type=pa.large_string())
 
-        source_info_columns.append(source_values)
-        source_info_column_names.append(source_info_col_name)
+#         source_info_columns.append(source_values)
+#         source_info_column_names.append(source_info_col_name)
 
-    # Step 3: Create the final table
-    data_table: pa.Table = pa.Table.from_arrays(data_columns, names=data_column_names)
-    source_info_table: pa.Table = pa.Table.from_arrays(
-        source_info_columns, names=source_info_column_names
-    )
-    return data_table, source_info_table
+#     # Step 3: Create the final table
+#     data_table: pa.Table = pa.Table.from_arrays(data_columns, names=data_column_names)
+#     source_info_table: pa.Table = pa.Table.from_arrays(
+#         source_info_columns, names=source_info_column_names
+#     )
+#     return data_table, source_info_table
 
 
 class ArrowDatagram:
@@ -482,10 +526,12 @@ class ArrowDatagram:
 
         self._data_context = DataContext.resolve_data_context(data_context)
 
-        schema = pa.schema({DataContext.get_data_context_column(): pa.large_string()})
-        self._context_info_table = pa.Table.from_pylist(
+        data_context_schema = pa.schema(
+            {DataContext.get_data_context_column(): pa.large_string()}
+        )
+        self._data_context_table = pa.Table.from_pylist(
             [{DataContext.get_data_context_column(): self._data_context.context_key}],
-            schema=schema,
+            schema=data_context_schema,
         )
 
         # create semantic converter
@@ -510,7 +556,7 @@ class ArrowDatagram:
     def as_table(self, include_data_context: bool = False) -> pa.Table:
         """Convert the packet to an Arrow table."""
         if include_data_context:
-            return arrow_utils.hstack_tables(self._table, self._context_info_table)
+            return arrow_utils.hstack_tables(self._table, self._data_context_table)
         return self._table
 
     def as_dict(self, include_data_context: bool = False) -> dict[str, DataValue]:
@@ -546,13 +592,32 @@ class ArrowDatagram:
     def keys(self) -> tuple[str, ...]:
         return tuple(self._table.column_names)
 
-    def types(self) -> schemas.PythonSchema:
+    def types(self, include_data_context: bool = False) -> schemas.PythonSchema:
         """Return copy of the Python schema."""
         if self._cached_python_schema is None:
             self._cached_python_schema = (
                 self._semantic_converter.from_arrow_to_python_schema(self._table.schema)
             )
-        return self._cached_python_schema.copy()
+        schema = self._cached_python_schema.copy()
+        if include_data_context:
+            schema[DataContext.get_data_context_column()] = str
+        return schema
+
+    def arrow_schema(self, include_data_context: bool = False) -> pa.Schema:
+        """
+        Return the PyArrow schema for this datagram.
+
+        Args:
+            include_data_context: Whether to include data context column in the schema
+
+        Returns:
+            PyArrow schema representing the datagram's structure
+        """
+        if include_data_context:
+            return arrow_utils.join_arrow_schemas(
+                self._table.schema, self._data_context_table.schema
+            )
+        return self._table.schema
 
     @classmethod
     def _from_copy(
@@ -653,7 +718,6 @@ class ArrowPacket(ArrowDatagram):
         self,
         data: pa.Table,
         source_info: dict[str, str | None] | None = None,
-        skip_source_info_extraction: bool = False,
         semantic_converter: SemanticConverter | None = None,
         data_context: str | DataContext | None = None,
     ) -> None:
@@ -665,19 +729,13 @@ class ArrowPacket(ArrowDatagram):
         if source_info is None:
             source_info = {}
 
-        if not skip_source_info_extraction:
-            # normalize the table to ensure it has the expected source_info columns
-            data_table, self._source_info_table = prepare_system_data_tables(
-                data, source_info
-            )
-        else:  # assume that data already contains source info columns with appropriate prefixes
-            data_columns: tuple[str, ...] = tuple(
-                [c for c in data.column_names if not c.startswith(SOURCE_INFO_PREFIX)]
-            )
-            source_columns = [f"{SOURCE_INFO_PREFIX}{c}" for c in data_columns]
-            # Add conversion to large_string type
-            data_table = data.select(data_columns)
-            self._source_info_table = data.select(source_columns)
+        # normalize the table to ensure it has the expected source_info columns
+        data_table, prefixed_tables = arrow_utils.prepare_prefixed_columns(
+            data,
+            {SOURCE_INFO_PREFIX: source_info},
+            exclude_columns=[DataContext.get_data_context_column()],
+        )
+        self._source_info_table = prefixed_tables[SOURCE_INFO_PREFIX]
 
         super().__init__(
             data_table,
@@ -700,10 +758,44 @@ class ArrowPacket(ArrowDatagram):
             table = arrow_utils.hstack_tables(
                 table,
                 self._source_info_table.select(
-                    [f"{SOURCE_INFO_PREFIX}{c}" for c in table.column_names]
+                    [
+                        f"{SOURCE_INFO_PREFIX}{c}"
+                        for c in table.column_names
+                        if c in self.keys()
+                    ]
                 ),
             )
         return table
+
+    def types(
+        self, include_data_context: bool = False, include_source: bool = False
+    ) -> schemas.PythonSchema:
+        """Return copy of the Python schema."""
+        schema = super().types(include_data_context=include_data_context)
+        if include_source:
+            for key in self.keys():
+                schema[f"{SOURCE_INFO_PREFIX}{key}"] = str
+        return schema
+
+    def arrow_schema(
+        self, include_data_context: bool = False, include_source: bool = False
+    ) -> pa.Schema:
+        """
+        Return the PyArrow schema for this datagram.
+
+        Args:
+            include_data_context: Whether to include data context column in the schema
+            include_source: Whether to include source info columns in the schema
+
+        Returns:
+            PyArrow schema representing the datagram's structure
+        """
+        schema = super().arrow_schema(include_data_context=include_data_context)
+        if include_source:
+            return arrow_utils.join_arrow_schemas(
+                schema, self._source_info_table.schema
+            )
+        return schema
 
     def as_dict(
         self, include_data_context: bool = False, include_source: bool = False
@@ -753,7 +845,6 @@ class ArrowPacket(ArrowDatagram):
             self.source_info(),
             semantic_converter=self._semantic_converter,
             data_context=self._data_context,
-            skip_source_info_extraction=True,
         )
         new_packet._cached_source_info = self._cached_source_info
         new_packet._cached_python_dict = self._cached_python_dict

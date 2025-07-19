@@ -45,10 +45,6 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         self.fixed_input_streams = fixed_input_streams
 
     @property
-    def data_context_key(self) -> str:
-        return self._data_context.context_key
-
-    @property
     def data_context(self) -> DataContext:
         return self._data_context
 

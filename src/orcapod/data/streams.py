@@ -318,8 +318,8 @@ class ImmutableTableStream(StreamBase):
     def __init__(
         self,
         table: pa.Table,
-        source_info: dict[str, str | None] | None = None,
         tag_columns: Collection[str] = (),
+        source_info: dict[str, str | None] | None = None,
         source: dp.Kernel | None = None,
         upstreams: tuple[dp.Stream, ...] = (),
         **kwargs,
@@ -340,15 +340,19 @@ class ImmutableTableStream(StreamBase):
 
         prefix_info = {SOURCE_INFO_PREFIX: source_info}
 
-        table, prefix_tables = arrow_utils.prepare_prefixed_columns(table, prefix_info)
+        # determine tag columns first and then exclude any source info
+        self._tag_columns = tuple(c for c in tag_columns if c in table.column_names)
+        table, prefix_tables = arrow_utils.prepare_prefixed_columns(
+            table, prefix_info, exclude_columns=self._tag_columns
+        )
+        # now table should only contain tag columns and packet columns
+        self._packet_columns = tuple(
+            c for c in table.column_names if c not in tag_columns
+        )
         self._table = table
         self._source_info_table = prefix_tables[SOURCE_INFO_PREFIX]
         self._data_context_table = data_context_table
 
-        self._tag_columns = tuple(c for c in tag_columns if c in table.column_names)
-        self._packet_columns = tuple(
-            c for c in table.column_names if c not in tag_columns
-        )
         if len(self._packet_columns) == 0:
             raise ValueError(
                 "No packet columns found in the table. At least one packet column is required."
@@ -565,27 +569,26 @@ class PodStream(StreamBase):
         if self._cached_output_table is None:
             all_tags = []
             all_packets = []
+            tag_schema, packet_schema = None, None
             for tag, packet in self.iter_packets():
-                # TODO: evaluate handling efficiency here
+                if tag_schema is None:
+                    tag_schema = tag.arrow_schema()
+                if packet_schema is None:
+                    packet_schema = packet.arrow_schema(
+                        include_data_context=True,
+                        include_source=True,
+                    )
                 all_tags.append(tag.as_dict())
                 all_packets.append(
                     packet.as_dict(include_data_context=True, include_source=True)
                 )
 
-            all_tags: pa.Table = pa.Table.from_pylist(all_tags)
-            all_packets: pa.Table = pa.Table.from_pylist(all_packets)
-            # assert that column names do not overlap
-            overlapping_columns = set(all_tags.column_names) & set(
-                all_packets.column_names
+            all_tags: pa.Table = pa.Table.from_pylist(all_tags, schema=tag_schema)
+            all_packets: pa.Table = pa.Table.from_pylist(
+                all_packets, schema=packet_schema
             )
-            if overlapping_columns:
-                raise ValueError(
-                    f"Column names overlap between tags and packets: {overlapping_columns}. Overlapping tag and packet columns are not supported yet."
-                )
-            self._cached_output_table = pa.Table.from_arrays(
-                all_tags.columns + all_packets.columns,
-                names=all_tags.column_names + all_packets.column_names,
-            )
+
+            self._cached_output_table = arrow_utils.hstack_tables(all_tags, all_packets)
         assert self._cached_output_table is not None, (
             "_cached_output_table should not be None here."
         )
