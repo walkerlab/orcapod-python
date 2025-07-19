@@ -2,7 +2,8 @@ from orcapod.types.semantic_types import PythonArrowConverter
 from orcapod.types.schemas import PythonSchema, SemanticSchema
 from orcapod.types import typespec_utils as tsutils
 
-from typing import Any, Mapping, Self
+from typing import Any, Self
+from collections.abc import Mapping
 import pyarrow as pa
 import logging
 
