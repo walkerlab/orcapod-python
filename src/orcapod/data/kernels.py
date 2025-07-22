@@ -11,9 +11,6 @@ from orcapod.types import TypeSpec
 logger = logging.getLogger(__name__)
 
 
-def get_tracker_manager() -> dp.TrackerManager: ...
-
-
 class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
     """
     Kernel defines the fundamental unit of computation that can be performed on zero, one or more streams of data.
@@ -68,7 +65,7 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         if self.fixed_input_streams is not None:
             if len(streams) != 0:
                 raise ValueError(
-                    f"{self.__class__.__name__} has fixed input streams. Additional streams cannot be accepted."
+                    f"{self.__class__.__name__} has fixed input streams. Additional streams cannot be accepted at this point."
                 )
             return self.fixed_input_streams
         return streams
@@ -86,13 +83,13 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         """
         return KernelStream(source=self, upstreams=streams, label=label)
 
-    def track_invocation(self, *streams: dp.Stream) -> None:
+    def track_invocation(self, *streams: dp.Stream, label: str | None = None) -> None:
         """
         Track the invocation of the kernel with the provided streams.
         This is a convenience method that calls record_kernel_invocation.
         """
         if not self._skip_tracking and self._tracker_manager is not None:
-            self._tracker_manager.record_kernel_invocation(self, streams)
+            self._tracker_manager.record_kernel_invocation(self, streams, label=label)
 
     def __call__(
         self, *streams: dp.Stream, label: str | None = None, **kwargs
@@ -100,7 +97,7 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         processed_streams = self.pre_process_input_streams(*streams)
         self.validate_inputs(*processed_streams)
         output_stream = self.prepare_output_stream(*processed_streams, label=label)
-        self.track_invocation(*processed_streams)
+        self.track_invocation(*processed_streams, label=label)
         return output_stream
 
     @abstractmethod
@@ -111,8 +108,13 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         Subclasses should override this method to provide the kernel with its unique behavior
         """
 
+    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+        processed_streams = self.pre_process_input_streams(*streams)
+        self.validate_inputs(*processed_streams)
+        return self.kernel_output_types(*processed_streams)
+
     @abstractmethod
-    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]: ...
+    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]: ...
 
     def __repr__(self):
         return self.__class__.__name__
@@ -121,6 +123,9 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         if self._label is not None:
             return f"{self.__class__.__name__}({self._label})"
         return self.__class__.__name__
+
+    @abstractmethod
+    def kernel_identity_structure(self, *streams: dp.Stream) -> Any: ...
 
     def identity_structure(self, *streams: dp.Stream) -> Any:
         # Default implementation of identity_structure for the kernel only
@@ -137,7 +142,54 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         # and therefore kernel K(x, y) == K(y, x), then the identity structure must reflect the
         # equivalence of the two by returning the same identity structure for both invocations.
         # This can be achieved, for example, by returning a set over the streams instead of a tuple.
-        logger.warning(
-            f"Identity structure not implemented for {self.__class__.__name__}"
-        )
-        return (self.__class__.__name__,) + streams
+        if len(streams) > 0:
+            streams = self.pre_process_input_streams(*streams)
+            self.validate_inputs(*streams)
+        return self.kernel_identity_structure(*streams)
+
+
+class WrappedKernel(TrackedKernelBase):
+    """
+    A wrapper for a kernel that allows it to be used as a stream source.
+    This is useful for cases where you want to use a kernel as a source of data
+    in a pipeline or other data processing context.
+    """
+
+    def __init__(self, kernel: dp.Kernel, **kwargs) -> None:
+        # TODO: handle fixed input stream already set on the kernel
+        super().__init__(**kwargs)
+        self.kernel = kernel
+
+    @property
+    def kernel_id(self) -> tuple[str, ...]:
+        return self.kernel.kernel_id
+
+    def computed_label(self) -> str | None:
+        """
+        Compute a label for this kernel based on its content.
+        If label is not explicitly set for this kernel and computed_label returns a valid value,
+        it will be used as label of this kernel.
+        """
+        return self.kernel.label
+
+    def forward(self, *streams: dp.Stream) -> dp.Stream:
+        return self.kernel.forward(*streams)
+
+    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+        return self.kernel.output_types(*streams)
+
+    def validate_inputs(self, *streams: dp.Stream) -> None:
+        pass
+
+    def __repr__(self):
+        return f"WrappedKernel({self.kernel!r})"
+
+    def __str__(self):
+        return f"WrappedKernel:{self.kernel!s}"
+
+    def kernel_identity_structure(self, *streams: dp.Stream) -> Any:
+        return self.kernel.identity_structure(*streams)
+
+
+class CachedKernel(WrappedKernel):
+    pass
