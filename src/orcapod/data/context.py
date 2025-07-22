@@ -1,4 +1,3 @@
-from typing import Self
 from orcapod.types.semantic_types import SemanticTypeRegistry
 from orcapod.types import default_registry
 from orcapod.protocols import hashing_protocols as hp
@@ -22,27 +21,19 @@ class DataContext:
         return orcapod_system_data_context_manager.resolve_context(data_context)
 
 
-default_data_context = DataContext(
-    "std:v0.1.0:default",
-    default_registry,
-    get_default_arrow_hasher(),
-    get_default_object_hasher(),
-)
-
-
 class DataContextManager(dict[str, DataContext]):
-    def register_context(self, DataContext):
+    def register_context(self, data_context: DataContext):
         """
         Register a new DataContext instance.
 
         Args:
-            DataContext: The DataContext instance to register.
+            data_context: The DataContext instance to register.
         """
-        if DataContext.context_key in self:
+        if data_context.context_key in self:
             raise ValueError(
-                f"DataContext with key {DataContext.context_key} already exists."
+                f"DataContext with key {data_context.context_key} already exists."
             )
-        self[DataContext.context_key] = DataContext
+        self[data_context.context_key] = data_context
 
     def resolve_context(self, context_info: str | DataContext | None) -> DataContext:
         if isinstance(context_info, DataContext):
@@ -54,6 +45,15 @@ class DataContextManager(dict[str, DataContext]):
                 return self[context_info]
             else:
                 raise ValueError(f"DataContext with key {context_info} not found.")
+
+
+
+default_data_context = DataContext(
+    "std:v0.1.0:default",
+    default_registry,
+    get_default_arrow_hasher(),
+    get_default_object_hasher(),
+)
 
 
 orcapod_system_data_context_manager = DataContextManager()
