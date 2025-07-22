@@ -2,7 +2,7 @@ import logging
 import sys
 from abc import abstractmethod
 from collections.abc import Callable, Collection, Iterable, Sequence
-from typing import Any, Literal, cast
+from typing import Any, Literal, cast, TYPE_CHECKING
 
 from orcapod.data.datagrams import (
     DictPacket,
@@ -22,7 +22,12 @@ from orcapod.types.semantic_converter import SemanticConverter
 from orcapod.types import typespec_utils as tsutils
 from orcapod.utils import arrow_utils
 from orcapod.data.system_constants import orcapod_constants as constants
-import pyarrow as pa
+from orcapod.utils.lazy_module import LazyModule
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+else:
+    pa = LazyModule("pyarrow")
 
 logger = logging.getLogger(__name__)
 
@@ -65,14 +70,12 @@ class ActivatablePodBase(TrackedKernelBase):
         self._active = True
         self.error_handling = error_handling
 
-    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
         """
         Return the input and output typespecs for the pod.
         This is used to validate the input and output streams.
         """
-        input_streams = self.pre_process_input_streams(*streams)
-        self.validate_inputs(*input_streams)
-        tag_typespec, _ = input_streams[0].types()
+        tag_typespec, _ = streams[0].types()
         return tag_typespec, self.output_packet_types()
 
     def is_active(self) -> bool:
@@ -124,10 +127,15 @@ class ActivatablePodBase(TrackedKernelBase):
         """
         # if multiple streams are provided, join them
         # otherwise, return as is
-        if self.fixed_input_streams is not None and len(streams) > 0:
-            output_stream = self._join_streams(*self.fixed_input_streams)
-            if len(streams) > 0:
+        if self.fixed_input_streams is not None:
+            if len(streams) == 0:
+                output_stream = self._join_streams(*self.fixed_input_streams)
+            else:
                 restrict_stream = self._join_streams(*streams)
+                raise NotImplementedError(
+                    f"{self.__class__.__name__} does not support semijoining fixed input streams with additional streams yet. "
+                    "Please implement this functionality in the subclass."
+                )
                 # output_stream = SemiJoin()(output_stream, restrict_stream)
         else:
             if len(streams) == 0:
@@ -144,9 +152,9 @@ class ActivatablePodBase(TrackedKernelBase):
         output_stream.label = label
         return output_stream
 
-    def track_invocation(self, *streams: dp.Stream) -> None:
+    def track_invocation(self, *streams: dp.Stream, label: str | None = None) -> None:
         if not self._skip_tracking and self._tracker_manager is not None:
-            self._tracker_manager.record_pod_invocation(self, streams)
+            self._tracker_manager.record_pod_invocation(self, streams, label=label)
 
     def forward(self, *streams: dp.Stream) -> PodStream:
         assert len(streams) == 1, "PodBase.forward expects exactly one input stream"
@@ -289,8 +297,6 @@ class FunctionPod(ActivatablePodBase):
         return f"FunctionPod:{func_sig}"
 
     def call(self, tag: dp.Tag, packet: dp.Packet) -> tuple[dp.Tag, DictPacket | None]:
-        v: dp.Packet = DictPacket({})
-        print(v)
         if not self.is_active():
             logger.info(
                 f"Pod is not active: skipping computation on input packet {packet}"
@@ -330,7 +336,7 @@ class FunctionPod(ActivatablePodBase):
         )
         return tag, output_packet
 
-    def identity_structure(self, *streams: dp.Stream) -> Any:
+    def kernel_identity_structure(self, *streams: dp.Stream) -> Any:
         # construct identity structure for the function
 
         # if function_info_extractor is available, use that but substitute the function_name
@@ -355,11 +361,8 @@ class FunctionPod(ActivatablePodBase):
         )
         # if streams are provided, perform pre-processing step, validate, and add the
         # resulting single stream to the identity structure
-        if len(streams) > 0:
-            # TODO: extract the common handling of input streams
-            processed_streams = self.pre_process_input_streams(*streams)
-            self.validate_inputs(*processed_streams)
-            id_struct += (processed_streams[0],)
+        if len(streams) != 0:
+            id_struct += (streams[0],)
 
         return id_struct
 
@@ -416,7 +419,7 @@ class WrappedPod(ActivatablePodBase):
     def call(self, tag: dp.Tag, packet: dp.Packet) -> tuple[dp.Tag, dp.Packet | None]:
         return self.pod.call(tag, packet)
 
-    def identity_structure(self, *streams: dp.Stream) -> Any:
+    def kernel_identity_structure(self, *streams: dp.Stream) -> Any:
         return self.pod.identity_structure(*streams)
 
     def __repr__(self) -> str:
