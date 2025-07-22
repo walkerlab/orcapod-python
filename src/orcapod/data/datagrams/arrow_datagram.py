@@ -1,14 +1,14 @@
 import logging
 from collections.abc import Collection, Iterator, Mapping
-from typing import Any, Self
+from typing import Self
 
 import pyarrow as pa
 
-from orcapod.data.system_constants import orcapod_constants as constants
 from orcapod.data.context import (
     DataContext,
 )
 from orcapod.data.datagrams.base import BaseDatagram
+from orcapod.data.system_constants import orcapod_constants as constants
 from orcapod.types import schemas, typespec_utils
 from orcapod.types.core import DataValue
 from orcapod.types.semantic_converter import SemanticConverter
@@ -124,31 +124,6 @@ class ArrowDatagram(BaseDatagram):
         self._cached_python_dict: dict[str, DataValue] | None = None
         self._cached_meta_python_schema: schemas.PythonSchema | None = None
         self._cached_content_hash: str | None = None
-
-    def _core_info(self) -> dict[str, Any]:
-        core_info = {
-            "data_table": self._data_table,
-            "meta_table": self._meta_table,
-            "data_context_table": self._data_context_table,
-            "semantic_converter": self._semantic_converter,
-            "cached_python_schema": self._cached_python_schema,
-            "cached_python_dict": self._cached_python_dict,
-            "cached_meta_python_schema": self._cached_meta_python_schema,
-            "cached_content_hash": self._cached_content_hash,
-        }
-        return core_info
-
-    def _create_from_core_info(self, core_info: dict[str, Any]) -> Self:
-        new_copy = object.__new__(self.__class__)
-        new_copy._data_table = core_info["data_table"]
-        new_copy._meta_table = core_info["meta_table"]
-        new_copy._data_context_table = core_info["data_context_table"]
-        new_copy._semantic_converter = core_info["semantic_converter"]
-        new_copy._cached_python_schema = core_info["cached_python_schema"]
-        new_copy._cached_python_dict = core_info["cached_python_dict"]
-        new_copy._cached_meta_python_schema = core_info["cached_meta_python_schema"]
-        new_copy._cached_content_hash = core_info["cached_content_hash"]
-        return new_copy
 
     # 1. Core Properties (Identity & Structure)
     @property
@@ -492,6 +467,8 @@ class ArrowDatagram(BaseDatagram):
                 k = constants.META_PREFIX + k
             prefixed_updates[k] = v
 
+        new_datagram = self.copy(include_cache=False)
+
         # Start with existing meta data
         meta_dict = {}
         if self._meta_table is not None:
@@ -501,18 +478,10 @@ class ArrowDatagram(BaseDatagram):
         meta_dict.update(prefixed_updates)
 
         # Create new meta table
-        new_meta_table = pa.Table.from_pylist([meta_dict]) if meta_dict else None
-
-        # Combine all tables for reconstruction
-        combined_table = self._data_table
-        if new_meta_table is not None:
-            combined_table = arrow_utils.hstack_tables(combined_table, new_meta_table)
-
-        return self.__class__(
-            table=combined_table,
-            semantic_converter=self._semantic_converter,
-            data_context=self._data_context,
+        new_datagram._meta_table = (
+            pa.Table.from_pylist([meta_dict]) if meta_dict else None
         )
+        return new_datagram
 
     def drop_meta_columns(self, *keys: str, ignore_missing: bool = False) -> Self:
         """
@@ -541,26 +510,10 @@ class ArrowDatagram(BaseDatagram):
                 f"Following meta columns do not exist and cannot be dropped: {sorted(missing_keys)}"
             )
 
-        # Filter meta columns
-        remaining_cols = [
-            col for col in self._meta_table.column_names if col not in prefixed_keys
-        ]
+        new_datagram = self.copy(include_cache=False)
+        new_datagram._meta_table = self._meta_table.drop_columns(prefixed_keys)
 
-        # Create new meta table
-        new_meta_table = (
-            self._meta_table.select(remaining_cols) if remaining_cols else None
-        )
-
-        # Combine tables for reconstruction
-        combined_table = self._data_table
-        if new_meta_table is not None:
-            combined_table = arrow_utils.hstack_tables(combined_table, new_meta_table)
-
-        return self.__class__(
-            table=combined_table,
-            semantic_converter=self._semantic_converter,
-            data_context=self._data_context,
-        )
+        return new_datagram
 
     # 6. Data Column Operations
     def select(self, *column_names: str) -> Self:
@@ -579,18 +532,10 @@ class ArrowDatagram(BaseDatagram):
         if missing_cols:
             raise ValueError(f"Columns not found: {missing_cols}")
 
-        new_data_table = self._data_table.select(list(column_names))
+        new_datagram = self.copy(include_cache=False)
+        new_datagram._data_table = new_datagram._data_table.select(column_names)
 
-        # Combine with meta table for reconstruction
-        combined_table = new_data_table
-        if self._meta_table is not None:
-            combined_table = arrow_utils.hstack_tables(combined_table, self._meta_table)
-
-        return self.__class__(
-            table=combined_table,
-            semantic_converter=self._semantic_converter,
-            data_context=self._data_context,
-        )
+        return new_datagram
 
     def drop(self, *column_names: str, ignore_missing: bool = False) -> Self:
         """
@@ -610,27 +555,12 @@ class ArrowDatagram(BaseDatagram):
             raise KeyError(
                 f"Following columns do not exist and cannot be dropped: {sorted(missing)}"
             )
+        column_names = tuple(c for c in column_names if self._data_table.columns)
 
-        # Filter data columns
-        remaining_cols = [
-            col for col in self._data_table.column_names if col not in column_names
-        ]
-
-        if not remaining_cols:
-            raise ValueError("Cannot drop all data columns")
-
-        new_data_table = self._data_table.select(remaining_cols)
-
-        # Combine with meta table for reconstruction
-        combined_table = new_data_table
-        if self._meta_table is not None:
-            combined_table = arrow_utils.hstack_tables(combined_table, self._meta_table)
-
-        return self.__class__(
-            table=combined_table,
-            semantic_converter=self._semantic_converter,
-            data_context=self._data_context,
-        )
+        new_datagram = self.copy(include_cache=False)
+        new_datagram._data_table = self._data_table.drop_columns(column_names)
+        # TODO: consider dropping extra semantic columns if they are no longer needed
+        return new_datagram
 
     def rename(self, column_mapping: Mapping[str, str]) -> Self:
         """
@@ -644,29 +574,21 @@ class ArrowDatagram(BaseDatagram):
             New ArrowDatagram instance with renamed data columns
         """
         # Create new schema with renamed fields, preserving original types
-        new_fields = []
-        for field in self._data_table.schema:
-            old_name = field.name
-            new_name = column_mapping.get(old_name, old_name)
-            new_field = pa.field(new_name, field.type)
-            new_fields.append(new_field)
 
-        # Create new data table with renamed columns
-        new_schema = pa.schema(new_fields)
-        new_data_table = self._data_table.rename_columns(
-            [column_mapping.get(name, name) for name in self._data_table.column_names]
-        ).cast(new_schema)
+        if not column_mapping:
+            return self
 
-        # Combine with meta table for reconstruction
-        combined_table = new_data_table
-        if self._meta_table is not None:
-            combined_table = arrow_utils.hstack_tables(combined_table, self._meta_table)
+        new_names = [column_mapping.get(k, k) for k in self._data_table.column_names]
 
-        return self.__class__(
-            table=combined_table,
-            semantic_converter=self._semantic_converter,
-            data_context=self._data_context,
+        new_datagram = self.copy(include_cache=False)
+        new_datagram._data_table = new_datagram._data_table.rename_columns(new_names)
+
+        # apply the same rename to the converters
+        new_datagram._semantic_converter = self._semantic_converter.rename(
+            column_mapping
         )
+
+        return new_datagram
 
     def update(self, **updates: DataValue) -> Self:
         """
@@ -699,23 +621,19 @@ class ArrowDatagram(BaseDatagram):
                 f"Only existing columns can be updated. Following columns were not found: {sorted(missing_cols)}"
             )
 
+        new_datagram = self.copy(include_cache=False)
+
         updates_typespec = schemas.PythonSchema(
             {k: v for k, v in self.types().items() if k in updates}
         )
-
         update_table = self._semantic_converter.from_python_to_arrow(
             updates, updates_typespec
         )
-        all_tables = [self._data_table.drop_columns(list(updates.keys())), update_table]
+        new_datagram._data_table = arrow_utils.hstack_tables(
+            self._data_table.drop_columns(list(updates.keys())), update_table
+        ).select(self._data_table.column_names)  # adjsut the order to match original
 
-        if self._meta_table is not None:
-            all_tables.append(self._meta_table)
-
-        return self.__class__(
-            table=arrow_utils.hstack_tables(*all_tables),
-            semantic_converter=self._semantic_converter,
-            data_context=self._data_context,
-        )
+        return new_datagram
 
     def with_columns(
         self,
@@ -742,7 +660,7 @@ class ArrowDatagram(BaseDatagram):
         if not updates:
             return self
 
-        # Error if any column already exists
+        # Error if any of the columns already exists
         existing_overlaps = set(updates.keys()) & set(self._data_table.column_names)
         if existing_overlaps:
             raise ValueError(
@@ -750,7 +668,11 @@ class ArrowDatagram(BaseDatagram):
                 f"Use update() to modify existing columns."
             )
 
+        # create a copy and perform in-place updates
+        new_datagram = self.copy()
+
         # TODO: consider simplifying this conversion logic
+        # prepare update's table
         typespec = typespec_utils.get_typespec_from_dict(updates, column_types)
 
         updates_converter = SemanticConverter.from_semantic_schema(
@@ -761,21 +683,16 @@ class ArrowDatagram(BaseDatagram):
         # TODO: cleanup the handling of typespec python schema and various conversion points
         new_data_table = updates_converter.from_python_to_arrow(updates, typespec)
 
-        # Combine with meta table for reconstruction
-        all_tables = [self._data_table, new_data_table]
-        if self._meta_table is not None:
-            all_tables.append(self._meta_table)
-
-        combined_table = arrow_utils.hstack_tables(*all_tables)
+        # perform in-place update
+        new_datagram._data_table = arrow_utils.hstack_tables(
+            new_datagram._data_table, new_data_table
+        )
 
         # prepare the joined converter
-        total_converter = self._semantic_converter.join(updates_converter)
-
-        return self.__class__(
-            table=combined_table,
-            semantic_converter=total_converter,
-            data_context=self._data_context,
+        new_datagram._semantic_converter = self._semantic_converter.join(
+            updates_converter
         )
+        return new_datagram
 
     # 7. Context Operations
     def with_context_key(self, new_context_key: str) -> Self:
@@ -789,6 +706,7 @@ class ArrowDatagram(BaseDatagram):
         Returns:
             New ArrowDatagram instance with new context
         """
+        # TODO: consider if there is a more efficient way to handle context
         # Combine all tables for reconstruction
         combined_table = self._data_table
         if self._meta_table is not None:
@@ -801,23 +719,25 @@ class ArrowDatagram(BaseDatagram):
         )
 
     # 8. Utility Operations
-    def copy(self) -> Self:
+    def copy(self, include_cache: bool = True) -> Self:
         """Return a copy of the datagram."""
-        # Combine all tables for reconstruction
-        combined_table = self._data_table
-        if self._meta_table is not None:
-            combined_table = arrow_utils.hstack_tables(combined_table, self._meta_table)
+        new_datagram = super().copy()
 
-        new_datagram = self.__class__(
-            combined_table,
-            semantic_converter=self._semantic_converter,
-            data_context=self._data_context,
-        )
+        new_datagram._data_table = self._data_table
+        new_datagram._meta_table = self._meta_table
+        new_datagram._data_context = self._data_context
+        new_datagram._semantic_converter = self._semantic_converter
 
-        # Copy caches
-        new_datagram._cached_python_schema = self._cached_python_schema
-        new_datagram._cached_python_dict = self._cached_python_dict
-        new_datagram._cached_content_hash = self._cached_content_hash
+        if include_cache:
+            new_datagram._cached_python_schema = self._cached_python_schema
+            new_datagram._cached_python_dict = self._cached_python_dict
+            new_datagram._cached_content_hash = self._cached_content_hash
+            new_datagram._cached_meta_python_schema = self._cached_meta_python_schema
+        else:
+            new_datagram._cached_python_schema = None
+            new_datagram._cached_python_dict = None
+            new_datagram._cached_content_hash = None
+            new_datagram._cached_meta_python_schema = None
 
         return new_datagram
 

@@ -43,20 +43,25 @@ def hstack_tables(*tables: pa.Table) -> pa.Table:
                 "All tables must have the same number of rows for horizontal stacking."
             )
 
-    # create combined column names
-    all_column_names = []
-    all_columns = []
+    # create combined schema
+    all_fields = []
     all_names = set()
-    for i, table in enumerate(tables):
-        if overlap := set(table.column_names).intersection(all_names):
-            raise ValueError(
-                f"Duplicate column names {overlap} found when stacking table at index {i}: {table}"
-            )
-        all_names.update(table.column_names)
-        all_column_names += table.column_names
+    for table in tables:
+        for field in table.schema:
+            if field.name in all_names:
+                raise ValueError(
+                    f"Duplicate column name '{field.name}' found in input tables."
+                )
+            all_fields.append(field)
+            all_names.add(field.name)
+    combined_schmea = pa.schema(all_fields)
+
+    # create combined columns
+    all_columns = []
+    for table in tables:
         all_columns += table.columns
 
-    return pa.Table.from_arrays(all_columns, names=all_column_names)
+    return pa.Table.from_arrays(all_columns, schema=combined_schmea)
 
 
 def check_arrow_schema_compatibility(

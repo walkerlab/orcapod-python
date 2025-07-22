@@ -269,33 +269,6 @@ class BaseDatagram(ABC):
         ...
 
     # 8. Utility Operations
-    @abstractmethod
     def copy(self) -> Self:
         """Create a shallow copy of the datagram."""
-        ...
-
-    @abstractmethod
-    def _core_info(self) -> dict[str, Any]:
-        """
-        Return core information about the datagram.
-        This is meant to be used for internal purposes only and is not part of the public API.
-        It provides necessary information to create an efficient copy of the datagram
-        and in a manner that works across inheritance hierarchies.
-
-        Returns:
-            Dictionary with all information necessary to recreate the datagram in a copy.
-        """
-        ...
-
-    @abstractmethod
-    def _create_from_core_info(self, core_info: dict[str, Any]) -> Self:
-        """
-        Create a new datagram instance from core information.
-
-        Args:
-            core_info: Dictionary with core information about the datagram
-
-        Returns:
-            New datagram instance
-        """
-        ...
+        return object.__new__(self.__class__)
