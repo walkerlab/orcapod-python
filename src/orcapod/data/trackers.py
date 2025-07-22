@@ -1,8 +1,9 @@
 from orcapod.protocols import data_protocols as dp, hashing_protocols as hp
 from orcapod.hashing.defaults import get_default_object_hasher
 from collections import defaultdict
+from collections.abc import Generator
 from abc import ABC, abstractmethod
-from typing import Any, ContextManager, Generator
+from typing import Any
 from contextlib import contextmanager
 
 

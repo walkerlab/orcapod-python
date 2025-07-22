@@ -366,7 +366,7 @@ class FunctionPod(ActivatablePodBase):
 
 class WrappedPod(ActivatablePodBase):
     """
-    A wrapper for a pod that allows it to be used as a kernel.
+    A wrapper for an existing pod, allowing for additional functionality or modifications without changing the original pod.
     This class is meant to serve as a base class for other pods that need to wrap existing pods.
     """
 

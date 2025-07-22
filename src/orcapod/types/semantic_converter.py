@@ -106,3 +106,13 @@ class SemanticConverter:
             new_converter_lut[key] = converter
 
         return self.__class__(new_converter_lut)
+
+    def rename(self, column_mapping: Mapping[str, str]) -> Self:
+        """Rename columns in the converter lookup table."""
+        new_converter_lut = {}
+        new_converter_lut = {
+            column_mapping.get(key, key): converter
+            for key, converter in self._converter_lut.items()
+        }
+
+        return self.__class__(new_converter_lut)
