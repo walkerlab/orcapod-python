@@ -1,11 +1,13 @@
 """Hash strategy protocols for dependency injection."""
 
 from collections.abc import Callable
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable, TYPE_CHECKING
 import uuid
 
 from orcapod.types import TypeSpec, PathLike
-import pyarrow as pa
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 
 @runtime_checkable
@@ -101,7 +103,7 @@ class ArrowHasher(Protocol):
 
     def get_hasher_id(self) -> str: ...
 
-    def hash_table(self, table: pa.Table, prefix_hasher_id: bool = True) -> str: ...
+    def hash_table(self, table: "pa.Table", prefix_hasher_id: bool = True) -> str: ...
 
 
 class StringCacher(Protocol):
@@ -134,8 +136,8 @@ class SemanticTypeHasher(Protocol):
 
     def hash_column(
         self,
-        column: pa.Array,
-    ) -> pa.Array:
+        column: "pa.Array",
+    ) -> "pa.Array":
         """Hash a column with this semantic type and return the hash bytes."""
         ...
 

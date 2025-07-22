@@ -1,6 +1,6 @@
 from orcapod.types.semantic_types import PythonArrowConverter
 from orcapod.types.schemas import PythonSchema, SemanticSchema
-from orcapod.types import typespec_utils as tsutils
+from orcapod.types import TypeSpec, typespec_utils as tsutils
 
 from typing import Any, Self
 from collections.abc import Mapping
@@ -29,9 +29,11 @@ class SemanticConverter:
     ):
         self._converter_lut = converter_lut
 
-    def from_python_to_arrow_schema(self, python_schema: PythonSchema) -> pa.Schema:
+    def from_python_to_arrow_schema(self, python_schema: TypeSpec) -> pa.Schema:
         """Convert a Python schema to an Arrow schema"""
-        return python_schema.to_arrow_schema(converters=self._converter_lut)
+        return PythonSchema(python_schema).to_arrow_schema(
+            converters=self._converter_lut
+        )
 
     def from_arrow_to_python_schema(self, arrow_schema: pa.Schema) -> PythonSchema:
         """Convert an Arrow schema to a Python schema"""
@@ -40,7 +42,7 @@ class SemanticConverter:
         )
 
     def from_python_to_arrow(
-        self, python_data: Mapping[str, Any], python_schema: PythonSchema | None = None
+        self, python_data: Mapping[str, Any], python_schema: TypeSpec | None = None
     ) -> pa.Table:
         """Convert a dictionary of Python values to Arrow arrays"""
         if python_schema is None:
@@ -85,3 +87,22 @@ class SemanticConverter:
     def as_dict(self) -> dict[str, PythonArrowConverter]:
         """Return the converter lookup table as a dictionary."""
         return self._converter_lut.copy()
+
+    def join(self, other: Self, strict: bool = False) -> Self:
+        """Join two SemanticConverters by merging their converter lookup tables."""
+        if not isinstance(other, SemanticConverter):
+            raise TypeError("Can only join with another SemanticConverter.")
+
+        new_converter_lut = self._converter_lut.copy()
+        for key, converter in other._converter_lut.items():
+            if key in new_converter_lut:
+                if strict:
+                    raise ValueError(
+                        f"Key '{key}' already exists in the converter lookup table. Cannot overwrite in strict mode."
+                    )
+                logger.warning(
+                    f"Key '{key}' already exists in the converter lookup table. Overwriting with new converter."
+                )
+            new_converter_lut[key] = converter
+
+        return self.__class__(new_converter_lut)

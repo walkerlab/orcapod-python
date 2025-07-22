@@ -6,22 +6,12 @@ from orcapod.hashing.defaults import get_default_arrow_hasher, get_default_objec
 from dataclasses import dataclass
 
 
-DATA_CONTEXT_COLUMN = "_orcapod_context_key"
-
-
 @dataclass
 class DataContext:
     context_key: str
     semantic_type_registry: SemanticTypeRegistry
     arrow_hasher: hp.ArrowHasher
     object_hasher: hp.ObjectHasher
-
-    @staticmethod
-    def get_data_context_column() -> str:
-        """
-        Returns the column name used to store the data context key in Arrow tables.
-        """
-        return DATA_CONTEXT_COLUMN
 
     @staticmethod
     def resolve_data_context(data_context: "str | DataContext | None") -> "DataContext":

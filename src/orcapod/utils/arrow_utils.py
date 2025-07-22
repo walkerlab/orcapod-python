@@ -1,7 +1,6 @@
 # TODO: move this to a separate module
 
 from collections import defaultdict
-from matplotlib.pylab import f
 import pyarrow as pa
 from collections.abc import Mapping, Collection
 from typing import Any
@@ -168,6 +167,7 @@ def prepare_prefixed_columns(
     | Mapping[str, Any | None]
     | Mapping[str, Mapping[str, Any | None]],
     exclude_columns: Collection[str] = (),
+    exclude_prefixes: Collection[str] = (),
 ) -> tuple[pa.Table, dict[str, pa.Table]]:
     """ """
     all_prefix_info = {}
@@ -209,7 +209,12 @@ def prepare_prefixed_columns(
     prefixed_column_names = defaultdict(list)
     prefixed_columns = defaultdict(list)
 
-    target_column_names = [c for c in data_column_names if c not in exclude_columns]
+    target_column_names = [
+        c
+        for c in data_column_names
+        if not any(c.startswith(prefix) for prefix in exclude_prefixes)
+        and c not in exclude_columns
+    ]
 
     for prefix, value_lut in all_prefix_info.items():
         target_prefixed_column_names = prefixed_column_names[prefix]
