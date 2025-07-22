@@ -1,9 +1,6 @@
-from abc import ABC, abstractmethod
 from typing import Any
 from orcapod.protocols import hashing_protocols as hp
-from orcapod.types import TypeSpec
 from orcapod.hashing.defaults import get_default_object_hasher
-import pyarrow as pa
 import logging
 
 

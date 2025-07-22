@@ -5,19 +5,14 @@ from orcapod.types import TypeSpec
 from orcapod.types.typespec_utils import union_typespecs, intersection_typespecs
 from abc import abstractmethod
 from typing import Any
-
-
-class InputValidationError(Exception):
-    """
-    Exception raised when the inputs are not valid.
-    This is used to indicate that the inputs do not meet the requirements of the operator.
-    """
+from orcapod.errors import InputValidationError
 
 
 class Operator(TrackedKernelBase):
     """
     Base class for all operators.
     Operators are a special type of kernel that can be used to perform operations on streams.
+
     They are defined as a callable that takes a (possibly empty) collection of streams as the input
     and returns a new stream as output (note that output stream is always singular).
     """

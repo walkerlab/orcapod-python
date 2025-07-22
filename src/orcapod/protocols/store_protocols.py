@@ -41,3 +41,7 @@ class ArrowDataStore(Protocol):
         record_ids: Collection[str],
         record_id_column: str | None = None,
     ) -> pa.Table: ...
+
+    def flush(self) -> None:
+        """Flush any buffered writes to the underlying storage."""
+        ...

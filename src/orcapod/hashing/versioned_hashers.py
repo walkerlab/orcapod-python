@@ -2,7 +2,6 @@
 from .arrow_hashers import SemanticArrowHasher
 from orcapod.utils.object_spec import parse_objectspec
 from orcapod.protocols.hashing_protocols import ObjectHasher
-from typing import Any
 
 CURRENT_VERSION = "v0.1"
 
