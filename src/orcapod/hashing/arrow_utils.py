@@ -1,12 +1,17 @@
-import pyarrow as pa
 import json
 import hashlib
-from typing import Dict, Any
+from typing import Any, TYPE_CHECKING
 from decimal import Decimal
 import base64
+from orcapod.utils.lazy_module import LazyModule
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+else:
+    pa = LazyModule("pyarrow")
 
 
-def serialize_pyarrow_table_schema(table: pa.Table) -> str:
+def serialize_pyarrow_table_schema(table: "pa.Table") -> str:
     """
     Serialize PyArrow table schema to JSON with Python type names and filtered metadata.
 
@@ -29,7 +34,7 @@ def serialize_pyarrow_table_schema(table: pa.Table) -> str:
     return json.dumps(schema_info, separators=(",", ":"), sort_keys=True)
 
 
-def serialize_pyarrow_table(table: pa.Table) -> str:
+def serialize_pyarrow_table(table: "pa.Table") -> str:
     """
     Serialize a PyArrow table to a stable JSON string with both schema and data.
 
@@ -74,7 +79,7 @@ def serialize_pyarrow_table(table: pa.Table) -> str:
     )
 
 
-def get_pyarrow_table_hash(table: pa.Table) -> str:
+def get_pyarrow_table_hash(table: "pa.Table") -> str:
     """
     Get a stable SHA-256 hash of the table content.
 
@@ -88,7 +93,7 @@ def get_pyarrow_table_hash(table: pa.Table) -> str:
     return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
 
-def deserialize_to_pyarrow_table(serialized_str: str) -> pa.Table:
+def deserialize_to_pyarrow_table(serialized_str: str) -> "pa.Table":
     """
     Deserialize JSON string back to a PyArrow table.
 
