@@ -1,13 +1,10 @@
-from typing import Collection, Protocol, TYPE_CHECKING
-from orcapod.protocols import data_protocols as dp
+from typing import Protocol
+from collections.abc import Collection
 import pyarrow as pa
-
-if TYPE_CHECKING:
-    import polars as pl
 
 
 class ArrowDataStore(Protocol):
-    def record_data(
+    def add_record(
         self,
         record_path: tuple[str, ...],
         record_id: str,
@@ -15,13 +12,26 @@ class ArrowDataStore(Protocol):
         ignore_duplicates: bool | None = None,
     ) -> str | None: ...
 
-    def get_recorded_data(
+    def add_records(
+        self,
+        record_path: tuple[str, ...],
+        records: pa.Table,
+        record_id_column: str | None = None,
+        ignore_duplicates: bool | None = None,
+    ) -> list[str]: ...
+
+    def get_record_by_id(
         self,
         record_path: tuple[str, ...],
         record_id: str,
+        record_id_column: str | None = None,
     ) -> pa.Table | None: ...
 
-    def get_all_records(self, record_path: tuple[str, ...]) -> pa.Table | None:
+    def get_all_records(
+        self,
+        record_path: tuple[str, ...],
+        record_id_column: str | None = None,
+    ) -> pa.Table | None:
         """Retrieve all records for a given path as a stream."""
         ...
 
@@ -29,6 +39,5 @@ class ArrowDataStore(Protocol):
         self,
         record_path: tuple[str, ...],
         record_ids: Collection[str],
-        add_entry_id_column: bool | str = False,
-        preseve_input_order: bool = False,
+        record_id_column: str | None = None,
     ) -> pa.Table: ...

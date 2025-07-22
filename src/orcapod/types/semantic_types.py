@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 import pyarrow as pa
+
 from collections.abc import Collection
 
 
@@ -344,7 +345,7 @@ class SemanticType[T]:
 
     def from_canonical_to_arrow(
         self, value: T, target_type: pa.DataType | None = None
-    ) -> Any:
+    ) -> pa.Array:
         """Convert from canonical to Arrow representation using explicit Arrow DataType"""
 
         if target_type is None:
@@ -438,7 +439,45 @@ class SemanticTypeRegistry:
         self, python_type: type
     ) -> SemanticType | None:
         """Get a semantic type by Python type"""
-        return self._python_to_semantic_lut.get(python_type)
+
+        # check if it's directly registered
+        semantic_type = self._python_to_semantic_lut.get(python_type)
+        if semantic_type is None:
+            # check if it's a subclass
+            for (
+                registered_type,
+                registered_semantic_type,
+            ) in self._python_to_semantic_lut.items():
+                if issubclass(python_type, registered_type):
+                    return registered_semantic_type
+        return semantic_type
+
+    def get_arrow_type_for_semantic_type(
+        self, semantic_type_name: str
+    ) -> pa.DataType | None:
+        """Get the default Arrow DataType for a semantic type by name"""
+        semantic_type = self._semantic_type_lut.get(semantic_type_name)
+        if semantic_type:
+            return semantic_type.get_default_arrow_type()
+        return None
+
+    def get_arrow_type_for_python_type(
+        self, python_type: type
+    ) -> tuple[str | None, pa.DataType] | None:
+        """Get the default Arrow DataType for a Python type"""
+        semantic_type = self.get_semantic_type_for_python_type(python_type)
+        if semantic_type:
+            return semantic_type.name, semantic_type.get_default_arrow_type()
+        return None
+
+    def from_python_to_arrow(self, python_value: Any) -> tuple[str | None, Any]:
+        """Convert a Python value to Arrow-targetting representation using the semantic type registry"""
+        semantic_type = self.get_semantic_type_for_python_type(type(python_value))
+        if semantic_type:
+            return semantic_type.name, semantic_type.convert_python_to_arrow(
+                python_value
+            )
+        return None, python_value
 
     def get_semantic_type(self, name: str) -> SemanticType | None:
         """Get a semantic type by name"""
@@ -448,11 +487,10 @@ class SemanticTypeRegistry:
         """Get all registered semantic types"""
         return list(self._semantic_type_lut.values())
 
-    def supports_python_type(self, python_type: type) -> bool:
-        """Check if registry supports the given Python type"""
+    def registered_with_semantic_type(self, python_type: type) -> bool:
+        """Check if registry has the Python type registered with a semantic type"""
         return python_type in self._python_to_semantic_lut
 
-    # Python-specific registry methods
     def supports_semantic_and_arrow_type(
         self, semantic_type_name: str, arrow_type: pa.DataType
     ) -> bool:

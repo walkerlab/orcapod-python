@@ -1,23 +1,25 @@
-from orcapod.protocols import data_protocols as dp
+import logging
+import warnings
+from abc import ABC, abstractmethod
+from collections.abc import Collection, Iterator
+from datetime import datetime, timezone
+from itertools import repeat
+from typing import Any, Literal
+
+import pyarrow as pa
+
+from orcapod.data.system_constants import orcapod_constants as constants
+from orcapod.data.base import LabeledContentIdentifiableBase
 from orcapod.data.context import DataContext
 from orcapod.data.datagrams import (
     ArrowPacket,
     ArrowTag,
     DictTag,
-    SemanticConverter,
-    SOURCE_INFO_PREFIX,
 )
-from orcapod.utils import arrow_utils
-from orcapod.data.base import LabeledContentIdentifiableBase
+from orcapod.protocols import data_protocols as dp
 from orcapod.types import TypeSpec, schemas
-import pyarrow as pa
-from collections.abc import Iterator, Collection
-from abc import ABC, abstractmethod
-from datetime import timezone, datetime
-from typing import Any, Literal
-import logging
-import warnings
-from itertools import repeat
+from orcapod.types.semantic_converter import SemanticConverter
+from orcapod.utils import arrow_utils
 
 # TODO: consider using this instead of making copy of dicts
 # from types import MappingProxyType
@@ -327,18 +329,14 @@ class ImmutableTableStream(StreamBase):
         super().__init__(source=source, upstreams=upstreams, **kwargs)
 
         table, data_context_table = arrow_utils.split_by_column_groups(
-            table, [DataContext.get_data_context_column()]
+            table, [constants.CONTEXT_KEY]
         )
         if data_context_table is None:
             data_context_table = pa.table(
-                {
-                    DataContext.get_data_context_column(): pa.nulls(
-                        len(table), pa.large_string()
-                    )
-                }
+                {constants.CONTEXT_KEY: pa.nulls(len(table), pa.large_string())}
             )
 
-        prefix_info = {SOURCE_INFO_PREFIX: source_info}
+        prefix_info = {constants.SOURCE_PREFIX: source_info}
 
         # determine tag columns first and then exclude any source info
         self._tag_columns = tuple(c for c in tag_columns if c in table.column_names)
@@ -350,7 +348,7 @@ class ImmutableTableStream(StreamBase):
             c for c in table.column_names if c not in tag_columns
         )
         self._table = table
-        self._source_info_table = prefix_tables[SOURCE_INFO_PREFIX]
+        self._source_info_table = prefix_tables[constants.SOURCE_PREFIX]
         self._data_context_table = data_context_table
 
         if len(self._packet_columns) == 0:
@@ -575,12 +573,12 @@ class PodStream(StreamBase):
                     tag_schema = tag.arrow_schema()
                 if packet_schema is None:
                     packet_schema = packet.arrow_schema(
-                        include_data_context=True,
+                        include_context=True,
                         include_source=True,
                     )
                 all_tags.append(tag.as_dict())
                 all_packets.append(
-                    packet.as_dict(include_data_context=True, include_source=True)
+                    packet.as_dict(include_context=True, include_source=True)
                 )
 
             all_tags: pa.Table = pa.Table.from_pylist(all_tags, schema=tag_schema)
@@ -595,9 +593,9 @@ class PodStream(StreamBase):
 
         drop_columns = []
         if not include_source:
-            drop_columns.extend(f"{SOURCE_INFO_PREFIX}{c}" for c in self.keys()[1])
+            drop_columns.extend(f"{constants.SOURCE_PREFIX}{c}" for c in self.keys()[1])
         if not include_data_context:
-            drop_columns.append(DataContext.get_data_context_column())
+            drop_columns.append(constants.CONTEXT_KEY)
 
         output_table = self._cached_output_table.drop(drop_columns)
 

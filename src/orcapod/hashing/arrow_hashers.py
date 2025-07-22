@@ -1,7 +1,6 @@
 import hashlib
 from typing import Any
 import pyarrow as pa
-import polars as pl
 import json
 from orcapod.protocols.hashing_protocols import SemanticTypeHasher, StringCacher
 from orcapod.hashing import arrow_serialization
@@ -214,6 +213,8 @@ class SemanticArrowHasher:
 
         # normalize all string to large strings by passing through polars
         # TODO: consider cleaner approach in the future
+        import polars as pl
+
         sorted_table = pl.DataFrame(sorted_table).to_arrow()
 
         # Step 3: Serialize using Arrow IPC format

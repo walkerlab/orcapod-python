@@ -1,5 +1,4 @@
 import pyarrow as pa
-import pyarrow.dataset as ds
 import polars as pl
 from pathlib import Path
 from typing import Any
@@ -7,6 +6,7 @@ import logging
 from deltalake import DeltaTable, write_deltalake
 from deltalake.exceptions import TableNotFoundError
 from collections import defaultdict
+from orcapod.data import constants
 
 
 # Module-level logger
@@ -28,6 +28,8 @@ class BasicDeltaTableArrowStore:
     - ("year", "month", "day", "experiment") -> year/month/day/experiment/
     """
 
+    RECORD_ID_COLUMN = f"{constants.META_PREFIX}record_id"
+
     def __init__(
         self,
         base_path: str | Path,
@@ -41,8 +43,8 @@ class BasicDeltaTableArrowStore:
 
         Args:
             base_path: Base directory path where Delta tables will be stored
-            duplicate_entry_behavior: How to handle duplicate entry_ids:
-                - 'error': Raise ValueError when entry_id already exists
+            duplicate_entry_behavior: How to handle duplicate record_ids:
+                - 'error': Raise ValueError when record_id already exists
                 - 'overwrite': Replace existing entry with new data
             create_base_path: Whether to create the base path if it doesn't exist
             max_hierarchy_depth: Maximum allowed depth for source paths (safety limit)
@@ -87,15 +89,15 @@ class BasicDeltaTableArrowStore:
         except Exception as e:
             logger.error(f"Error during flush: {e}")
 
-    def flush_batch(self, source_path: tuple[str, ...]) -> None:
+    def flush_batch(self, record_path: tuple[str, ...]) -> None:
         """
         Flush pending batch for a specific source path.
 
         Args:
-            source_path: Tuple of path components
+            record_path: Tuple of path components
         """
         logger.debug("Flushing triggered!!")
-        source_key = self._get_source_key(source_path)
+        source_key = self._get_source_key(record_path)
 
         if (
             source_key not in self._pending_batches
@@ -111,11 +113,11 @@ class BasicDeltaTableArrowStore:
             # Combine all tables in the batch
             combined_table = pa.concat_tables(pending_tables.values()).combine_chunks()
 
-            table_path = self._get_table_path(source_path)
+            table_path = self._get_table_path(record_path)
             table_path.mkdir(parents=True, exist_ok=True)
 
             # Check if table exists
-            delta_table = self._get_existing_delta_table(source_path)
+            delta_table = self._get_existing_delta_table(record_path)
 
             if delta_table is None:
                 # TODO: reconsider mode="overwrite" here
@@ -130,27 +132,31 @@ class BasicDeltaTableArrowStore:
             else:
                 if self.duplicate_entry_behavior == "overwrite":
                     # Get entry IDs from the batch
-                    entry_ids = combined_table.column("__entry_id").to_pylist()
-                    unique_entry_ids = list(set(entry_ids))
+                    record_ids = combined_table.column(
+                        self.RECORD_ID_COLUMN
+                    ).to_pylist()
+                    unique_record_ids = list(set(record_ids))
 
                     # Delete existing records with these IDs
-                    if unique_entry_ids:
-                        entry_ids_str = "', '".join(unique_entry_ids)
-                        delete_predicate = f"__entry_id IN ('{entry_ids_str}')"
+                    if unique_record_ids:
+                        record_ids_str = "', '".join(unique_record_ids)
+                        delete_predicate = (
+                            f"{self.RECORD_ID_COLUMN} IN ('{record_ids_str}')"
+                        )
                         try:
                             delta_table.delete(delete_predicate)
                             logger.debug(
-                                f"Deleted {len(unique_entry_ids)} existing records from {source_key}"
+                                f"Deleted {len(unique_record_ids)} existing records from {source_key}"
                             )
                         except Exception as e:
                             logger.debug(
                                 f"No existing records to delete from {source_key}: {e}"
                             )
 
-                # otherwise, only insert if same entry_id does not exist yet
+                # otherwise, only insert if same record_id does not exist yet
                 delta_table.merge(
                     source=combined_table,
-                    predicate="target.__entry_id = source.__entry_id",
+                    predicate=f"target.{self.RECORD_ID_COLUMN} = source.{self.RECORD_ID_COLUMN}",
                     source_alias="source",
                     target_alias="target",
                 ).when_not_matched_insert_all().execute()
@@ -174,9 +180,9 @@ class BasicDeltaTableArrowStore:
 
         # TODO: capture and re-raise exceptions at the end
         for source_key in source_keys:
-            source_path = tuple(source_key.split("/"))
+            record_path = tuple(source_key.split("/"))
             try:
-                self.flush_batch(source_path)
+                self.flush_batch(record_path)
             except Exception as e:
                 logger.error(f"Error flushing batch for {source_key}: {e}")
 
@@ -184,27 +190,27 @@ class BasicDeltaTableArrowStore:
         """Cleanup when object is destroyed."""
         self.flush()
 
-    def _validate_source_path(self, source_path: tuple[str, ...]) -> None:
+    def _validate_record_path(self, record_path: tuple[str, ...]) -> None:
         # TODO: consider removing this as path creation can be tried directly
         """
         Validate source path components.
 
         Args:
-            source_path: Tuple of path components
+            record_path: Tuple of path components
 
         Raises:
             ValueError: If path is invalid
         """
-        if not source_path:
+        if not record_path:
             raise ValueError("Source path cannot be empty")
 
-        if len(source_path) > self.max_hierarchy_depth:
+        if len(record_path) > self.max_hierarchy_depth:
             raise ValueError(
-                f"Source path depth {len(source_path)} exceeds maximum {self.max_hierarchy_depth}"
+                f"Source path depth {len(record_path)} exceeds maximum {self.max_hierarchy_depth}"
             )
 
         # Validate path components
-        for i, component in enumerate(source_path):
+        for i, component in enumerate(record_path):
             if not component or not isinstance(component, str):
                 raise ValueError(
                     f"Source path component {i} is invalid: {repr(component)}"
@@ -217,31 +223,31 @@ class BasicDeltaTableArrowStore:
                     f"Source path component contains invalid characters: {repr(component)}"
                 )
 
-    def _get_source_key(self, source_path: tuple[str, ...]) -> str:
+    def _get_source_key(self, record_path: tuple[str, ...]) -> str:
         """Generate cache key for source storage."""
-        return "/".join(source_path)
+        return "/".join(record_path)
 
-    def _get_table_path(self, source_path: tuple[str, ...]) -> Path:
+    def _get_table_path(self, record_path: tuple[str, ...]) -> Path:
         """Get the filesystem path for a given source path."""
         path = self.base_path
-        for subpath in source_path:
+        for subpath in record_path:
             path = path / subpath
         return path
 
     def _get_existing_delta_table(
-        self, source_path: tuple[str, ...]
+        self, record_path: tuple[str, ...]
     ) -> DeltaTable | None:
         """
         Get or create a Delta table, handling schema initialization properly.
 
         Args:
-            source_path: Tuple of path components
+            record_path: Tuple of path components
 
         Returns:
             DeltaTable instance or None if table doesn't exist
         """
-        source_key = self._get_source_key(source_path)
-        table_path = self._get_table_path(source_path)
+        source_key = self._get_source_key(record_path)
+        table_path = self._get_table_path(record_path)
 
         # Check cache first
         if dt := self._delta_table_cache.get(source_key):
@@ -263,75 +269,79 @@ class BasicDeltaTableArrowStore:
                 del self._delta_table_cache[source_key]
             return None
 
-    def _ensure_entry_id_column(self, arrow_data: pa.Table, entry_id: str) -> pa.Table:
-        """Ensure the table has an __entry_id column."""
-        if "__entry_id" not in arrow_data.column_names:
-            # Add entry_id column at the beginning
-            key_array = pa.array([entry_id] * len(arrow_data), type=pa.large_string())
-            arrow_data = arrow_data.add_column(0, "__entry_id", key_array)
+    def _ensure_record_id_column(
+        self, arrow_data: pa.Table, record_id: str
+    ) -> pa.Table:
+        """Ensure the table has an record id column."""
+        if self.RECORD_ID_COLUMN not in arrow_data.column_names:
+            # Add record_id column at the beginning
+            key_array = pa.array([record_id] * len(arrow_data), type=pa.large_string())
+            arrow_data = arrow_data.add_column(0, self.RECORD_ID_COLUMN, key_array)
         return arrow_data
 
-    def _remove_entry_id_column(self, arrow_data: pa.Table) -> pa.Table:
-        """Remove the __entry_id column if it exists."""
-        if "__entry_id" in arrow_data.column_names:
+    def _remove_record_id_column(self, arrow_data: pa.Table) -> pa.Table:
+        """Remove the record id column if it exists."""
+        if self.RECORD_ID_COLUMN in arrow_data.column_names:
             column_names = arrow_data.column_names
             indices_to_keep = [
-                i for i, name in enumerate(column_names) if name != "__entry_id"
+                i
+                for i, name in enumerate(column_names)
+                if name != self.RECORD_ID_COLUMN
             ]
             arrow_data = arrow_data.select(indices_to_keep)
         return arrow_data
 
-    def _handle_entry_id_column(
-        self, arrow_data: pa.Table, add_entry_id_column: bool | str = False
+    def _handle_record_id_column(
+        self, arrow_data: pa.Table, record_id_column: str | None = None
     ) -> pa.Table:
         """
-        Handle entry_id column based on add_entry_id_column parameter.
+        Handle record_id column based on add_record_id_column parameter.
 
         Args:
-            arrow_data: Arrow table with __entry_id column
-            add_entry_id_column: Control entry ID column inclusion:
-                - False: Remove __entry_id column
-                - True: Keep __entry_id column as is
-                - str: Rename __entry_id column to custom name
-        """
-        if add_entry_id_column is False:
-            # Remove the __entry_id column
-            return self._remove_entry_id_column(arrow_data)
-        elif isinstance(add_entry_id_column, str):
-            # Rename __entry_id to custom name
-            if "__entry_id" in arrow_data.column_names:
-                schema = arrow_data.schema
-                new_names = [
-                    add_entry_id_column if name == "__entry_id" else name
-                    for name in schema.names
-                ]
-                return arrow_data.rename_columns(new_names)
-        # If add_entry_id_column is True, keep __entry_id as is
-        return arrow_data
+            arrow_data: Arrow table with record id column
+            record_id_column: Control entry ID column inclusion:
 
-    def _create_entry_id_filter(self, entry_id: str) -> list:
+        """
+        if not record_id_column:
+            # Remove the record id column
+            return self._remove_record_id_column(arrow_data)
+
+        # Rename record id column
+        if self.RECORD_ID_COLUMN in arrow_data.column_names:
+            schema = arrow_data.schema
+            new_names = [
+                record_id_column if name == self.RECORD_ID_COLUMN else name
+                for name in schema.names
+            ]
+            return arrow_data.rename_columns(new_names)
+        else:
+            raise ValueError(
+                f"Record ID column '{self.RECORD_ID_COLUMN}' not found in the table and cannot be renamed."
+            )
+
+    def _create_record_id_filter(self, record_id: str) -> list:
         """
         Create a proper filter expression for Delta Lake.
 
         Args:
-            entry_id: The entry ID to filter by
+            record_id: The entry ID to filter by
 
         Returns:
             List containing the filter expression for Delta Lake
         """
-        return [("__entry_id", "=", entry_id)]
+        return [(self.RECORD_ID_COLUMN, "=", record_id)]
 
-    def _create_entry_ids_filter(self, entry_ids: list[str]) -> list:
+    def _create_record_ids_filter(self, record_ids: list[str]) -> list:
         """
         Create a proper filter expression for multiple entry IDs.
 
         Args:
-            entry_ids: List of entry IDs to filter by
+            record_ids: List of entry IDs to filter by
 
         Returns:
             List containing the filter expression for Delta Lake
         """
-        return [("__entry_id", "in", entry_ids)]
+        return [(self.RECORD_ID_COLUMN, "in", record_ids)]
 
     def _read_table_with_filter(
         self,
@@ -349,7 +359,7 @@ class BasicDeltaTableArrowStore:
             Arrow table with preserved schema
         """
         # Use to_pyarrow_dataset with as_large_types for Polars compatible arrow table loading
-        dataset: ds.Dataset = delta_table.to_pyarrow_dataset(as_large_types=True)
+        dataset = delta_table.to_pyarrow_dataset(as_large_types=True)
         if filters:
             # Apply filters at dataset level for better performance
             import pyarrow.compute as pc
@@ -379,36 +389,36 @@ class BasicDeltaTableArrowStore:
 
         return dataset.to_table()
 
-    def record_data(
+    def add_record(
         self,
         record_path: tuple[str, ...],
-        entry_id: str,
+        record_id: str,
         data: pa.Table,
-        force_flush: bool = False,
         ignore_duplicates: bool | None = None,
+        force_flush: bool = False,
     ) -> pa.Table:
-        self._validate_source_path(record_path)
+        self._validate_record_path(record_path)
         source_key = self._get_source_key(record_path)
 
         # Check for existing entry
         if ignore_duplicates is None:
             ignore_duplicates = self.duplicate_entry_behavior != "error"
         if not ignore_duplicates:
-            pending_table = self._pending_batches[source_key].get(entry_id, None)
+            pending_table = self._pending_batches[source_key].get(record_id, None)
             if pending_table is not None:
                 raise ValueError(
-                    f"Entry '{entry_id}' already exists in pending batch for {source_key}. "
+                    f"Entry '{record_id}' already exists in pending batch for {source_key}. "
                     f"Use duplicate_entry_behavior='overwrite' to allow updates."
                 )
-            existing_record = self.get_recorded_data(record_path, entry_id, flush=False)
+            existing_record = self.get_record_by_id(record_path, record_id, flush=False)
             if existing_record is not None:
                 raise ValueError(
-                    f"Entry '{entry_id}' already exists in {'/'.join(record_path)}. "
+                    f"Entry '{record_id}' already exists in {'/'.join(record_path)}. "
                     f"Use duplicate_entry_behavior='overwrite' to allow updates."
                 )
 
-        # Add entry_id column to the data
-        data_with_entry_id = self._ensure_entry_id_column(data, entry_id)
+        # Add record_id column to the data
+        data_with_record_id = self._ensure_record_id_column(data, record_id)
 
         if force_flush:
             # Write immediately
@@ -419,25 +429,25 @@ class BasicDeltaTableArrowStore:
 
             if delta_table is None:
                 # Create new table - save original schema first
-                write_deltalake(str(table_path), data_with_entry_id, mode="overwrite")
+                write_deltalake(str(table_path), data_with_record_id, mode="overwrite")
                 logger.debug(f"Created new Delta table for {source_key}")
             else:
                 if self.duplicate_entry_behavior == "overwrite":
                     try:
                         delta_table.delete(
-                            f"__entry_id = '{entry_id.replace(chr(39), chr(39) + chr(39))}'"
+                            f"{self.RECORD_ID_COLUMN} = '{record_id.replace(chr(39), chr(39) + chr(39))}'"
                         )
                         logger.debug(
-                            f"Deleted existing record {entry_id} from {source_key}"
+                            f"Deleted existing record {record_id} from {source_key}"
                         )
                     except Exception as e:
                         logger.debug(
-                            f"No existing record to delete for {entry_id}: {e}"
+                            f"No existing record to delete for {record_id}: {e}"
                         )
 
                 write_deltalake(
                     table_path,
-                    data_with_entry_id,
+                    data_with_record_id,
                     mode="append",
                     schema_mode="merge",
                 )
@@ -446,28 +456,41 @@ class BasicDeltaTableArrowStore:
             self._delta_table_cache[source_key] = DeltaTable(str(table_path))
         else:
             # Add to the batch for later flushing
-            self._pending_batches[source_key][entry_id] = data_with_entry_id
+            self._pending_batches[source_key][record_id] = data_with_record_id
             batch_size = len(self._pending_batches[source_key])
 
             # Check if we need to flush
             if batch_size >= self.batch_size:
                 self.flush_batch(record_path)
 
-        logger.debug(f"Added record {entry_id} to {source_key}")
+        logger.debug(f"Added record {record_id} to {source_key}")
         return data
 
-    def get_recorded_data(
+    def add_records(
         self,
         record_path: tuple[str, ...],
-        entry_id: str,
+        records: pa.Table,
+        record_id_column: str | None = None,
+        ignore_duplicates: bool | None = None,
+    ) -> list[str]:
+        raise NotImplementedError(
+            "add_records is not implemented in BasicDeltaTableArrowStore yet. "
+            "Use add_record for single record insertion."
+        )
+
+    def get_record_by_id(
+        self,
+        record_path: tuple[str, ...],
+        record_id: str,
+        record_id_column: str | None = None,
         flush: bool = False,
     ) -> pa.Table | None:
         """
-        Get a specific record by entry_id with schema preservation.
+        Get a specific record by record_id with schema preservation.
 
         Args:
-            source_path: Tuple of path components
-            entry_id: Unique identifier for the record
+            record_path: Tuple of path components
+            record_id: Unique identifier for the record
 
         Returns:
             Arrow table for the record or None if not found
@@ -475,14 +498,14 @@ class BasicDeltaTableArrowStore:
 
         if flush:
             self.flush_batch(record_path)
-        self._validate_source_path(record_path)
+        self._validate_record_path(record_path)
 
-        # check if entry_id is found in pending batches
+        # check if record_id is found in pending batches
         source_key = self._get_source_key(record_path)
-        if entry_id in self._pending_batches[source_key]:
+        if record_id in self._pending_batches[source_key]:
             # Return the pending record after removing the entry id column
-            return self._remove_entry_id_column(
-                self._pending_batches[source_key][entry_id]
+            return self._remove_record_id_column(
+                self._pending_batches[source_key][record_id]
             )
 
         delta_table = self._get_existing_delta_table(record_path)
@@ -491,25 +514,25 @@ class BasicDeltaTableArrowStore:
 
         try:
             # Use schema-preserving read
-            filter_expr = self._create_entry_id_filter(entry_id)
+            filter_expr = self._create_record_id_filter(record_id)
             result = self._read_table_with_filter(delta_table, filters=filter_expr)
 
             if len(result) == 0:
                 return None
 
-            # Remove the __entry_id column before returning
-            return self._remove_entry_id_column(result)
+            # Handle (remove/rename) the record id column before returning
+            return self._handle_record_id_column(result, record_id_column)
 
         except Exception as e:
             logger.error(
-                f"Error getting record {entry_id} from {'/'.join(record_path)}: {e}"
+                f"Error getting record {record_id} from {'/'.join(record_path)}: {e}"
             )
             raise e
 
     def get_all_records(
         self,
         record_path: tuple[str, ...],
-        add_entry_id_column: bool | str = False,
+        record_id_column: str | None = None,
         retrieve_pending: bool = True,
         flush: bool = False,
     ) -> pa.Table | None:
@@ -517,11 +540,8 @@ class BasicDeltaTableArrowStore:
         Retrieve all records for a given source path as a single table with schema preservation.
 
         Args:
-            source_path: Tuple of path components
-            add_entry_id_column: Control entry ID column inclusion:
-                - False: Don't include entry ID column (default)
-                - True: Include entry ID column as "__entry_id"
-                - str: Include entry ID column with custom name
+            record_path: Tuple of path components
+            record_id_column: If not None or empty, record id is returned in the result with the specified column name
 
         Returns:
             Arrow table containing all records with original schema, or None if no records found
@@ -530,16 +550,16 @@ class BasicDeltaTableArrowStore:
 
         if flush:
             self.flush_batch(record_path)
-        self._validate_source_path(record_path)
+        self._validate_record_path(record_path)
 
         collected_tables = []
         if retrieve_pending:
             # Check if there are pending records in the batch
-            for entry_id, arrow_table in self._pending_batches[
+            for record_id, arrow_table in self._pending_batches[
                 self._get_source_key(record_path)
             ].items():
                 collected_tables.append(
-                    self._ensure_entry_id_column(arrow_table, entry_id)
+                    self._ensure_record_id_column(arrow_table, record_id)
                 )
 
         delta_table = self._get_existing_delta_table(record_path)
@@ -558,44 +578,25 @@ class BasicDeltaTableArrowStore:
         if collected_tables:
             total_table = pa.concat_tables(collected_tables)
 
-            # Handle entry_id column based on parameter
-            return self._handle_entry_id_column(total_table, add_entry_id_column)
+            # Handle record_id column based on parameter
+            return self._handle_record_id_column(total_table, record_id_column)
 
         return None
 
-    # def get_all_records_as_polars(
-    #     self, source_path: tuple[str, ...], flush: bool = True
-    # ) -> pl.LazyFrame | None:
-    #     """
-    #     Retrieve all records for a given source path as a single Polars LazyFrame.
-
-    #     Args:
-    #         source_path: Tuple of path components
-
-    #     Returns:
-    #         Polars LazyFrame containing all records, or None if no records found
-    #     """
-    #     all_records = self.get_all_records(source_path, flush=flush)
-    #     if all_records is None:
-    #         return None
-    #     # TODO: take care of converting semantics to Python objects
-    #     return pl.LazyFrame(all_records.as_table())
-
     def get_records_by_ids(
         self,
-        source_path: tuple[str, ...],
-        entry_ids: list[str] | pl.Series | pa.Array,
-        add_entry_id_column: bool | str = False,
-        preserve_input_order: bool = False,
+        record_path: tuple[str, ...],
+        record_ids: list[str] | pl.Series | pa.Array,
+        record_id_column: str | None = None,
         flush: bool = False,
     ) -> pa.Table | None:
         """
         Retrieve records by entry IDs as a single table with schema preservation.
 
         Args:
-            source_path: Tuple of path components
-            entry_ids: Entry IDs to retrieve
-            add_entry_id_column: Control entry ID column inclusion
+            record_path: Tuple of path components
+            record_ids: Entry IDs to retrieve
+            add_record_id_column: Control entry ID column inclusion
             preserve_input_order: If True, return results in input order with nulls for missing
 
         Returns:
@@ -603,98 +604,48 @@ class BasicDeltaTableArrowStore:
         """
 
         if flush:
-            self.flush_batch(source_path)
+            self.flush_batch(record_path)
 
-        self._validate_source_path(source_path)
+        self._validate_record_path(record_path)
 
         # Convert input to list of strings for consistency
-        if isinstance(entry_ids, list):
-            if not entry_ids:
+        if isinstance(record_ids, list):
+            if not record_ids:
                 return None
-            entry_ids_list = entry_ids
-        elif isinstance(entry_ids, pl.Series):
-            if len(entry_ids) == 0:
+            record_ids_list = record_ids
+        elif isinstance(record_ids, pl.Series):
+            if len(record_ids) == 0:
                 return None
-            entry_ids_list = entry_ids.to_list()
-        elif isinstance(entry_ids, pa.Array):
-            if len(entry_ids) == 0:
+            record_ids_list = record_ids.to_list()
+        elif isinstance(record_ids, (pa.Array, pa.ChunkedArray)):
+            if len(record_ids) == 0:
                 return None
-            entry_ids_list = entry_ids.to_pylist()
+            record_ids_list = record_ids.to_pylist()
         else:
             raise TypeError(
-                f"entry_ids must be list[str], pl.Series, or pa.Array, got {type(entry_ids)}"
+                f"record_ids must be list[str], pl.Series, or pa.Array, got {type(record_ids)}"
             )
 
-        delta_table = self._get_existing_delta_table(source_path)
+        delta_table = self._get_existing_delta_table(record_path)
         if delta_table is None:
             return None
 
         try:
             # Use schema-preserving read with filters
-            filter_expr = self._create_entry_ids_filter(entry_ids_list)
+            filter_expr = self._create_record_ids_filter(record_ids_list)
             result = self._read_table_with_filter(delta_table, filters=filter_expr)
 
             if len(result) == 0:
                 return None
 
-            if preserve_input_order:
-                raise NotImplementedError("Preserve input order is not yet implemented")
-                # Need to reorder results and add nulls for missing entries
-                import pandas as pd
-
-                df = result.to_pandas()
-                df = df.set_index("__entry_id")
-
-                # Create a DataFrame with the desired order, filling missing with NaN
-                ordered_df = df.reindex(entry_ids_list)
-
-                # Convert back to Arrow
-                result = pa.Table.from_pandas(ordered_df.reset_index())
-
-            # Handle entry_id column based on parameter
-            return self._handle_entry_id_column(result, add_entry_id_column)
+            # Handle record_id column based on parameter
+            return self._handle_record_id_column(result, record_id_column)
 
         except Exception as e:
             logger.error(
-                f"Error getting records by IDs from {'/'.join(source_path)}: {e}"
+                f"Error getting records by IDs from {'/'.join(record_path)}: {e}"
             )
             return None
-
-    # def get_records_by_ids_as_polars(
-    #     self,
-    #     source_path: tuple[str, ...],
-    #     entry_ids: list[str] | pl.Series | pa.Array,
-    #     add_entry_id_column: bool | str = False,
-    #     preserve_input_order: bool = False,
-    #     flush: bool = False,
-    # ) -> pl.LazyFrame | None:
-    #     """
-    #     Retrieve records by entry IDs as a single Polars LazyFrame.
-
-    #     Args:
-    #         source_path: Tuple of path components
-    #         entry_ids: Entry IDs to retrieve
-    #         add_entry_id_column: Control entry ID column inclusion
-    #         preserve_input_order: If True, return results in input order with nulls for missing
-
-    #     Returns:
-    #         Polars LazyFrame containing all found records, or None if no records found
-    #     """
-    #     arrow_result = self.get_records_by_ids(
-    #         source_path,
-    #         entry_ids,
-    #         add_entry_id_column,
-    #         preserve_input_order,
-    #         flush=flush,
-    #     )
-
-    #     if arrow_result is None:
-    #         return None
-
-    #     # Convert to Polars LazyFrame
-    #     return pl.LazyFrame(arrow_result)
-
-    # Additional utility methods
 
     def get_pending_batch_info(self) -> dict[str, int]:
         """
@@ -738,23 +689,23 @@ class BasicDeltaTableArrowStore:
         _scan_directory(self.base_path, ())
         return sources
 
-    def delete_source(self, source_path: tuple[str, ...]) -> bool:
+    def delete_source(self, record_path: tuple[str, ...]) -> bool:
         """
         Delete an entire source (all records for a source path).
 
         Args:
-            source_path: Tuple of path components
+            record_path: Tuple of path components
 
         Returns:
             True if source was deleted, False if it didn't exist
         """
-        self._validate_source_path(source_path)
+        self._validate_record_path(record_path)
 
         # Flush any pending batches first
-        self.flush_batch(source_path)
+        self.flush_batch(record_path)
 
-        table_path = self._get_table_path(source_path)
-        source_key = self._get_source_key(source_path)
+        table_path = self._get_table_path(record_path)
+        source_key = self._get_source_key(record_path)
 
         if not table_path.exists():
             return False
@@ -776,64 +727,64 @@ class BasicDeltaTableArrowStore:
             logger.error(f"Error deleting source {source_key}: {e}")
             return False
 
-    def delete_record(self, source_path: tuple[str, ...], entry_id: str) -> bool:
+    def delete_record(self, record_path: tuple[str, ...], record_id: str) -> bool:
         """
         Delete a specific record.
 
         Args:
-            source_path: Tuple of path components
-            entry_id: ID of the record to delete
+            record_path: Tuple of path components
+            record_id: ID of the record to delete
 
         Returns:
             True if record was deleted, False if it didn't exist
         """
-        self._validate_source_path(source_path)
+        self._validate_record_path(record_path)
 
         # Flush any pending batches first
-        self.flush_batch(source_path)
+        self.flush_batch(record_path)
 
-        delta_table = self._get_existing_delta_table(source_path)
+        delta_table = self._get_existing_delta_table(record_path)
         if delta_table is None:
             return False
 
         try:
             # Check if record exists using proper filter
-            filter_expr = self._create_entry_id_filter(entry_id)
+            filter_expr = self._create_record_id_filter(record_id)
             existing = self._read_table_with_filter(delta_table, filters=filter_expr)
             if len(existing) == 0:
                 return False
 
             # Delete the record using SQL-style predicate (this is correct for delete operations)
             delta_table.delete(
-                f"__entry_id = '{entry_id.replace(chr(39), chr(39) + chr(39))}'"
+                f"{self.RECORD_ID_COLUMN} = '{record_id.replace(chr(39), chr(39) + chr(39))}'"
             )
 
             # Update cache
-            source_key = self._get_source_key(source_path)
+            source_key = self._get_source_key(record_path)
             self._delta_table_cache[source_key] = delta_table
 
-            logger.debug(f"Deleted record {entry_id} from {'/'.join(source_path)}")
+            logger.debug(f"Deleted record {record_id} from {'/'.join(record_path)}")
             return True
 
         except Exception as e:
             logger.error(
-                f"Error deleting record {entry_id} from {'/'.join(source_path)}: {e}"
+                f"Error deleting record {record_id} from {'/'.join(record_path)}: {e}"
             )
             return False
 
-    def get_table_info(self, source_path: tuple[str, ...]) -> dict[str, Any] | None:
+    def get_table_info(self, record_path: tuple[str, ...]) -> dict[str, Any] | None:
         """
         Get metadata information about a Delta table.
 
         Args:
-            source_path: Tuple of path components
+            record_path: Tuple of path components
 
         Returns:
             Dictionary with table metadata, or None if table doesn't exist
         """
-        self._validate_source_path(source_path)
+        self._validate_record_path(record_path)
 
-        delta_table = self._get_existing_delta_table(source_path)
+        delta_table = self._get_existing_delta_table(record_path)
         if delta_table is None:
             return None
 
@@ -841,15 +792,15 @@ class BasicDeltaTableArrowStore:
             # Get basic info
             schema = delta_table.schema()
             history = delta_table.history()
-            source_key = self._get_source_key(source_path)
+            source_key = self._get_source_key(record_path)
 
             # Add pending batch info
             pending_info = self.get_pending_batch_info()
             pending_count = pending_info.get(source_key, 0)
 
             return {
-                "path": str(self._get_table_path(source_path)),
-                "source_path": source_path,
+                "path": str(self._get_table_path(record_path)),
+                "record_path": record_path,
                 "schema": schema,
                 "version": delta_table.version(),
                 "num_files": len(delta_table.files()),
@@ -859,5 +810,5 @@ class BasicDeltaTableArrowStore:
             }
 
         except Exception as e:
-            logger.error(f"Error getting table info for {'/'.join(source_path)}: {e}")
+            logger.error(f"Error getting table info for {'/'.join(record_path)}: {e}")
             return None

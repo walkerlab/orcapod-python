@@ -20,6 +20,8 @@ from orcapod.types import TypeSpec
 from orcapod.types.schemas import PythonSchema
 from orcapod.types.semantic_converter import SemanticConverter
 from orcapod.types import typespec_utils as tsutils
+from orcapod.utils import arrow_utils
+from orcapod.data.system_constants import orcapod_constants as constants
 import pyarrow as pa
 
 logger = logging.getLogger(__name__)
@@ -255,7 +257,10 @@ class FunctionPod(ActivatablePodBase):
 
     @property
     def kernel_id(self) -> tuple[str, ...]:
-        return (self.function_name,)
+        return (
+            self.function_name,
+            self.data_context.object_hasher.hash_to_hex(self),
+        )
 
     def input_packet_types(self) -> PythonSchema:
         """
@@ -284,6 +289,8 @@ class FunctionPod(ActivatablePodBase):
         return f"FunctionPod:{func_sig}"
 
     def call(self, tag: dp.Tag, packet: dp.Packet) -> tuple[dp.Tag, DictPacket | None]:
+        v: dp.Packet = DictPacket({})
+        print(v)
         if not self.is_active():
             logger.info(
                 f"Pod is not active: skipping computation on input packet {packet}"
@@ -311,9 +318,12 @@ class FunctionPod(ActivatablePodBase):
                 f"Number of output keys {len(self.output_keys)}:{self.output_keys} does not match number of values returned by function {len(output_values)}"
             )
 
-        # TODO: add source info based on this function call
+        output_data = {k: v for k, v in zip(self.output_keys, output_values)}
+        source_info = {k: ":".join(self.kernel_id + (k,)) for k in output_data}
+
         output_packet = DictPacket(
             {k: v for k, v in zip(self.output_keys, output_values)},
+            source_info=source_info,
             typespec=self.output_packet_types(),
             semantic_converter=self._output_semantic_converter,
             data_context=self._data_context,
@@ -365,9 +375,17 @@ class WrappedPod(ActivatablePodBase):
         pod: dp.Pod,
         fixed_input_streams: tuple[dp.Stream, ...] | None = None,
         label: str | None = None,
+        data_context: str | DataContext | None = None,
         **kwargs,
     ) -> None:
-        super().__init__(fixed_input_streams=fixed_input_streams, label=label, **kwargs)
+        if data_context is None:
+            data_context = pod.data_context_key
+        super().__init__(
+            fixed_input_streams=fixed_input_streams,
+            label=label,
+            data_context=data_context,
+            **kwargs,
+        )
         self.pod = pod
 
     @property
@@ -414,31 +432,26 @@ class CachedPod(WrappedPod):
     This is useful for pods that are expensive to compute and can benefit from caching.
     """
 
+    # name of the column in the tag store that contains the packet hash
+    PACKET_HASH_COLUMN = f"{constants.META_PREFIX}packet_hash"
+
     def __init__(
         self,
         pod: dp.Pod,
         result_store: ArrowDataStore,
-        lineage_store: ArrowDataStore | None,
+        pipeline_store: ArrowDataStore | None,
         record_path_prefix: tuple[str, ...] = (),
         **kwargs,
     ):
         super().__init__(pod, **kwargs)
         self.record_path_prefix = record_path_prefix
         self.result_store = result_store
-        self.lineage_store = lineage_store
+        self.pipeline_store = pipeline_store
         # unset data_context native to the object
 
         self.pod_hash = self.data_context.object_hasher.hash_to_hex(
             self.pod, prefix_hasher_id=True
         )
-
-    @property
-    def kernel_id(self) -> tuple[str, ...]:
-        """
-        Return the pod ID, which is the function name of the wrapped pod.
-        This is used to identify the pod in the system.
-        """
-        return self.pod.kernel_id + (self.pod_hash,)
 
     @property
     def record_path(self) -> tuple[str, ...]:
@@ -448,14 +461,65 @@ class CachedPod(WrappedPod):
         """
         return self.record_path_prefix + self.kernel_id
 
-    def call(self, tag: dp.Tag, packet: dp.Packet) -> tuple[dp.Tag, dp.Packet | None]:
+    def call(
+        self,
+        tag: dp.Tag,
+        packet: dp.Packet,
+        skip_recording: bool = False,
+    ) -> tuple[dp.Tag, dp.Packet | None]:
         output_packet = self.get_recorded_output_packet(packet)
+        if output_packet is None:
+            tag, output_packet = self.pod.call(tag, packet)
+            if output_packet is not None and not skip_recording:
+                self.record_packet(packet, output_packet)
+
         if output_packet is not None:
-            return tag, output_packet
-        output_tag, output_packet = self.pod.call(tag, packet)
-        if output_packet is not None:
-            self.record_packet(packet, output_packet)
-        return output_tag, output_packet
+            self.add_pipeline_record(tag, input_packet=packet)
+        return tag, output_packet
+
+    def add_pipeline_record(self, tag: dp.Tag, input_packet: dp.Packet) -> None:
+        if self.pipeline_store is None:
+            # no pipeline store configured, skip recording
+            return
+        # combine dp.Tag with packet content hash to compute entry hash
+        tag_with_hash = tag.as_table().append_column(
+            self.PACKET_HASH_COLUMN,
+            pa.array([input_packet.content_hash()], type=pa.large_string()),
+        )
+        entry_id = self.data_context.arrow_hasher.hash_table(
+            tag_with_hash, prefix_hasher_id=True
+        )
+
+        existing_record = self.pipeline_store.get_record_by_id(
+            self.record_path,
+            entry_id,
+        )
+
+        if existing_record is not None:
+            # if the record already exists, return it
+            return
+
+        # no record matching, so construct the full record
+
+        input_packet_info = (
+            input_packet.as_table(
+                include_source=True,
+            )
+            .append_column(
+                f"{constants.META_PREFIX}input_packet{constants.CONTEXT_KEY}",
+                pa.array([input_packet.data_context_key], type=pa.large_string()),
+            )
+            .drop(input_packet.keys())
+        )
+
+        combined_record = arrow_utils.hstack_tables(tag_with_hash, input_packet_info)
+
+        self.pipeline_store.add_record(
+            self.record_path,
+            entry_id,
+            combined_record,
+            ignore_duplicates=False,
+        )
 
     def record_packet(
         self,
@@ -466,16 +530,9 @@ class CachedPod(WrappedPod):
         """
         Record the output packet against the input packet in the result store.
         """
-        data_table = output_packet.as_table(
-            include_data_context=True, include_source=True
-        )
+        data_table = output_packet.as_table(include_context=True, include_source=True)
 
-        data_table = data_table.append_column(
-            f"_input_packet{DataContext.get_data_context_column()}",
-            pa.array([input_packet.data_context_key], type=pa.large_string()),
-        )
-
-        result_flag = self.result_store.record_data(
+        result_flag = self.result_store.add_record(
             self.record_path,
             input_packet.content_hash(),
             data_table,
@@ -494,14 +551,47 @@ class CachedPod(WrappedPod):
         Retrieve the output packet from the result store based on the input packet.
         If the output packet is not found, return None.
         """
-        result_table = self.result_store.get_recorded_data(
+        result_table = self.result_store.get_record_by_id(
             self.record_path, input_packet.content_hash()
         )
         if result_table is None:
             return None
 
-        return ArrowPacket(
-            result_table.drop(
-                [f"_input_packet{DataContext.get_data_context_column()}"]
-            ),
+        return ArrowPacket(result_table)
+
+    def _get_all_records(self) -> "pa.Table | None":
+        results = self.result_store.get_all_records(
+            self.record_path, record_id_column=self.PACKET_HASH_COLUMN
         )
+
+        if self.pipeline_store is None:
+            raise ValueError(
+                "Pipeline store is not configured, cannot retrieve tag info"
+            )
+        taginfo = self.pipeline_store.get_all_records(
+            self.record_path,
+        )
+
+        if results is None or taginfo is None:
+            return None
+
+        tag_columns = [
+            c
+            for c in taginfo.column_names
+            if not c.startswith(constants.META_PREFIX)
+            and not c.startswith(constants.SOURCE_PREFIX)
+        ]
+
+        packet_columns = [
+            c for c in results.column_names if c != self.PACKET_HASH_COLUMN
+        ]
+
+        # TODO: do not hardcode the join keys
+        joined_info = taginfo.join(
+            results,
+            self.PACKET_HASH_COLUMN,
+            join_type="inner",
+        )
+
+        joined_info = joined_info.select([*tag_columns, *packet_columns])
+        return joined_info

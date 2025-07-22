@@ -49,6 +49,11 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         return self._data_context
 
     @property
+    def data_context_key(self) -> str:
+        """Return the data context key."""
+        return self._data_context.context_key
+
+    @property
     @abstractmethod
     def kernel_id(self) -> tuple[str, ...]: ...
 

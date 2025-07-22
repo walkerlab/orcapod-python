@@ -1,4 +1,4 @@
-from orcapod.protocols.hashing_protocols import FunctionInfoExtractor, ObjectHasher
+from orcapod.protocols.hashing_protocols import FunctionInfoExtractor
 from orcapod.hashing import legacy_core
 from orcapod.hashing import hash_utils
 from typing import Any

@@ -1,23 +1,43 @@
-from typing import Protocol, Any, ContextManager
-from orcapod.types import DataValue, TypeSpec
-from orcapod.protocols.hashing_protocols import ContentIdentifiable
-from collections.abc import Iterator, Collection
-import pyarrow as pa
+from collections.abc import Collection, Iterator, Mapping
 from datetime import datetime
+from typing import Any, ContextManager, Protocol, Self, TYPE_CHECKING
+from orcapod.protocols.hashing_protocols import ContentIdentifiable
+from orcapod.types import DataValue, TypeSpec
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 
 class Datagram(Protocol):
     """
-    Base protocol for all data containers in Orcapod.
+    Protocol for immutable datagram containers in Orcapod.
 
     Datagrams are the fundamental units of data that flow through the system.
-    They provide a unified interface for data access and conversion, ensuring
-    consistent behavior across different data types and sources.
+    They provide a unified interface for data access, conversion, and manipulation,
+    ensuring consistent behavior across different storage backends (dict, Arrow table, etc.).
 
-    TypeSpec is a dict[str, type] mapping field names to their Python types,
-    enabling type checking and validation throughout the computational graph.
+    Each datagram contains:
+    - **Data columns**: The primary business data (user_id, name, etc.)
+    - **Meta columns**: Internal system metadata with {orcapod.META_PREFIX} ('__') prefixes (__processed_at, etc.)
+    - **Context column**: Data context information ({orcapod.CONTEXT_KEY})
+
+    Future Packet subclass will also include:
+    - **Source info columns**: Data provenance with {orcapod.SOURCE_PREFIX} ('_source_') prefixes (_source_user_id, etc.)
+
+    When exposing to external tools without field metadata support, semantic types
+    are encoded as `_{semantic_type}_` prefixes (_path_config_file, _id_user_name, etc.).
+
+    All operations are immutable - methods return new datagram instances rather than
+    modifying existing ones.
+
+    Example:
+        >>> datagram = DictDatagram({"user_id": 123, "name": "Alice"})
+        >>> updated = datagram.update(name="Alice Smith")
+        >>> filtered = datagram.select("user_id", "name")
+        >>> table = datagram.as_table()
     """
 
+    # 1. Core Properties (Identity & Structure)
     @property
     def data_context_key(self) -> str:
         """
@@ -27,91 +47,527 @@ class Datagram(Protocol):
         contextual information needed to properly interpret and work with this
         datagram across various operations (storage, visualization, processing, etc.).
 
-        Context key formats:
-        - Standard contexts: "std:v1.2.3:fingerprint"
-        - Custom contexts: "custom:user_provided_id"
-
-        Concrete implementation can make use of this context key to ensure necessary background
-        informaton / object is available for correct processing of the datagram.
-
         Returns:
             str: Context key for proper datagram interpretation
         """
         ...
 
-    def types(self, include_data_context: bool = False) -> TypeSpec:
-        """
-        Return the type specification for this datagram.
+    @property
+    def meta_columns(self) -> tuple[str, ...]:
+        """Return tuple of meta column names (with {orcapod.META_PREFIX} ('__') prefix)."""
+        ...
 
-        The TypeSpec maps field names to their Python types, enabling
-        type checking and validation throughout the system.
+    # 2. Dict-like Interface (Data Access)
+    def __getitem__(self, key: str) -> DataValue:
+        """
+        Get data column value by key.
+
+        Provides dict-like access to data columns only. Meta columns
+        are not accessible through this method (use `get_meta_value()` instead).
+
+        Args:
+            key: Data column name.
 
         Returns:
-            TypeSpec: Dictionary mapping field names to Python types
+            The value stored in the specified data column.
+
+        Raises:
+            KeyError: If the column doesn't exist in data columns.
+
+        Example:
+            >>> datagram["user_id"]
+            123
+            >>> datagram["name"]
+            'Alice'
         """
         ...
 
-    def arrow_schema(self, include_data_context: bool = False) -> pa.Schema:
+    def __contains__(self, key: str) -> bool:
         """
-        Return the PyArrow schema for this datagram.
+        Check if data column exists.
 
-        The schema provides a structured representation of the datagram's
-        fields and their types, enabling efficient serialization and
-        deserialization with PyArrow.
+        Args:
+            key: Column name to check.
 
         Returns:
-            pa.Schema: PyArrow schema representation of the datagram
+            True if column exists in data columns, False otherwise.
+
+        Example:
+            >>> "user_id" in datagram
+            True
+            >>> "nonexistent" in datagram
+            False
         """
         ...
 
-    def keys(self) -> Collection[str]:
+    def __iter__(self) -> Iterator[str]:
         """
-        Return the available keys/fields in this datagram.
+        Iterate over data column names.
 
-        This provides a way to inspect the structure of the datagram
-        without accessing the actual data values.
+        Provides for-loop support over column names, enabling natural iteration
+        patterns without requiring conversion to dict.
 
-        Returns:
-            Collection[str]: Available field names
-        """
-        ...
+        Yields:
+            Data column names in no particular order.
 
-    def as_table(self, include_data_context: bool = False) -> pa.Table:
-        """
-        Convert to PyArrow Table format.
-
-        Provides a standardized way to convert datagram content to
-        a columnar format suitable for analysis and processing.
-
-        Returns:
-            pa.Table: PyArrow table representation
+        Example:
+            >>> for column in datagram:
+            ...     value = datagram[column]
+            ...     print(f"{column}: {value}")
         """
         ...
 
-    def as_dict(self, include_data_context: bool = False) -> dict[str, DataValue]:
+    def get(self, key: str, default: DataValue = None) -> DataValue:
         """
-        Convert to dictionary format.
+        Get data column value with default fallback.
 
-        Provides a simple key-value representation of the datagram
-        content, useful for debugging and simple data access.
+        Args:
+            key: Data column name.
+            default: Value to return if column doesn't exist.
 
         Returns:
-            dict[str, DataValue]: Dictionary representation
+            Column value if exists, otherwise the default value.
+
+        Example:
+            >>> datagram.get("user_id")
+            123
+            >>> datagram.get("missing", "default")
+            'default'
+        """
+        ...
+
+    # 3. Structural Information
+    def keys(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+    ) -> tuple[str, ...]:
+        """
+        Return tuple of column names.
+
+        Provides access to column names with filtering options for different
+        column types. Default returns only data column names.
+
+        Args:
+            include_meta_columns: Controls meta column inclusion.
+                - False: Return only data column names (default)
+                - True: Include all meta column names
+                - Collection[str]: Include meta columns matching these prefixes. If absent,
+                    {orcapod.META_PREFIX} ('__') prefix is prepended to each key.
+            include_context: Whether to include context column.
+
+        Returns:
+            Tuple of column names based on inclusion criteria.
+
+        Example:
+            >>> datagram.keys()  # Data columns only
+            ('user_id', 'name', 'email')
+            >>> datagram.keys(include_meta_columns=True)
+            ('user_id', 'name', 'email', f'{orcapod.META_PREFIX}processed_at', f'{orcapod.META_PREFIX}pipeline_version')
+            >>> datagram.keys(include_meta_columns=["pipeline"])
+            ('user_id', 'name', 'email',f'{orcapod.META_PREFIX}pipeline_version')
+            >>> datagram.keys(include_context=True)
+            ('user_id', 'name', 'email', f'{orcapod.CONTEXT_KEY}')
+        """
+        ...
+
+    def types(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+    ) -> TypeSpec:
+        """
+        Return type specification mapping field names to Python types.
+
+        The TypeSpec enables type checking and validation throughout the system.
+
+        Args:
+            include_meta_columns: Controls meta column type inclusion.
+                - False: Exclude meta column types (default)
+                - True: Include all meta column types
+                - Collection[str]: Include meta column types matching these prefixes. If absent,
+                    {orcapod.META_PREFIX} ('__') prefix is prepended to each key.
+            include_context: Whether to include context type.
+
+        Returns:
+            TypeSpec mapping field names to their Python types.
+
+        Example:
+            >>> datagram.types()
+            {'user_id': <class 'int'>, 'name': <class 'str'>}
+        """
+        ...
+
+    def arrow_schema(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+    ) -> "pa.Schema":
+        """
+        Return PyArrow schema representation.
+
+        The schema provides structured field and type information for efficient
+        serialization and deserialization with PyArrow.
+
+        Args:
+            include_meta_columns: Controls meta column schema inclusion.
+                - False: Exclude meta columns (default)
+                - True: Include all meta columns
+                - Collection[str]: Include meta columns matching these prefixes. If absent,
+                    {orcapod.META_PREFIX} ('__') prefix is prepended to each key.
+            include_context: Whether to include context column.
+
+        Returns:
+            PyArrow Schema describing the datagram structure.
+
+        Example:
+            >>> schema = datagram.arrow_schema()
+            >>> schema.names
+            ['user_id', 'name']
         """
         ...
 
     def content_hash(self) -> str:
         """
-        Return a hash of the packet content for caching/comparison.
+        Return deterministic hash of datagram content.
 
-        This hash should be deterministic and based only on the packet content,
-        not on source information or metadata. Used for:
-        - Caching computation results
-        - Detecting data changes
-        - Deduplication operations
+        The hash should reflect the data content, typically excluding meta columns
+        and context. Used for caching, comparison, and deduplication. For exact details of
+        hash computation, refer to the implementation in the specific datagram class/subclass.
 
         Returns:
-            str: Deterministic hash of packet content
+            Deterministic content hash string.
+
+        Note:
+            Two datagrams with identical data columns will have the same hash,
+            even if they differ in meta columns or context.
+
+        Example:
+            >>> datagram.content_hash()
+            'sha256:abc123def456...'
+        """
+        ...
+
+    # 4. Format Conversions (Export)
+    def as_dict(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+    ) -> dict[str, DataValue]:
+        """
+        Convert datagram to dictionary format.
+
+        Provides a simple key-value representation useful for debugging,
+        serialization, and interop with dict-based APIs.
+
+        Args:
+            include_meta_columns: Controls meta column inclusion.
+                - False: Exclude all meta columns (default)
+                - True: Include all meta columns
+                - Collection[str]: Include meta columns matching these prefixes. If absent,
+                    {orcapod.META_PREFIX} ('__') prefix is prepended to each key.
+            include_context: Whether to include the context key.
+            include_all_info: If True, include all available information. This option supersedes all other inclusion options.
+
+
+        Returns:
+            Dictionary with requested columns as key-value pairs.
+
+        Example:
+            >>> data = datagram.as_dict()  # {'user_id': 123, 'name': 'Alice'}
+            >>> full_data = datagram.as_dict(
+            ...     include_meta_columns=True,
+            ...     include_context=True
+            ... )
+        """
+        ...
+
+    def as_table(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+    ) -> "pa.Table":
+        """
+        Convert datagram to PyArrow Table format.
+
+        Provides a standardized columnar representation suitable for analysis,
+        processing, and interoperability with Arrow-based tools.
+
+        Args:
+            include_meta_columns: Controls meta column inclusion.
+                - False: Exclude all meta columns (default)
+                - True: Include all meta columns
+                - Collection[str]: Include meta columns matching these prefixes. If absent,
+                    {orcapod.META_PREFIX} ('__') prefix is prepended to each key.
+            include_context: Whether to include the context column.
+            include_all_info: If True, include all available information. This option supersedes all other inclusion options.
+
+        Returns:
+            PyArrow Table with requested columns.
+
+        Example:
+            >>> table = datagram.as_table()  # Data columns only
+            >>> full_table = datagram.as_table(
+            ...     include_meta_columns=True,
+            ...     include_context=True
+            ... )
+            >>> filtered = datagram.as_table(include_meta_columns=["pipeline"])   # same as passing f"{orcapod.META_PREFIX}pipeline"
+        """
+        ...
+
+    # 5. Meta Column Operations
+    def get_meta_value(self, key: str, default: DataValue = None) -> DataValue:
+        """
+        Get meta column value with optional default.
+
+        Meta columns store operational metadata and use {orcapod.META_PREFIX} ('__') prefixes.
+        This method handles both prefixed and unprefixed key formats.
+
+        Args:
+            key: Meta column key (with or without {orcapod.META_PREFIX} ('__') prefix).
+            default: Value to return if meta column doesn't exist.
+
+        Returns:
+            Meta column value if exists, otherwise the default value.
+
+        Example:
+            >>> datagram.get_meta_value("pipeline_version")  # Auto-prefixed
+            'v2.1.0'
+            >>> datagram.get_meta_value("__pipeline_version")  # Already prefixed
+            'v2.1.0'
+            >>> datagram.get_meta_value("missing", "default")
+            'default'
+        """
+        ...
+
+    def with_meta_columns(self, **updates: DataValue) -> Self:
+        """
+        Create new datagram with updated meta columns.
+
+        Adds or updates operational metadata while preserving all data columns.
+        Keys are automatically prefixed with {orcapod.META_PREFIX} ('__') if needed.
+
+        Args:
+            **updates: Meta column updates as keyword arguments.
+
+        Returns:
+            New datagram instance with updated meta columns.
+
+        Example:
+            >>> tracked = datagram.with_meta_columns(
+            ...     processed_by="pipeline_v2",
+            ...     timestamp="2024-01-15T10:30:00Z"
+            ... )
+        """
+        ...
+
+    def drop_meta_columns(self, *keys: str, ignore_missing: bool = False) -> Self:
+        """
+        Create new datagram with specified meta columns removed.
+
+        Args:
+            *keys: Meta column keys to remove (prefixes optional).
+            ignore_missing: If True, ignore missing columns without raising an error.
+
+
+        Returns:
+            New datagram instance without specified meta columns.
+
+        Raises:
+            KeryError: If any specified meta column to drop doesn't exist and ignore_missing=False.
+
+        Example:
+            >>> cleaned = datagram.drop_meta_columns("old_source", "temp_debug")
+        """
+        ...
+
+    # 6. Data Column Operations
+    def select(self, *column_names: str) -> Self:
+        """
+        Create new datagram with only specified data columns.
+
+        Args:
+            *column_names: Data column names to keep.
+
+
+        Returns:
+            New datagram instance with only specified data columns. All other columns including
+            meta columns and context are preserved.
+
+        Raises:
+            KeyError: If any specified column doesn't exist.
+
+        Example:
+            >>> subset = datagram.select("user_id", "name", "email")
+        """
+        ...
+
+    def drop(self, *column_names: str, ignore_missing: bool = False) -> Self:
+        """
+        Create new datagram with specified data columns removed. Note that this does not
+        remove meta columns or context column. Refer to `drop_meta_columns()` for dropping
+        specific meta columns. Context key column can never be dropped but a modified copy
+        can be created with a different context key using `with_data_context()`.
+
+        Args:
+            *column_names: Data column names to remove.
+            ignore_missing: If True, ignore missing columns without raising an error.
+
+        Returns:
+            New datagram instance without specified data columns.
+
+        Raises:
+            KeryError: If any specified column to drop doesn't exist and ignore_missing=False.
+
+        Example:
+            >>> filtered = datagram.drop("temp_field", "debug_info")
+        """
+        ...
+
+    def rename(
+        self,
+        column_mapping: Mapping[str, str],
+    ) -> Self:
+        """
+        Create new datagram with data columns renamed.
+
+        Args:
+            column_mapping: Mapping from old names to new names.
+
+        Returns:
+            New datagram instance with renamed data columns.
+
+        Example:
+            >>> renamed = datagram.rename(
+            ...     {"old_id": "user_id", "old_name": "full_name"},
+            ...     column_types={"user_id": int}
+            ... )
+        """
+        ...
+
+    def update(self, **updates: DataValue) -> Self:
+        """
+        Create new datagram with existing column values updated.
+
+        Updates values in existing data columns. Will error if any specified
+        column doesn't exist - use with_columns() to add new columns.
+
+        Args:
+            **updates: Column names and their new values.
+
+        Returns:
+            New datagram instance with updated values.
+
+        Raises:
+            KeyError: If any specified column doesn't exist.
+
+        Example:
+            >>> updated = datagram.update(
+            ...     file_path="/new/absolute/path.txt",
+            ...     status="processed"
+            ... )
+        """
+        ...
+
+    def with_columns(
+        self,
+        column_types: Mapping[str, type] | None = None,
+        **updates: DataValue,
+    ) -> Self:
+        """
+        Create new datagram with additional data columns.
+
+        Adds new data columns to the datagram. Will error if any specified
+        column already exists - use update() to modify existing columns.
+
+        Args:
+            column_types: Optional type specifications for new columns. If not provided, the column type is
+                inferred from the provided values. If value is None, the column type defaults to `str`.
+            **kwargs: New columns as keyword arguments.
+
+        Returns:
+            New datagram instance with additional data columns.
+
+        Raises:
+            ValueError: If any specified column already exists.
+
+        Example:
+            >>> expanded = datagram.with_columns(
+            ...     status="active",
+            ...     score=95.5,
+            ...     column_types={"score": float}
+            ... )
+        """
+        ...
+
+    # 7. Context Operations
+    def with_context_key(self, new_context_key: str) -> Self:
+        """
+        Create new datagram with different context key.
+
+        Changes the semantic interpretation context while preserving all data.
+        The context key affects how columns are processed and converted.
+
+        Args:
+            new_context_key: New context key string.
+
+        Returns:
+            New datagram instance with updated context key.
+
+        Note:
+            How the context is interpreted depends on the datagram implementation.
+            Semantic processing may be rebuilt for the new context.
+
+        Example:
+            >>> financial_datagram = datagram.with_context_key("financial_v1")
+        """
+        ...
+
+    # 8. Utility Operations
+    def copy(self) -> Self:
+        """
+        Create a shallow copy of the datagram.
+
+        Returns a new datagram instance with the same data and cached values.
+        This is more efficient than reconstructing from scratch when you need
+        an identical datagram instance.
+
+        Returns:
+            New datagram instance with copied data and caches.
+
+        Example:
+            >>> copied = datagram.copy()
+            >>> copied is datagram  # False - different instance
+            False
+        """
+        ...
+
+    # 9. String Representations
+    def __str__(self) -> str:
+        """
+        Return user-friendly string representation.
+
+        Shows the datagram as a simple dictionary for user-facing output,
+        messages, and logging. Only includes data columns for clean output.
+
+        Returns:
+            Dictionary-style string representation of data columns only.
+        """
+        ...
+
+    def __repr__(self) -> str:
+        """
+        Return detailed string representation for debugging.
+
+        Shows the datagram type and comprehensive information for debugging.
+
+        Returns:
+            Detailed representation with type and metadata information.
         """
         ...
 
@@ -157,43 +613,197 @@ class Packet(Datagram, Protocol):
     data flow: Tags provide context, Packets provide content.
     """
 
-    def as_table(
-        self, include_data_context: bool = False, include_source: bool = False
-    ) -> pa.Table:
+    def keys(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+        include_source: bool = False,
+    ) -> tuple[str, ...]:
         """
-        Convert the packet to a PyArrow Table.
+        Return tuple of column names.
+
+        Provides access to column names with filtering options for different
+        column types. Default returns only data column names.
 
         Args:
-            include_source: If True, source information is included in the table
-                          for debugging and lineage tracking
+            include_all_info: If True, include all available information. This option supersedes all other inclusion options.
+            include_meta_columns: Controls meta column inclusion.
+                - False: Return only data column names (default)
+                - True: Include all meta column names
+                - Collection[str]: Include meta columns matching these prefixes. If absent,
+                    {orcapod.META_PREFIX} ('__') prefix is prepended to each key.
+            include_context: Whether to include context column.
+            include_source: Whether to include source info fields.
+
 
         Returns:
-            pa.Table: PyArrow table representation of packet data
+            Tuple of column names based on inclusion criteria.
+
+        Example:
+            >>> datagram.keys()  # Data columns only
+            ('user_id', 'name', 'email')
+            >>> datagram.keys(include_meta_columns=True)
+            ('user_id', 'name', 'email', f'{orcapod.META_PREFIX}processed_at', f'{orcapod.META_PREFIX}pipeline_version')
+            >>> datagram.keys(include_meta_columns=["pipeline"])
+            ('user_id', 'name', 'email',f'{orcapod.META_PREFIX}pipeline_version')
+            >>> datagram.keys(include_context=True)
+            ('user_id', 'name', 'email', f'{orcapod.CONTEXT_KEY}')
+        """
+        ...
+
+    def types(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+        include_source: bool = False,
+    ) -> TypeSpec:
+        """
+        Return type specification mapping field names to Python types.
+
+        The TypeSpec enables type checking and validation throughout the system.
+
+        Args:
+            include_all_info: If True, include all available information. This option supersedes all other inclusion options.
+            include_meta_columns: Controls meta column type inclusion.
+                - False: Exclude meta column types (default)
+                - True: Include all meta column types
+                - Collection[str]: Include meta column types matching these prefixes. If absent,
+                    {orcapod.META_PREFIX} ('__') prefix is prepended to each key.
+            include_context: Whether to include context type.
+            include_source: Whether to include source info fields.
+
+        Returns:
+            TypeSpec mapping field names to their Python types.
+
+        Example:
+            >>> datagram.types()
+            {'user_id': <class 'int'>, 'name': <class 'str'>}
+        """
+        ...
+
+    def arrow_schema(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+        include_source: bool = False,
+    ) -> "pa.Schema":
+        """
+        Return PyArrow schema representation.
+
+        The schema provides structured field and type information for efficient
+        serialization and deserialization with PyArrow.
+
+        Args:
+            include_all_info: If True, include all available information. This option supersedes all other inclusion options.
+            include_meta_columns: Controls meta column schema inclusion.
+                - False: Exclude meta columns (default)
+                - True: Include all meta columns
+                - Collection[str]: Include meta columns matching these prefixes. If absent,
+                    {orcapod.META_PREFIX} ('__') prefix is prepended to each key.
+            include_context: Whether to include context column.
+            include_source: Whether to include source info fields.
+
+
+        Returns:
+            PyArrow Schema describing the datagram structure.
+
+        Example:
+            >>> schema = datagram.arrow_schema()
+            >>> schema.names
+            ['user_id', 'name']
         """
         ...
 
     def as_dict(
-        self, include_data_context: bool = False, include_source: bool = False
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+        include_source: bool = False,
     ) -> dict[str, DataValue]:
         """
-        Convert the packet to a dictionary.
+        Convert datagram to dictionary format.
+
+        Provides a simple key-value representation useful for debugging,
+        serialization, and interop with dict-based APIs.
 
         Args:
-            include_source: If True, source information is included in the dictionary
-                          for debugging and lineage tracking
+            include_all_info: If True, include all available information. This option supersedes all other inclusion options.
+            include_meta_columns: Controls meta column inclusion.
+                - False: Exclude all meta columns (default)
+                - True: Include all meta columns
+                - Collection[str]: Include meta columns matching these prefixes. If absent,
+                    {orcapod.META_PREFIX} ('__') prefix is prepended to each key.
+            include_context: Whether to include the context key.
+            include_source: Whether to include source info fields.
+
 
         Returns:
-            dict[str, DataValue]: Dictionary representation of packet data
+            Dictionary with requested columns as key-value pairs.
+
+        Example:
+            >>> data = datagram.as_dict()  # {'user_id': 123, 'name': 'Alice'}
+            >>> full_data = datagram.as_dict(
+            ...     include_meta_columns=True,
+            ...     include_context=True
+            ... )
         """
         ...
 
-    def as_datagram(self, include_source: bool = False) -> Datagram:
+    def as_table(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+        include_source: bool = False,
+    ) -> "pa.Table":
+        """
+        Convert datagram to PyArrow Table format.
+
+        Provides a standardized columnar representation suitable for analysis,
+        processing, and interoperability with Arrow-based tools.
+
+        Args:
+            include_all_info: If True, include all available information. This option supersedes all other inclusion options.
+            include_meta_columns: Controls meta column inclusion.
+                - False: Exclude all meta columns (default)
+                - True: Include all meta columns
+                - Collection[str]: Include meta columns matching these prefixes. If absent,
+                    {orcapod.META_PREFIX} ('__') prefix is prepended to each key.
+            include_context: Whether to include the context column.
+            include_source: Whether to include source info columns in the schema.
+
+        Returns:
+            PyArrow Table with requested columns.
+
+        Example:
+            >>> table = datagram.as_table()  # Data columns only
+            >>> full_table = datagram.as_table(
+            ...     include_meta_columns=True,
+            ...     include_context=True
+            ... )
+            >>> filtered = datagram.as_table(include_meta_columns=["pipeline"])   # same as passing f"{orcapod.META_PREFIX}pipeline"
+        """
+        ...
+
+    def as_datagram(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_source: bool = False,
+    ) -> Datagram:
         """
         Convert the packet to a Datagram.
 
         Args:
-            include_source: If True, source information is included in the datagram
-                          for debugging and lineage tracking
+            include_meta_columns: Controls meta column inclusion.
+                - False: Exclude all meta columns (default)
+                - True: Include all meta columns
+                - Collection[str]: Include meta columns matching these prefixes. If absent,
+                    {orcapod.META_PREFIX} ('__') prefix is prepended to each key.
 
         Returns:
             Datagram: Datagram representation of packet data
@@ -212,43 +822,9 @@ class Packet(Datagram, Protocol):
         - Processing pipeline information
 
         Returns:
-            dict[str, str | None]: Source metadata for debugging/lineage
+            dict[str, str | None]: Source information for each data column as key-value pairs.
         """
         ...
-
-    def types(
-        self, include_data_context: bool = False, include_source: bool = False
-    ) -> TypeSpec:
-        """
-        Return the type specification for this packet.
-
-        Args:
-            include_source: If True, source information is included in the typespec
-                          for debugging and lineage tracking
-
-        Returns:
-            TypeSpec: Dictionary mapping field names to Python types
-        """
-        ...
-
-    def arrow_schema(
-        self, include_data_context: bool = False, include_source: bool = False
-    ) -> pa.Schema:
-        """
-        Return the PyArrow schema for this packet.
-
-        Args:
-            include_source: If True, source information is included in the schema
-                          for debugging and lineage tracking
-
-        Returns:
-            pa.Schema: PyArrow schema representation of packet data
-        """
-        ...
-
-    # def join(self, other: "Packet") -> "Packet": ...
-
-    # def get_as(self, packet_type: PacketType) -> PacketType: ...
 
 
 class PodFunction(Protocol):
@@ -468,7 +1044,7 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         include_data_context: bool = False,
         include_source: bool = False,
         include_content_hash: bool | str = False,
-    ) -> pa.Table:
+    ) -> "pa.Table":
         """
         Convert the entire stream to a PyArrow Table.
 
@@ -593,6 +1169,20 @@ class Kernel(ContentIdentifiable, Labelable, Protocol):
 
         Returns:
             tuple[str, ...]: Unique identifier for this Pod
+        """
+        ...
+
+    @property
+    def data_context_key(self) -> str:
+        """
+        Return the context key for this kernel's data processing.
+
+        The context key is used to interpret how data columns should be
+        processed and converted. It provides semantic meaning to the data
+        being processed by this kernel.
+
+        Returns:
+            str: Context key for this kernel's data processing
         """
         ...
 
