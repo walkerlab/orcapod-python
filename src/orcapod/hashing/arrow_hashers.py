@@ -49,11 +49,11 @@ class SemanticArrowHasher:
 
     def __init__(
         self,
-        hasher_id: str,
         hash_algorithm: str = "sha256",
-        chunk_size: int = 8192,
-        handle_missing: str = "error",
         semantic_type_hashers: dict[str, SemanticTypeHasher] | None = None,
+        chunk_size: int = 8192,
+        hasher_id: str | None = None,
+        handle_missing: str = "error",
         serialization_method: str = "logical",
         # TODO: consider passing options for serialization method
     ):
@@ -64,6 +64,8 @@ class SemanticArrowHasher:
             chunk_size: Size of chunks to read files in bytes
             handle_missing: How to handle missing files ('error', 'skip', 'null_hash')
         """
+        if hasher_id is None:
+            hasher_id = f"semantic_arrow_hasher:{hash_algorithm}:{serialization_method}"
         self._hasher_id = hasher_id
         self.chunk_size = chunk_size
         self.handle_missing = handle_missing
@@ -90,7 +92,8 @@ class SemanticArrowHasher:
         else:
             raise KeyError(f"No hasher registered for semantic type '{semantic_type}'")
 
-    def get_hasher_id(self) -> str:
+    @property
+    def hasher_id(self) -> str:
         return self._hasher_id
 
     def register_semantic_hasher(self, semantic_type: str, hasher: SemanticTypeHasher):
@@ -113,9 +116,9 @@ class SemanticArrowHasher:
     def _create_hash_column(
         self,
         original_column: pa.Array,
-        hash_algorithm: str,
         hash_bytes: bytes,
         original_field: pa.Field,
+        hash_algorithm: str | None = None,
     ) -> tuple[pa.Array, pa.Field]:
         """Create a new column containing the hash bytes."""
         # Create array of hash bytes (one hash value repeated for each row)
@@ -128,7 +131,7 @@ class SemanticArrowHasher:
             "semantic_type", "unknown"
         )
         new_metadata["semantic_type"] = "hash"
-        new_metadata["hash_algorithm"] = hash_algorithm_id
+        new_metadata["hash_algorithm"] = hash_algorithm or self.hasher_id
 
         new_field = pa.field(
             original_field.name,
@@ -156,7 +159,7 @@ class SemanticArrowHasher:
 
                 # Replace column with hash
                 hash_column, hash_field = self._create_hash_column(
-                    column, hasher.hasher_id, hash_bytes, field
+                    column, hash_bytes, field
                 )
                 new_columns.append(hash_column)
                 new_fields.append(hash_field)
@@ -226,7 +229,7 @@ class SemanticArrowHasher:
 
         hash_str = hasher.hexdigest()
         if prefix_hasher_id:
-            hash_str = f"{self.get_hasher_id()}@{hash_str}"
+            hash_str = f"{self.hasher_id}@{hash_str}"
 
         return hash_str
 
