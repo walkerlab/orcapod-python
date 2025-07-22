@@ -655,3 +655,56 @@ class PodStream(StreamBase):
         else:
             for i in range(len(self._cached_output_packets)):
                 yield self._cached_output_packets[i]
+
+
+class WrappedStream(StreamBase):
+    def __init__(
+        self,
+        stream: dp.Stream,
+        source: dp.Kernel,
+        input_streams: tuple[dp.Stream, ...],
+        label: str | None = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(source=source, upstreams=input_streams, label=label, **kwargs)
+        self._stream = stream
+
+    def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """
+        Returns the keys of the tag and packet columns in the stream.
+        This is useful for accessing the columns in the stream.
+        """
+        return self._stream.keys()
+
+    def types(self) -> tuple[TypeSpec, TypeSpec]:
+        """
+        Returns the types of the tag and packet columns in the stream.
+        This is useful for accessing the types of the columns in the stream.
+        """
+        return self._stream.types()
+
+    def as_table(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_content_hash: bool | str = False,
+    ) -> pa.Table:
+        """
+        Returns the underlying table representation of the stream.
+        This is useful for converting the stream to a table format.
+        """
+        return self._stream.as_table(
+            include_data_context=include_data_context,
+            include_source=include_source,
+            include_content_hash=include_content_hash,
+        )
+
+    def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+        """
+        Iterates over the packets in the stream.
+        Each packet is represented as a tuple of (Tag, Packet).
+        """
+        return self._stream.iter_packets()
+
+    def identity_structure(self) -> Any:
+        return self._stream.identity_structure()
