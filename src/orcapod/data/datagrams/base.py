@@ -271,4 +271,6 @@ class BaseDatagram(ABC):
     # 8. Utility Operations
     def copy(self) -> Self:
         """Create a shallow copy of the datagram."""
-        return object.__new__(self.__class__)
+        new_datagram = object.__new__(self.__class__)
+        new_datagram._data_context = self._data_context
+        return new_datagram

@@ -1,6 +1,7 @@
 import logging
 from collections.abc import Collection, Mapping
 from typing import Self
+from xml.etree.ElementInclude import include
 
 import pyarrow as pa
 
@@ -46,6 +47,7 @@ class DictPacket(DictDatagram):
     def __init__(
         self,
         data: Mapping[str, DataValue],
+        meta_info: Mapping[str, DataValue] | None = None,
         source_info: Mapping[str, str | None] | None = None,
         typespec: TypeSpec | None = None,
         semantic_converter: SemanticConverter | None = None,
@@ -64,6 +66,7 @@ class DictPacket(DictDatagram):
         super().__init__(
             data_only,
             typespec=typespec,
+            meta_info=meta_info,
             semantic_converter=semantic_converter,
             data_context=data_context,
         )
@@ -235,7 +238,7 @@ class DictPacket(DictDatagram):
         return DictDatagram(
             data,
             typespec=typespec,
-            semantic_converter=self.semantic_converter,
+            semantic_converter=self._semantic_converter,
             data_context=self._data_context,
         )
 
@@ -248,9 +251,10 @@ class DictPacket(DictDatagram):
         """
         return {key: self._source_info.get(key, None) for key in self.keys()}
 
-    def copy(self) -> Self:
+    def copy(self, include_cache: bool = True) -> Self:
         """Return a shallow copy of the packet."""
-        instance = super().copy()
+        instance = super().copy(include_cache=include_cache)
         instance._source_info = self._source_info.copy()
-        instance._cached_source_info_table = self._cached_source_info_table
+        if include_cache:
+            instance._cached_source_info_table = self._cached_source_info_table
         return instance

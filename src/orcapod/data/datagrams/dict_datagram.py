@@ -1,3 +1,4 @@
+from curses import meta
 import logging
 from collections.abc import Collection, Iterator, Mapping
 from typing import Self, cast
@@ -54,6 +55,7 @@ class DictDatagram(BaseDatagram):
         self,
         data: Mapping[str, DataValue],
         typespec: TypeSpec | None = None,
+        meta_info: Mapping[str, DataValue] | None = None,
         semantic_converter: SemanticConverter | None = None,
         data_context: str | DataContext | None = None,
     ) -> None:
@@ -96,7 +98,9 @@ class DictDatagram(BaseDatagram):
 
         # Store data and meta components separately (immutable)
         self._data = dict(data_columns)
-        self._meta_data = dict(meta_columns)
+        if meta_info is not None:
+            meta_columns.update(meta_info)
+        self._meta_data = meta_columns
 
         # Combine provided typespec info with inferred typespec from content
         # If the column value is None and no type spec is provided, defaults to str.
@@ -114,7 +118,7 @@ class DictDatagram(BaseDatagram):
                     semantic_type_registry=self._data_context.semantic_type_registry
                 ),
             )
-        self.semantic_converter = semantic_converter
+        self._semantic_converter = semantic_converter
 
         # Create schema for meta data
         self._meta_python_schema = schemas.PythonSchema(
@@ -256,7 +260,7 @@ class DictDatagram(BaseDatagram):
         # Build data schema (cached)
         if self._cached_data_arrow_schema is None:
             self._cached_data_arrow_schema = (
-                self.semantic_converter.from_python_to_arrow_schema(
+                self._semantic_converter.from_python_to_arrow_schema(
                     self._data_python_schema
                 )
             )
@@ -272,7 +276,7 @@ class DictDatagram(BaseDatagram):
         if include_meta_columns and self._meta_data:
             if self._cached_meta_arrow_schema is None:
                 self._cached_meta_arrow_schema = (
-                    self.semantic_converter.from_python_to_arrow_schema(
+                    self._semantic_converter.from_python_to_arrow_schema(
                         self._meta_python_schema
                     )
                 )
@@ -379,7 +383,7 @@ class DictDatagram(BaseDatagram):
     def _get_meta_arrow_schema(self) -> pa.Schema:
         if self._cached_meta_arrow_schema is None:
             self._cached_meta_arrow_schema = (
-                self.semantic_converter.from_python_to_arrow_schema(
+                self._semantic_converter.from_python_to_arrow_schema(
                     self._meta_python_schema
                 )
             )
@@ -412,7 +416,7 @@ class DictDatagram(BaseDatagram):
 
         # Build data table (cached)
         if self._cached_data_table is None:
-            self._cached_data_table = self.semantic_converter.from_python_to_arrow(
+            self._cached_data_table = self._semantic_converter.from_python_to_arrow(
                 self._data,
                 self._data_python_schema,
             )
@@ -497,7 +501,7 @@ class DictDatagram(BaseDatagram):
 
         return DictDatagram(
             data=full_data,
-            semantic_converter=self.semantic_converter,
+            semantic_converter=self._semantic_converter,
             data_context=self._data_context,
         )
 
@@ -542,7 +546,7 @@ class DictDatagram(BaseDatagram):
 
         return DictDatagram(
             data=full_data,
-            semantic_converter=self.semantic_converter,
+            semantic_converter=self._semantic_converter,
             data_context=self._data_context,
         )
 
@@ -572,7 +576,7 @@ class DictDatagram(BaseDatagram):
 
         return DictDatagram(
             data=full_data,
-            semantic_converter=self.semantic_converter,
+            semantic_converter=self._semantic_converter,
             data_context=self._data_context,
         )
 
@@ -605,7 +609,7 @@ class DictDatagram(BaseDatagram):
 
         return DictDatagram(
             data=full_data,
-            semantic_converter=self.semantic_converter,
+            semantic_converter=self._semantic_converter,
             data_context=self._data_context,
         )
 
@@ -646,7 +650,7 @@ class DictDatagram(BaseDatagram):
         return DictDatagram(
             data=full_data,
             typespec=new_typespec,
-            semantic_converter=self.semantic_converter,
+            semantic_converter=self._semantic_converter,
             data_context=self._data_context,
         )
 
@@ -685,7 +689,7 @@ class DictDatagram(BaseDatagram):
 
         return DictDatagram(
             data=full_data,
-            semantic_converter=self.semantic_converter,  # Keep existing converter
+            semantic_converter=self._semantic_converter,  # Keep existing converter
             data_context=self._data_context,
         )
 
@@ -770,7 +774,7 @@ class DictDatagram(BaseDatagram):
         )
 
     # 8. Utility Operations
-    def copy(self) -> Self:
+    def copy(self, include_cache: bool = True) -> Self:
         """
         Create a shallow copy of the datagram.
 
@@ -781,22 +785,19 @@ class DictDatagram(BaseDatagram):
         Returns:
             New DictDatagram instance with copied data and caches.
         """
-        # Reconstruct full data dict for new instance
-        full_data = dict(self._data)  # User data
-        full_data.update(self._meta_data)  # Meta data
+        new_datagram = super().copy()
+        new_datagram._data = self._data.copy()
+        new_datagram._meta_data = self._meta_data.copy()
+        new_datagram._data_python_schema = self._data_python_schema.copy()
+        new_datagram._semantic_converter = self._semantic_converter
+        new_datagram._meta_python_schema = self._meta_python_schema.copy()
 
-        new_datagram = self.__class__(
-            full_data,
-            semantic_converter=self.semantic_converter,
-            data_context=self._data_context,
-        )
-
-        # Copy caches
-        new_datagram._cached_data_table = self._cached_data_table
-        new_datagram._cached_meta_table = self._cached_meta_table
-        new_datagram._cached_content_hash = self._cached_content_hash
-        new_datagram._cached_data_arrow_schema = self._cached_data_arrow_schema
-        new_datagram._cached_meta_arrow_schema = self._cached_meta_arrow_schema
+        if include_cache:
+            new_datagram._cached_data_table = self._cached_data_table
+            new_datagram._cached_meta_table = self._cached_meta_table
+            new_datagram._cached_content_hash = self._cached_content_hash
+            new_datagram._cached_data_arrow_schema = self._cached_data_arrow_schema
+            new_datagram._cached_meta_arrow_schema = self._cached_meta_arrow_schema
 
         return new_datagram
 
