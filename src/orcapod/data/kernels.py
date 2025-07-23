@@ -25,7 +25,6 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
 
     def __init__(
         self,
-        fixed_input_streams: tuple[dp.Stream, ...] | None = None,
         label: str | None = None,
         data_context: str | DataContext | None = None,
         skip_tracking: bool = False,
@@ -39,7 +38,6 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
 
         self._skip_tracking = skip_tracking
         self._tracker_manager = tracker_manager or DEFAULT_TRACKER_MANAGER
-        self.fixed_input_streams = fixed_input_streams
 
     @property
     def data_context(self) -> DataContext:
@@ -62,12 +60,6 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         pre-processing step will be tracked separately from the main computation in forward.
         By default, it returns the input streams unchanged.
         """
-        if self.fixed_input_streams is not None:
-            if len(streams) != 0:
-                raise ValueError(
-                    f"{self.__class__.__name__} has fixed input streams. Additional streams cannot be accepted at this point."
-                )
-            return self.fixed_input_streams
         return streams
 
     @abstractmethod
@@ -189,7 +181,3 @@ class WrappedKernel(TrackedKernelBase):
 
     def kernel_identity_structure(self, *streams: dp.Stream) -> Any:
         return self.kernel.identity_structure(*streams)
-
-
-class CachedKernel(WrappedKernel):
-    pass

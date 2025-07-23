@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import logging
 import sys
 from abc import abstractmethod
@@ -61,12 +62,11 @@ class ActivatablePodBase(TrackedKernelBase):
 
     def __init__(
         self,
-        fixed_input_streams: tuple[dp.Stream, ...] | None = None,
         error_handling: error_handling_options = "raise",
         label: str | None = None,
         **kwargs,
     ) -> None:
-        super().__init__(fixed_input_streams=fixed_input_streams, label=label, **kwargs)
+        super().__init__(label=label, **kwargs)
         self._active = True
         self.error_handling = error_handling
 
@@ -90,21 +90,6 @@ class ActivatablePodBase(TrackedKernelBase):
         """
         self._active = active
 
-    def validate_inputs(self, *streams: dp.Stream) -> None:
-        if len(streams) != 1:
-            raise ValueError(
-                f"{self.__class__.__name__} expects exactly one input stream, got {len(streams)}"
-            )
-        input_stream = streams[0]
-        _, incoming_packet_types = input_stream.types()
-        if not tsutils.check_typespec_compatibility(
-            incoming_packet_types, self.input_packet_types()
-        ):
-            # TODO: use custom exception type for better error handling
-            raise ValueError(
-                f"Input typespec {incoming_packet_types} is not compatible with expected input typespec {self.input_packet_types}"
-            )
-
     @staticmethod
     def _join_streams(*streams: dp.Stream) -> dp.Stream:
         if not streams:
@@ -120,30 +105,32 @@ class ActivatablePodBase(TrackedKernelBase):
 
     def pre_process_input_streams(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
         """
-        Prepare the incoming streams for execution in the pod. If fixed_input_streams are present,
-        they will be used as the input streams and the newly provided streams would be used to
-        restrict (semijoin) the fixed streams.
-        Otherwise, the join of the provided streams will be returned.
+        Prepare the incoming streams for execution in the pod. At least one stream must be present.
+        If more than one stream is present, the join of the provided streams will be returned.
         """
         # if multiple streams are provided, join them
         # otherwise, return as is
-        if self.fixed_input_streams is not None:
-            if len(streams) == 0:
-                output_stream = self._join_streams(*self.fixed_input_streams)
-            else:
-                restrict_stream = self._join_streams(*streams)
-                raise NotImplementedError(
-                    f"{self.__class__.__name__} does not support semijoining fixed input streams with additional streams yet. "
-                    "Please implement this functionality in the subclass."
-                )
-                # output_stream = SemiJoin()(output_stream, restrict_stream)
-        else:
-            if len(streams) == 0:
-                raise ValueError(
-                    f"{self.__class__.__name__} expects at least one input stream"
-                )
-            output_stream = self._join_streams(*streams)
+        if len(streams) == 0:
+            raise ValueError(
+                f"{self.__class__.__name__} expects at least one input stream"
+            )
+        output_stream = self._join_streams(*streams)
         return (output_stream,)
+
+    def validate_inputs(self, *streams: dp.Stream) -> None:
+        if len(streams) != 1:
+            raise ValueError(
+                f"{self.__class__.__name__} expects exactly one input stream, got {len(streams)}"
+            )
+        input_stream = streams[0]
+        _, incoming_packet_types = input_stream.types()
+        if not tsutils.check_typespec_compatibility(
+            incoming_packet_types, self.input_packet_types()
+        ):
+            # TODO: use custom exception type for better error handling
+            raise ValueError(
+                f"Input typespec {incoming_packet_types} is not compatible with expected input typespec {self.input_packet_types}"
+            )
 
     def prepare_output_stream(
         self, *streams: dp.Stream, label: str | None = None
@@ -151,10 +138,6 @@ class ActivatablePodBase(TrackedKernelBase):
         output_stream = self.forward(*streams)
         output_stream.label = label
         return output_stream
-
-    def track_invocation(self, *streams: dp.Stream, label: str | None = None) -> None:
-        if not self._skip_tracking and self._tracker_manager is not None:
-            self._tracker_manager.record_pod_invocation(self, streams, label=label)
 
     def forward(self, *streams: dp.Stream) -> PodStream:
         assert len(streams) == 1, "PodBase.forward expects exactly one input stream"
@@ -165,6 +148,10 @@ class ActivatablePodBase(TrackedKernelBase):
             input_stream,
             error_handling=cast(error_handling_options, self.error_handling),
         )
+
+    def track_invocation(self, *streams: dp.Stream, label: str | None = None) -> None:
+        if not self._skip_tracking and self._tracker_manager is not None:
+            self._tracker_manager.record_pod_invocation(self, streams, label=label)
 
 
 def function_pod(
@@ -376,7 +363,6 @@ class WrappedPod(ActivatablePodBase):
     def __init__(
         self,
         pod: dp.Pod,
-        fixed_input_streams: tuple[dp.Stream, ...] | None = None,
         label: str | None = None,
         data_context: str | DataContext | None = None,
         **kwargs,
@@ -384,7 +370,6 @@ class WrappedPod(ActivatablePodBase):
         if data_context is None:
             data_context = pod.data_context_key
         super().__init__(
-            fixed_input_streams=fixed_input_streams,
             label=label,
             data_context=data_context,
             **kwargs,
@@ -437,19 +422,18 @@ class CachedPod(WrappedPod):
 
     # name of the column in the tag store that contains the packet hash
     PACKET_HASH_COLUMN = f"{constants.META_PREFIX}packet_hash"
+    DATA_RETRIEVED_FLAG = f"{constants.META_PREFIX}data_retrieved"
 
     def __init__(
         self,
         pod: dp.Pod,
         result_store: ArrowDataStore,
-        pipeline_store: ArrowDataStore | None,
         record_path_prefix: tuple[str, ...] = (),
         **kwargs,
     ):
         super().__init__(pod, **kwargs)
         self.record_path_prefix = record_path_prefix
         self.result_store = result_store
-        self.pipeline_store = pipeline_store
         # unset data_context native to the object
 
         self.pod_hash = self.data_context.object_hasher.hash_to_hex(
@@ -468,66 +452,27 @@ class CachedPod(WrappedPod):
         self,
         tag: dp.Tag,
         packet: dp.Packet,
+        skip_record_check: bool = False,
         skip_recording: bool = False,
+        overwrite_existing: bool = False,
     ) -> tuple[dp.Tag, dp.Packet | None]:
-        output_packet = self.get_recorded_output_packet(packet)
+        output_packet = None
+        if not skip_record_check:
+            output_packet = self.get_recorded_output_packet(packet)
         if output_packet is None:
             tag, output_packet = self.pod.call(tag, packet)
             if output_packet is not None and not skip_recording:
-                self.record_packet(packet, output_packet)
+                self.record_packet(
+                    packet, output_packet, overwrite_existing=overwrite_existing
+                )
 
-        if output_packet is not None:
-            self.add_pipeline_record(tag, input_packet=packet)
         return tag, output_packet
-
-    def add_pipeline_record(self, tag: dp.Tag, input_packet: dp.Packet) -> None:
-        if self.pipeline_store is None:
-            # no pipeline store configured, skip recording
-            return
-        # combine dp.Tag with packet content hash to compute entry hash
-        tag_with_hash = tag.as_table().append_column(
-            self.PACKET_HASH_COLUMN,
-            pa.array([input_packet.content_hash()], type=pa.large_string()),
-        )
-        entry_id = self.data_context.arrow_hasher.hash_table(
-            tag_with_hash, prefix_hasher_id=True
-        )
-
-        existing_record = self.pipeline_store.get_record_by_id(
-            self.record_path,
-            entry_id,
-        )
-
-        if existing_record is not None:
-            # if the record already exists, return it
-            return
-
-        # no record matching, so construct the full record
-
-        input_packet_info = (
-            input_packet.as_table(
-                include_source=True,
-            )
-            .append_column(
-                f"{constants.META_PREFIX}input_packet{constants.CONTEXT_KEY}",
-                pa.array([input_packet.data_context_key], type=pa.large_string()),
-            )
-            .drop(input_packet.keys())
-        )
-
-        combined_record = arrow_utils.hstack_tables(tag_with_hash, input_packet_info)
-
-        self.pipeline_store.add_record(
-            self.record_path,
-            entry_id,
-            combined_record,
-            ignore_duplicates=False,
-        )
 
     def record_packet(
         self,
         input_packet: dp.Packet,
         output_packet: dp.Packet,
+        overwrite_existing: bool = False,
         ignore_duplicates: bool = False,
     ) -> dp.Packet:
         """
@@ -539,6 +484,7 @@ class CachedPod(WrappedPod):
             self.record_path,
             input_packet.content_hash(),
             data_table,
+            overwrite_existing=overwrite_existing,
             ignore_duplicates=ignore_duplicates,
         )
         if result_flag is None:
@@ -560,41 +506,8 @@ class CachedPod(WrappedPod):
         if result_table is None:
             return None
 
-        return ArrowPacket(result_table)
-
-    def _get_all_records(self) -> "pa.Table | None":
-        results = self.result_store.get_all_records(
-            self.record_path, record_id_column=self.PACKET_HASH_COLUMN
+        # note that data context will be loaded from the result store
+        return ArrowPacket(
+            result_table,
+            meta_info={self.DATA_RETRIEVED_FLAG: str(datetime.now(timezone.utc))},
         )
-
-        if self.pipeline_store is None:
-            raise ValueError(
-                "Pipeline store is not configured, cannot retrieve tag info"
-            )
-        taginfo = self.pipeline_store.get_all_records(
-            self.record_path,
-        )
-
-        if results is None or taginfo is None:
-            return None
-
-        tag_columns = [
-            c
-            for c in taginfo.column_names
-            if not c.startswith(constants.META_PREFIX)
-            and not c.startswith(constants.SOURCE_PREFIX)
-        ]
-
-        packet_columns = [
-            c for c in results.column_names if c != self.PACKET_HASH_COLUMN
-        ]
-
-        # TODO: do not hardcode the join keys
-        joined_info = taginfo.join(
-            results,
-            self.PACKET_HASH_COLUMN,
-            join_type="inner",
-        )
-
-        joined_info = joined_info.select([*tag_columns, *packet_columns])
-        return joined_info
