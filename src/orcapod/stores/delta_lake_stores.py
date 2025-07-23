@@ -395,6 +395,7 @@ class BasicDeltaTableArrowStore:
         record_id: str,
         data: pa.Table,
         ignore_duplicates: bool | None = None,
+        overwrite_existing: bool = False,
         force_flush: bool = False,
     ) -> pa.Table:
         self._validate_record_path(record_path)
@@ -472,6 +473,7 @@ class BasicDeltaTableArrowStore:
         records: pa.Table,
         record_id_column: str | None = None,
         ignore_duplicates: bool | None = None,
+        overwrite_existing: bool = False,
     ) -> list[str]:
         raise NotImplementedError(
             "add_records is not implemented in BasicDeltaTableArrowStore yet. "

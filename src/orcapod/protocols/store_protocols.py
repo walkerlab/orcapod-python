@@ -10,6 +10,7 @@ class ArrowDataStore(Protocol):
         record_id: str,
         data: pa.Table,
         ignore_duplicates: bool | None = None,
+        overwrite_existing: bool = False,
     ) -> str | None: ...
 
     def add_records(
@@ -18,6 +19,7 @@ class ArrowDataStore(Protocol):
         records: pa.Table,
         record_id_column: str | None = None,
         ignore_duplicates: bool | None = None,
+        overwrite_existing: bool = False,
     ) -> list[str]: ...
 
     def get_record_by_id(
