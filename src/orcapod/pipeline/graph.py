@@ -98,12 +98,16 @@ class Pipeline(GraphTracker):
         if invocation in self.invocation_to_pod_lut:
             pod = self.invocation_to_pod_lut[invocation]
             node = PodNode(
-                pod=pod, fixed_input_streams=new_input_streams, label=invocation.label
+                pod=pod,
+                input_streams=new_input_streams,
+                pipeline_store=self.pipeline_store,
+                label=invocation.label,
             )
         else:
             node = KernelNode(
                 kernel=invocation.kernel,
-                fixed_input_streams=new_input_streams,
+                input_streams=new_input_streams,
+                pipeline_store=self.pipeline_store,
                 label=invocation.label,
             )
         return node
