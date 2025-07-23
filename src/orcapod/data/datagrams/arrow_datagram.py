@@ -52,6 +52,7 @@ class ArrowDatagram(BaseDatagram):
     def __init__(
         self,
         table: pa.Table,
+        meta_info: Mapping[str, DataValue] | None = None,
         semantic_converter: SemanticConverter | None = None,
         data_context: str | DataContext | None = None,
     ) -> None:
@@ -84,9 +85,6 @@ class ArrowDatagram(BaseDatagram):
             if constants.CONTEXT_KEY in table.column_names
             else []
         )
-        meta_columns = [
-            col for col in table.column_names if col.startswith(constants.META_PREFIX)
-        ]
 
         # Extract context table if present
         if constants.CONTEXT_KEY in table.column_names and data_context is None:
@@ -96,9 +94,13 @@ class ArrowDatagram(BaseDatagram):
         # Initialize base class with data context
         super().__init__(data_context)
 
+        meta_columns = [
+            col for col in table.column_names if col.startswith(constants.META_PREFIX)
+        ]
         # Split table into components
         self._data_table = table.drop_columns(context_columns + meta_columns)
         self._meta_table = table.select(meta_columns) if meta_columns else None
+
         if len(self._data_table.column_names) == 0:
             raise ValueError("Data table must contain at least one data column.")
 
@@ -111,6 +113,35 @@ class ArrowDatagram(BaseDatagram):
                 )
             )
         self._semantic_converter = semantic_converter
+
+        # process supplemented meta info if provided
+        if meta_info is not None:
+            # make sure it has the expected prefixes
+            meta_info = {
+                (
+                    f"{constants.META_PREFIX}{k}"
+                    if not k.startswith(constants.META_PREFIX)
+                    else k
+                ): v
+                for k, v in meta_info.items()
+            }
+            # Note that meta information cannot contain semantic types
+            typespec = typespec_utils.get_typespec_from_dict(meta_info)
+            new_meta_table = self._semantic_converter.from_python_to_arrow(
+                meta_info, typespec
+            )
+            if self._meta_table is None:
+                self._meta_table = new_meta_table
+            else:
+                # drop any column that will be overwritten by the new meta table
+                keep_meta_columns = [
+                    c
+                    for c in self._meta_table.column_names
+                    if c not in new_meta_table.column_names
+                ]
+                self._meta_table = arrow_utils.hstack_tables(
+                    self._meta_table.select(keep_meta_columns), new_meta_table
+                )
 
         # Create data context table
         data_context_schema = pa.schema({constants.CONTEXT_KEY: pa.large_string()})
@@ -476,6 +507,8 @@ class ArrowDatagram(BaseDatagram):
 
         # Apply updates
         meta_dict.update(prefixed_updates)
+
+        # TODO: properly handle case where meta data is None (it'll get inferred as NoneType)
 
         # Create new meta table
         new_datagram._meta_table = (

@@ -1,5 +1,6 @@
+from hmac import new
 import logging
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from typing import Self
 
 
@@ -81,7 +82,8 @@ class ArrowPacket(ArrowDatagram):
     def __init__(
         self,
         table: pa.Table,
-        source_info: dict[str, str | None] | None = None,
+        meta_info: Mapping[str, DataValue] | None = None,
+        source_info: Mapping[str, str | None] | None = None,
         semantic_converter: SemanticConverter | None = None,
         data_context: str | DataContext | None = None,
     ) -> None:
@@ -94,19 +96,21 @@ class ArrowPacket(ArrowDatagram):
             source_info = {}
 
         # normalize the table to ensure it has the expected source_info columns
+        # TODO: use simpler function to ensure source_info columns
         data_table, prefixed_tables = arrow_utils.prepare_prefixed_columns(
             table,
             {constants.SOURCE_PREFIX: source_info},
             exclude_columns=[constants.CONTEXT_KEY],
             exclude_prefixes=[constants.META_PREFIX],
         )
-        self._source_info_table = prefixed_tables[constants.SOURCE_PREFIX]
 
         super().__init__(
             data_table,
+            meta_info=meta_info,
             semantic_converter=semantic_converter,
             data_context=data_context,
         )
+        self._source_info_table = prefixed_tables[constants.SOURCE_PREFIX]
 
         self._cached_source_info: dict[str, str | None] | None = None
         self._cached_python_schema: schemas.PythonSchema | None = None
@@ -252,17 +256,12 @@ class ArrowPacket(ArrowDatagram):
             }
         return self._cached_source_info.copy()
 
-    def copy(self) -> Self:
-        # TODO: restructure copy to allow for better inheritance and expansion
-        new_packet = self.__class__(
-            self.as_table(),
-            self.source_info(),
-            semantic_converter=self._semantic_converter,
-            data_context=self._data_context,
-        )
-        new_packet._cached_source_info = self._cached_source_info
-        new_packet._cached_python_dict = self._cached_python_dict
-        new_packet._cached_python_schema = self._cached_python_schema
-        new_packet._cached_content_hash = self._cached_content_hash
+    # 8. Utility Operations
+    def copy(self, include_cache: bool = True) -> Self:
+        """Return a copy of the datagram."""
+        new_packet = super().copy(include_cache=include_cache)
+
+        if include_cache:
+            new_packet._cached_source_info = self._cached_source_info
 
         return new_packet
