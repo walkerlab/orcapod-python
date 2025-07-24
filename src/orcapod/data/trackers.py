@@ -3,7 +3,7 @@ from orcapod.protocols import data_protocols as dp, hashing_protocols as hp
 from orcapod.data.context import DataContext
 from orcapod.hashing.defaults import get_default_object_hasher
 from collections import defaultdict
-from collections.abc import Generator
+from collections.abc import Generator, Collection
 from abc import ABC, abstractmethod
 from typing import Any, TYPE_CHECKING
 from contextlib import contextmanager
@@ -139,7 +139,7 @@ class StubKernel:
     def __call__(self, *args: Any, **kwargs: Any) -> dp.Stream:
         return self.forward(*args, **kwargs)
 
-    def identity_structure(self, *streams: dp.Stream) -> Any:
+    def identity_structure(self, streams: Collection[dp.Stream] | None = None) -> Any:
         # FIXME: using label as a stop-gap for identity structure
         return self.label
 
@@ -194,7 +194,7 @@ class Invocation(LabeledContentIdentifiableBase):
         Return a structure that represents the identity of this invocation.
         This is used to uniquely identify the invocation in the tracker.
         """
-        return self.kernel.identity_structure(*self.upstreams)
+        return self.kernel.identity_structure(self.upstreams)
 
     def __repr__(self) -> str:
         return f"Invocation(kernel={self.kernel}, upstreams={self.upstreams}, label={self.label})"

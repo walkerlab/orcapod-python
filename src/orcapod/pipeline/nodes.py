@@ -1,11 +1,13 @@
 from ast import Not
-from collections.abc import Collection
-from orcapod.data.kernels import WrappedKernel
+from collections.abc import Collection, Iterator
+from datetime import datetime
+from orcapod.data.kernels import WrappedKernel, TrackedKernelBase
 from orcapod.data.pods import ArrowDataStore, CachedPod
 from orcapod.protocols import data_protocols as dp
 from orcapod.data.streams import PodStream
+from orcapod.types import TypeSpec
 from orcapod.utils.lazy_module import LazyModule
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from orcapod.data.system_constants import orcapod_constants as constants
 from orcapod.utils import arrow_utils
 
@@ -15,7 +17,102 @@ else:
     pa = LazyModule("pyarrow")
 
 
-class KernelNode(WrappedKernel):
+class Node(
+    TrackedKernelBase,
+):
+    """
+    Mixin class for pipeline nodes
+    """
+
+    def __init__(
+        self,
+        input_streams: Collection[dp.Stream],
+        pipeline_store: ArrowDataStore,
+        pipeline_path_prefix: tuple[str, ...] = (),
+        **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self._cached_stream: dp.LiveStream | None = None
+        self.input_streams = tuple(input_streams)
+        self.pipeline_store = pipeline_store
+        self.pipeline_path_prefix = pipeline_path_prefix
+        # compute invocation hash - note that empty () is passed into identity_structure to signify
+        # identity structure of invocation with no input streams
+        self.invocation_hash = self.data_context.object_hasher.hash_to_hex(
+            self.identity_structure(()), prefix_hasher_id=True
+        )
+
+    @property
+    def pipeline_path(self) -> tuple[str, ...]:
+        """
+        Return the path to the pipeline run records.
+        This is used to store the run-associated tag info.
+        """
+        return self.pipeline_path_prefix + self.kernel_id + (self.invocation_hash,)
+
+    def validate_inputs(self, *processed_streams: dp.Stream) -> None:
+        pass
+
+    def forward(self, *streams: dp.Stream) -> dp.Stream:
+        if len(streams) > 0:
+            raise NotImplementedError(
+                "At this moment, Node does not yet support handling additional input streams."
+            )
+        # TODO: re-evaluate the use here
+        # super().validate_inputs(*self.input_streams)
+        return super().forward(*self.input_streams)
+
+    def __call__(self, *args, **kwargs) -> dp.LiveStream:
+        if self._cached_stream is None:
+            self._cached_stream = super().__call__(*args, **kwargs)
+        return self._cached_stream
+
+    # properties and methods to act as a dp.Stream
+    @property
+    def source(self) -> dp.Kernel | None:
+        return self
+
+    @property
+    def upstreams(self) -> tuple[dp.Stream, ...]:
+        return ()
+
+    def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        return self().keys()
+
+    def types(self) -> tuple[TypeSpec, TypeSpec]:
+        return self().types()
+
+    @property
+    def last_modified(self) -> datetime | None:
+        return self().last_modified
+
+    @property
+    def is_current(self) -> bool:
+        return self().is_current
+
+    def __iter__(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+        return self().__iter__()
+
+    def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+        return self().iter_packets()
+
+    def as_table(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_content_hash: bool | str = False,
+    ) -> "pa.Table":
+        return self().as_table(
+            include_data_context=include_data_context,
+            include_source=include_source,
+            include_content_hash=include_content_hash,
+        )
+
+    def flow(self) -> Collection[tuple[dp.Tag, dp.Packet]]:
+        return self().flow()
+
+
+class KernelNode(Node, WrappedKernel):
     """
     A node in the pipeline that represents a kernel.
     This node can be used to execute the kernel and process data streams.
@@ -26,31 +123,16 @@ class KernelNode(WrappedKernel):
         kernel: dp.Kernel,
         input_streams: Collection[dp.Stream],
         pipeline_store: ArrowDataStore,
+        pipeline_path_prefix: tuple[str, ...] = (),
         **kwargs,
     ) -> None:
-        super().__init__(kernel=kernel, **kwargs)
-        self.kernel = kernel
-        self.input_streams = tuple(input_streams)
-        self.pipeline_store = pipeline_store
-        self._cached_stream: dp.Stream | None = None
-
-    def pre_process_input_streams(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
-        if len(streams) > 0:
-            raise NotImplementedError(
-                "At this moment, PodNode does not yet support handling additional input streams."
-            )
-        return super().pre_process_input_streams(*self.input_streams)
-
-    def forward(self, *args, **kwargs) -> dp.Stream:
-        """
-        Forward the data through the kernel and return a PodStream.
-        This method can be overridden to customize the forwarding behavior.
-        """
-        if self._cached_stream is None:
-            # TODO: reconsider this logic -- if we were to allow semijoin with inputs in the future
-            # this caching needs to be done more carefully
-            self._cached_stream = self.kernel.forward(*args, **kwargs)
-        return self._cached_stream
+        super().__init__(
+            kernel=kernel,
+            input_streams=input_streams,
+            pipeline_store=pipeline_store,
+            pipeline_path_prefix=pipeline_path_prefix,
+            **kwargs,
+        )
 
     def __repr__(self):
         return f"KernelNode(kernel={self.kernel!r})"
@@ -58,10 +140,21 @@ class KernelNode(WrappedKernel):
     def __str__(self):
         return f"KernelNode:{self.kernel!s}"
 
+    def identity_structure(self, streams: Collection[dp.Stream] | None = None) -> Any:
+        """
+        Return the identity structure of the node.
+        This is used to compute the invocation hash.
+        """
+        # construct identity structure from the node's information and the
+        # contained kernel
+        if streams is not None and len(streams) > 0:
+            raise NotImplementedError(
+                "At this moment, Node does not yet support handling additional input streams."
+            )
+        return self.kernel.identity_structure(self.input_streams)
 
-class PodNode(CachedPod):
-    PIPELINE_RESULT_PATH = ("_results",)
 
+class PodNode(Node, CachedPod):
     def __init__(
         self,
         pod: dp.Pod,
@@ -69,51 +162,26 @@ class PodNode(CachedPod):
         pipeline_store: ArrowDataStore,
         result_store: ArrowDataStore | None = None,
         record_path_prefix: tuple[str, ...] = (),
+        pipeline_path_prefix: tuple[str, ...] = (),
         **kwargs,
     ) -> None:
-        self.pipeline_path_prefix = record_path_prefix
-        if result_store is None:
-            record_path_prefix += self.PIPELINE_RESULT_PATH
-            result_store = pipeline_store
         super().__init__(
             pod=pod,
             result_store=result_store,
             record_path_prefix=record_path_prefix,
+            input_streams=input_streams,
+            pipeline_store=pipeline_store,
+            pipeline_path_prefix=pipeline_path_prefix,
             **kwargs,
         )
         self.pipeline_store = pipeline_store
-        self.input_streams = tuple(input_streams)
-        self._cached_stream: dp.LiveStream | None = None
-
-    @property
-    def pipeline_path(self) -> tuple[str, ...]:
-        """
-        Return the path to the pipeline run records.
-        This is used to store the run-associated tag info.
-        """
-        return self.pipeline_path_prefix + self.kernel_id
+        # self.input_streams = tuple(input_streams)
 
     def __repr__(self):
         return f"PodNode(pod={self.pod!r})"
 
     def __str__(self):
         return f"PodNode:{self.pod!s}"
-
-    def pre_process_input_streams(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
-        if len(streams) > 0:
-            raise NotImplementedError(
-                "At this moment, PodNode does not yet support handling additional input streams."
-            )
-        return super().pre_process_input_streams(*self.input_streams)
-
-    def __call__(self, *args, **kwargs) -> dp.LiveStream:
-        """
-        Forward the data through the pod and return a PodStream.
-        This method can be overridden to customize the forwarding behavior.
-        """
-        if self._cached_stream is None:
-            self._cached_stream = super().__call__(*args, **kwargs)
-        return self._cached_stream
 
     def call(
         self,
@@ -221,3 +289,16 @@ class PodNode(CachedPod):
 
         joined_info = joined_info.select([*tag_columns, *packet_columns])
         return joined_info
+
+    def identity_structure(self, streams: Collection[dp.Stream] | None = None) -> Any:
+        """
+        Return the identity structure of the node.
+        This is used to compute the invocation hash.
+        """
+        # construct identity structure from the node's information and the
+        # contained kernel
+        if streams is not None and len(streams) > 0:
+            raise NotImplementedError(
+                "At this moment, Node does not yet support handling additional input streams."
+            )
+        return self.pod.identity_structure(self.input_streams)
