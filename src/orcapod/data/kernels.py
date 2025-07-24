@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from collections.abc import Collection
 from typing import Any
 from orcapod.protocols import data_protocols as dp
 import logging
@@ -52,13 +53,13 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
     @abstractmethod
     def kernel_id(self) -> tuple[str, ...]: ...
 
-    def pre_process_input_streams(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
+    def pre_kernel_processing(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
         """
         Pre-processing step that can be overridden by subclasses to perform any necessary pre-processing
         on the input streams before the main computation. This is useful if you need to modify the input streams
         or perform any other operations before the main computation. Critically, any Kernel/Pod invocations in the
-        pre-processing step will be tracked separately from the main computation in forward.
-        By default, it returns the input streams unchanged.
+        pre-processing step will be tracked outside of the computation in the kernel.
+        Default implementation is a no-op, returning the input streams unchanged.
         """
         return streams
 
@@ -86,7 +87,7 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
     def __call__(
         self, *streams: dp.Stream, label: str | None = None, **kwargs
     ) -> dp.LiveStream:
-        processed_streams = self.pre_process_input_streams(*streams)
+        processed_streams = self.pre_kernel_processing(*streams)
         self.validate_inputs(*processed_streams)
         output_stream = self.prepare_output_stream(*processed_streams, label=label)
         self.track_invocation(*processed_streams, label=label)
@@ -101,7 +102,7 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         """
 
     def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
-        processed_streams = self.pre_process_input_streams(*streams)
+        processed_streams = self.pre_kernel_processing(*streams)
         self.validate_inputs(*processed_streams)
         return self.kernel_output_types(*processed_streams)
 
@@ -117,9 +118,11 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         return self.__class__.__name__
 
     @abstractmethod
-    def kernel_identity_structure(self, *streams: dp.Stream) -> Any: ...
+    def kernel_identity_structure(
+        self, streams: Collection[dp.Stream] | None = None
+    ) -> Any: ...
 
-    def identity_structure(self, *streams: dp.Stream) -> Any:
+    def identity_structure(self, streams: Collection[dp.Stream] | None = None) -> Any:
         # Default implementation of identity_structure for the kernel only
         # concerns the kernel class and the streams if present. Subclasses of
         # Kernels should override this method to provide a more meaningful
@@ -134,10 +137,9 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         # and therefore kernel K(x, y) == K(y, x), then the identity structure must reflect the
         # equivalence of the two by returning the same identity structure for both invocations.
         # This can be achieved, for example, by returning a set over the streams instead of a tuple.
-        if len(streams) > 0:
-            streams = self.pre_process_input_streams(*streams)
-            self.validate_inputs(*streams)
-        return self.kernel_identity_structure(*streams)
+        if streams is not None:
+            streams = self.pre_kernel_processing(*streams)
+        return self.kernel_identity_structure(streams)
 
 
 class WrappedKernel(TrackedKernelBase):
@@ -179,5 +181,7 @@ class WrappedKernel(TrackedKernelBase):
     def __str__(self):
         return f"WrappedKernel:{self.kernel!s}"
 
-    def kernel_identity_structure(self, *streams: dp.Stream) -> Any:
-        return self.kernel.identity_structure(*streams)
+    def kernel_identity_structure(
+        self, streams: Collection[dp.Stream] | None = None
+    ) -> Any:
+        return self.kernel.identity_structure(streams)

@@ -10,9 +10,9 @@ from orcapod.data.datagrams import (
     ArrowPacket,
 )
 from orcapod.data.context import DataContext
-from orcapod.data.kernels import TrackedKernelBase
+from orcapod.data.kernels import KernelStream, TrackedKernelBase
 from orcapod.data.operators import Join
-from orcapod.data.streams import PodStream
+from orcapod.data.streams import LazyPodResultStream, PodStream
 from orcapod.hashing.hash_utils import get_function_signature
 from orcapod.protocols import data_protocols as dp
 from orcapod.protocols import hashing_protocols as hp
@@ -54,11 +54,6 @@ class ActivatablePodBase(TrackedKernelBase):
         Return the output typespec for the pod. This is used to validate the output streams.
         """
         ...
-
-    @abstractmethod
-    def call(
-        self, tag: dp.Tag, packet: dp.Packet
-    ) -> tuple[dp.Tag, dp.Packet | None]: ...
 
     def __init__(
         self,
@@ -103,17 +98,16 @@ class ActivatablePodBase(TrackedKernelBase):
             joined_stream = Join()(joined_stream, next_stream)
         return joined_stream
 
-    def pre_process_input_streams(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
+    def pre_kernel_processing(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
         """
         Prepare the incoming streams for execution in the pod. At least one stream must be present.
         If more than one stream is present, the join of the provided streams will be returned.
         """
         # if multiple streams are provided, join them
         # otherwise, return as is
-        if len(streams) == 0:
-            raise ValueError(
-                f"{self.__class__.__name__} expects at least one input stream"
-            )
+        if len(streams) <= 1:
+            return streams
+
         output_stream = self._join_streams(*streams)
         return (output_stream,)
 
@@ -134,20 +128,17 @@ class ActivatablePodBase(TrackedKernelBase):
 
     def prepare_output_stream(
         self, *streams: dp.Stream, label: str | None = None
-    ) -> dp.LiveStream:
-        output_stream = self.forward(*streams)
-        output_stream.label = label
-        return output_stream
+    ) -> KernelStream:
+        return KernelStream(source=self, upstreams=streams, label=label)
 
-    def forward(self, *streams: dp.Stream) -> PodStream:
+    def forward(self, *streams: dp.Stream) -> dp.Stream:
         assert len(streams) == 1, "PodBase.forward expects exactly one input stream"
-        input_stream = streams[0]
+        return LazyPodResultStream(pod=self, prepared_stream=streams[0])
 
-        return PodStream(
-            self,
-            input_stream,
-            error_handling=cast(error_handling_options, self.error_handling),
-        )
+    @abstractmethod
+    def call(
+        self, tag: dp.Tag, packet: dp.Packet
+    ) -> tuple[dp.Tag, dp.Packet | None]: ...
 
     def track_invocation(self, *streams: dp.Stream, label: str | None = None) -> None:
         if not self._skip_tracking and self._tracker_manager is not None:
@@ -252,10 +243,7 @@ class FunctionPod(ActivatablePodBase):
 
     @property
     def kernel_id(self) -> tuple[str, ...]:
-        return (
-            self.function_name,
-            self.data_context.object_hasher.hash_to_hex(self),
-        )
+        return (self.function_name,)
 
     def input_packet_types(self) -> PythonSchema:
         """
@@ -323,7 +311,9 @@ class FunctionPod(ActivatablePodBase):
         )
         return tag, output_packet
 
-    def kernel_identity_structure(self, *streams: dp.Stream) -> Any:
+    def kernel_identity_structure(
+        self, streams: Collection[dp.Stream] | None = None
+    ) -> Any:
         # construct identity structure for the function
 
         # if function_info_extractor is available, use that but substitute the function_name
@@ -348,8 +338,8 @@ class FunctionPod(ActivatablePodBase):
         )
         # if streams are provided, perform pre-processing step, validate, and add the
         # resulting single stream to the identity structure
-        if len(streams) != 0:
-            id_struct += (streams[0],)
+        if streams is not None and len(streams) != 0:
+            id_struct += tuple(streams)
 
         return id_struct
 
@@ -358,6 +348,7 @@ class WrappedPod(ActivatablePodBase):
     """
     A wrapper for an existing pod, allowing for additional functionality or modifications without changing the original pod.
     This class is meant to serve as a base class for other pods that need to wrap existing pods.
+    Note that only the call logic is pass through to the wrapped pod, but the forward logic is not.
     """
 
     def __init__(
@@ -401,11 +392,16 @@ class WrappedPod(ActivatablePodBase):
         """
         return self.pod.output_packet_types()
 
+    def validate_inputs(self, *streams: dp.Stream) -> None:
+        self.pod.validate_inputs(*streams)
+
     def call(self, tag: dp.Tag, packet: dp.Packet) -> tuple[dp.Tag, dp.Packet | None]:
         return self.pod.call(tag, packet)
 
-    def kernel_identity_structure(self, *streams: dp.Stream) -> Any:
-        return self.pod.identity_structure(*streams)
+    def kernel_identity_structure(
+        self, streams: Collection[dp.Stream] | None = None
+    ) -> Any:
+        return self.pod.identity_structure(streams)
 
     def __repr__(self) -> str:
         return f"WrappedPod({self.pod!r})"
@@ -446,7 +442,7 @@ class CachedPod(WrappedPod):
         Return the path to the record in the result store.
         This is used to store the results of the pod.
         """
-        return self.record_path_prefix + self.kernel_id
+        return self.record_path_prefix + self.kernel_id + (self.pod_hash,)
 
     def call(
         self,
