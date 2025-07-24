@@ -100,7 +100,10 @@ class Pipeline(GraphTracker):
             node = PodNode(
                 pod=pod,
                 input_streams=new_input_streams,
+                result_store=self.results_store,
+                record_path_prefix=self.results_store_path_prefix,
                 pipeline_store=self.pipeline_store,
+                pipeline_path_prefix=self.pipeline_store_path_prefix,
                 label=invocation.label,
             )
         else:
@@ -108,6 +111,7 @@ class Pipeline(GraphTracker):
                 kernel=invocation.kernel,
                 input_streams=new_input_streams,
                 pipeline_store=self.pipeline_store,
+                pipeline_path_prefix=self.pipeline_store_path_prefix,
                 label=invocation.label,
             )
         return node

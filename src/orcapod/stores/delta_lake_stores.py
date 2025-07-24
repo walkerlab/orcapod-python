@@ -220,7 +220,7 @@ class BasicDeltaTableArrowStore:
             unsafe_chars = ["/", "\\", ":", "*", "?", '"', "<", ">", "|", "\0"]
             if any(char in component for char in unsafe_chars):
                 raise ValueError(
-                    f"Source path component contains invalid characters: {repr(component)}"
+                    f"Source path {record_path} component {component} contains invalid characters: {repr(component)}"
                 )
 
     def _get_source_key(self, record_path: tuple[str, ...]) -> str:

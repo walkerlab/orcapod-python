@@ -59,6 +59,16 @@ class ArrowConverter[T](ABC):
         """Convert from Arrow representation to canonical form"""
         pass
 
+    # @abstractmethod
+    # def from_canonical_to_arrow_compatible(self, value: T) -> Any:
+    #     """Convert from canonical to Arrow-compatible representation"""
+    #     pass
+
+    # @abstractmethod
+    # def from_arrow_compatible_to_canonical(self, value: Any) -> T:
+    #     """Convert from Arrow-compatible representation to canonical form"""
+    #     pass
+
     @abstractmethod
     def from_canonical(self, value: T | Collection[T]) -> pa.Array:
         """Convert from canonical to Arrow representation"""
@@ -144,6 +154,12 @@ class ArrowStringPathConverter(ArrowConverter[CanonicalPath]):
         if isinstance(value, CanonicalPath):
             value = [value]
         return pa.array([v.path_str for v in value], type=pa.large_string())
+
+    def from_canonical_to_arrow_compatible(self, value: CanonicalPath) -> str:
+        return value.path_str
+
+    def from_arrow_compatible_to_canonical(self, value: str) -> CanonicalPath:
+        return CanonicalPath(path_str=value, is_absolute=Path(value).is_absolute())
 
     def can_handle(self, arrow_type: pa.DataType) -> bool:
         return arrow_type == pa.large_string()
