@@ -320,6 +320,46 @@ class Datagram(Protocol):
         """
         ...
 
+    # TODO: add this back
+    # def as_arrow_compatible_dict(
+    #     self,
+    #     include_all_info: bool = False,
+    #     include_meta_columns: bool | Collection[str] = False,
+    #     include_context: bool = False,
+    # ) -> dict[str, Any]:
+    #     """
+    #     Return dictionary with values optimized for Arrow table conversion.
+
+    #     This method returns a dictionary where values are in a form that can be
+    #     efficiently converted to Arrow format using pa.Table.from_pylist().
+
+    #     The key insight is that this avoids the expensive as_table() → concat pattern
+    #     by providing values that are "Arrow-ready" while remaining in dict format
+    #     for efficient batching.
+
+    #     Implementation note: This may involve format conversions (e.g., Path objects
+    #     to strings, datetime objects to ISO strings, etc.) to ensure compatibility
+    #     with Arrow's expected input formats.
+
+    #     Arrow table that results from pa.Table.from_pylist on the output of this should be accompanied
+    #     with arrow_schema(...) with the same argument options to ensure that the schema matches the table.
+
+    #     Args:
+    #         include_all_info: Include all available information
+    #         include_meta_columns: Controls meta column inclusion
+    #         include_context: Whether to include context key
+
+    #     Returns:
+    #         Dictionary with values optimized for Arrow conversion
+
+    #     Example:
+    #         # Efficient batch conversion pattern
+    #         arrow_dicts = [datagram.as_arrow_compatible_dict() for datagram in datagrams]
+    #         schema = datagrams[0].arrow_schema()
+    #         table = pa.Table.from_pylist(arrow_dicts, schema=schema)
+    #     """
+    #     ...
+
     # 5. Meta Column Operations
     def get_meta_value(self, key: str, default: DataValue = None) -> DataValue:
         """
@@ -789,6 +829,17 @@ class Packet(Datagram, Protocol):
         """
         ...
 
+    # TODO: add this back
+    # def as_arrow_compatible_dict(
+    #     self,
+    #     include_all_info: bool = False,
+    #     include_meta_columns: bool | Collection[str] = False,
+    #     include_context: bool = False,
+    #     include_source: bool = False,
+    # ) -> dict[str, Any]:
+    #     """Extended version with source info support."""
+    #     ...
+
     def as_datagram(
         self,
         include_all_info: bool = False,
@@ -1034,6 +1085,15 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         Provides a more explicit method name when the intent is to iterate
         over packets specifically, improving code readability.
 
+        This method must return an immutable iterator -- that is, the returned iterator
+        should not change and must consistently return identical tag,packet pairs across
+        multiple iterations of the iterator.
+
+        Note that this is NOT to mean that multiple invocation of `iter_packets` must always
+        return an identical iterator. The iterator returned by `iter_packets` may change
+        between invocations, but the iterator itself must not change. Consequently, it should be understood
+        that the returned iterators may be a burden on memory if the stream is large or infinite.
+
         Yields:
             tuple[Tag, Packet]: Sequential (tag, packet) pairs
         """
@@ -1058,6 +1118,19 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
 
         Returns:
             pa.Table: Complete stream data as a PyArrow Table
+        """
+        ...
+
+    def flow(self) -> Collection[tuple[Tag, Packet]]:
+        """
+        Return the entire stream as a collection of (tag, packet) pairs.
+
+        This method materializes the stream content into a list or similar
+        collection type. It is useful for small streams or when you need
+        to process all data at once.
+
+        Returns:
+            Collection[tuple[Tag, Packet]]: All (tag, packet) pairs in the stream
         """
         ...
 
@@ -1293,7 +1366,7 @@ class Kernel(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
-    def identity_structure(self, *streams: Stream) -> Any:
+    def identity_structure(self, streams: Collection[Stream] | None = None) -> Any:
         """
         Generate a unique identity structure for this kernel and/or kernel invocation.
         When invoked without streams, it should return a structure
@@ -1307,7 +1380,9 @@ class Kernel(ContentIdentifiable, Labelable, Protocol):
         - Tracking kernel invocations in computational graphs
 
         Args:
-            *streams: Optional input streams for this invocation
+            streams: Optional input streams for this invocation. If None, identity_structure is
+                based solely on the kernel. If streams are provided, they are included in the identity
+                to differentiate between different invocations of the same kernel.
 
         Returns:
             Any: Unique identity structure (e.g., tuple of class name and stream identities)

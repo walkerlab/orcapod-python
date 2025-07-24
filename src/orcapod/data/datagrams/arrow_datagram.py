@@ -456,6 +456,31 @@ class ArrowDatagram(BaseDatagram):
 
         return arrow_utils.hstack_tables(*all_tables)
 
+    def as_arrow_compatible_dict(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+    ) -> dict[str, DataValue]:
+        """
+        Return dictionary representation compatible with Arrow.
+
+        Args:
+            include_meta_columns: Whether to include meta columns.
+                - True: include all meta columns
+                - Collection[str]: include meta columns matching these prefixes
+                - False: exclude meta columns
+            include_context: Whether to include context key
+
+        Returns:
+            Dictionary representation compatible with Arrow
+        """
+        return self.as_table(
+            include_all_info=include_all_info,
+            include_meta_columns=include_meta_columns,
+            include_context=include_context,
+        ).to_pylist()[0]
+
     # 5. Meta Column Operations
     def get_meta_value(self, key: str, default: DataValue = None) -> DataValue:
         """

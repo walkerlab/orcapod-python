@@ -63,6 +63,23 @@ class SemanticConverter:
                 arrow_data[field] = [value]
         return pa.Table.from_pydict(arrow_data, schema=arrow_schema)
 
+    def from_arrow_to_arrow_compat_dict(
+        self, arrow_data: pa.Table
+    ) -> list[dict[str, Any]]:
+        """Convert Arrow data to a dictionary of Python values"""
+        return arrow_data.to_pylist()
+
+    def from_python_to_arrow_compat_dict(
+        self, python_data: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        arrow_compat_dict = dict(python_data)
+        for field, converter in self._converter_lut.items():
+            if field in python_data:
+                arrow_compat_dict[field] = converter.from_python_to_arrow(
+                    python_data[field]
+                )
+        return arrow_compat_dict
+
     def from_arrow_to_python(self, arrow_data: pa.Table) -> list[dict[str, Any]]:
         """Convert a dictionary of Arrow arrays to Python values"""
 
