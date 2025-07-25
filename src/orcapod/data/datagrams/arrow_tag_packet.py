@@ -256,6 +256,31 @@ class ArrowPacket(ArrowDatagram):
             }
         return self._cached_source_info.copy()
 
+    def with_source_info(self, **source_info: str | None) -> Self:
+        """
+        Create a copy of the packet with updated source information.
+
+        Args:
+            source_info: New source information mapping
+
+        Returns:
+            New ArrowPacket instance with updated source info
+        """
+        new_packet = self.copy(include_cache=False)
+
+        existing_source_info_with_prefix = self._source_info_table.to_pylist()[0]
+        for key, value in source_info.items():
+            if not key.startswith(constants.SOURCE_PREFIX):
+                # Ensure the key is prefixed correctly
+                key = f"{constants.SOURCE_PREFIX}{key}"
+            if key in existing_source_info_with_prefix:
+                existing_source_info_with_prefix[key] = value
+
+        new_packet._source_info_table = pa.Table.from_pylist(
+            [existing_source_info_with_prefix]
+        )
+        return new_packet
+
     # 8. Utility Operations
     def copy(self, include_cache: bool = True) -> Self:
         """Return a copy of the datagram."""
@@ -263,5 +288,7 @@ class ArrowPacket(ArrowDatagram):
 
         if include_cache:
             new_packet._cached_source_info = self._cached_source_info
+        else:
+            new_packet._cached_source_info = None
 
         return new_packet
