@@ -798,6 +798,12 @@ class DictDatagram(BaseDatagram):
             new_datagram._cached_content_hash = self._cached_content_hash
             new_datagram._cached_data_arrow_schema = self._cached_data_arrow_schema
             new_datagram._cached_meta_arrow_schema = self._cached_meta_arrow_schema
+        else:
+            new_datagram._cached_data_table = None
+            new_datagram._cached_meta_table = None
+            new_datagram._cached_content_hash = None
+            new_datagram._cached_data_arrow_schema = None
+            new_datagram._cached_meta_arrow_schema = None
 
         return new_datagram
 

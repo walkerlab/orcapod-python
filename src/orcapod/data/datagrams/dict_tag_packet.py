@@ -251,10 +251,39 @@ class DictPacket(DictDatagram):
         """
         return {key: self._source_info.get(key, None) for key in self.keys()}
 
+    def with_source_info(self, **source_info: str | None) -> Self:
+        """
+        Create a new packet with updated source information.
+
+        Args:
+            **kwargs: Key-value pairs to update source information
+
+        Returns:
+            New DictPacket instance with updated source info
+        """
+        current_source_info = self._source_info.copy()
+
+        for key, value in source_info.items():
+            if not key.startswith(constants.SOURCE_PREFIX):
+                key = f"{constants.SOURCE_PREFIX}{key}"
+            if key in current_source_info:
+                current_source_info[key] = value
+
+        new_packet = self.copy(include_cache=False)
+        new_packet._source_info = current_source_info
+
+        return new_packet
+
     def copy(self, include_cache: bool = True) -> Self:
         """Return a shallow copy of the packet."""
         instance = super().copy(include_cache=include_cache)
         instance._source_info = self._source_info.copy()
         if include_cache:
             instance._cached_source_info_table = self._cached_source_info_table
+            instance._cached_source_info_schema = self._cached_source_info_schema
+
+        else:
+            instance._cached_source_info_table = None
+            instance._cached_source_info_schema = None
+
         return instance
