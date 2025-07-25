@@ -238,12 +238,16 @@ class FunctionPod(ActivatablePodBase):
                 semantic_type_registry=self.data_context.semantic_type_registry
             )
         )
-
         self._function_info_extractor = function_info_extractor
+
+        # now compute hash for the self and store that info
+        self._pod_hash = self.data_context.object_hasher.hash_to_hex(
+            self, prefix_hasher_id=True
+        )
 
     @property
     def kernel_id(self) -> tuple[str, ...]:
-        return (self.function_name,)
+        return (self.function_name, self._pod_hash)
 
     def input_packet_types(self) -> PythonSchema:
         """
@@ -300,7 +304,10 @@ class FunctionPod(ActivatablePodBase):
             )
 
         output_data = {k: v for k, v in zip(self.output_keys, output_values)}
-        source_info = {k: ":".join(self.kernel_id + (k,)) for k in output_data}
+        source_info = {
+            k: ":".join(self.kernel_id + (packet.content_hash(), k))
+            for k in output_data
+        }
 
         output_packet = DictPacket(
             {k: v for k, v in zip(self.output_keys, output_values)},
@@ -396,7 +403,8 @@ class WrappedPod(ActivatablePodBase):
         self.pod.validate_inputs(*streams)
 
     def call(self, tag: dp.Tag, packet: dp.Packet) -> tuple[dp.Tag, dp.Packet | None]:
-        return self.pod.call(tag, packet)
+        output_tag, output_packet = self.pod.call(tag, packet)
+        return output_tag, output_packet
 
     def kernel_identity_structure(
         self, streams: Collection[dp.Stream] | None = None
@@ -442,7 +450,7 @@ class CachedPod(WrappedPod):
         Return the path to the record in the result store.
         This is used to store the results of the pod.
         """
-        return self.record_path_prefix + self.kernel_id + (self.pod_hash,)
+        return self.record_path_prefix + self.kernel_id
 
     def call(
         self,
@@ -456,7 +464,7 @@ class CachedPod(WrappedPod):
         if not skip_record_check:
             output_packet = self.get_recorded_output_packet(packet)
         if output_packet is None:
-            tag, output_packet = self.pod.call(tag, packet)
+            tag, output_packet = super().call(tag, packet)
             if output_packet is not None and not skip_recording:
                 self.record_packet(
                     packet, output_packet, overwrite_existing=overwrite_existing
