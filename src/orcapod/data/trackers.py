@@ -129,6 +129,10 @@ class StubKernel:
         self.label = label or stream.label
         self.stream = stream
 
+    @property
+    def kernel_id(self) -> tuple[str, ...]:
+        return (self.stream.__class__.__name__,)
+
     def forward(self, *args: Any, **kwargs: Any) -> dp.Stream:
         """
         Forward the stream through the stub kernel.
