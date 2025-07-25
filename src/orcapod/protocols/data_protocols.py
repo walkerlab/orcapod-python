@@ -877,6 +877,30 @@ class Packet(Datagram, Protocol):
         """
         ...
 
+    def with_source_info(
+        self,
+        **source_info: str | None,
+    ) -> Self:
+        """
+        Create new packet with updated source information.
+
+        Adds or updates source metadata for the packet. This is useful for
+        tracking data provenance and lineage through the computational graph.
+
+        Args:
+            **source_info: Source metadata as keyword arguments.
+
+        Returns:
+            New packet instance with updated source information.
+
+        Example:
+            >>> updated_packet = packet.with_source_info(
+            ...     file_path="/new/path/to/file.txt",
+            ...     source_id="source_123"
+            ... )
+        """
+        ...
+
 
 class PodFunction(Protocol):
     """
