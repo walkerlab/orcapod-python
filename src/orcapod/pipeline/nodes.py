@@ -204,6 +204,8 @@ class KernelNode(Node, WrappedKernel):
     This node can be used to execute the kernel and process data streams.
     """
 
+    HASH_COLUMN_NAME = "_record_hash"
+
     def __init__(
         self,
         kernel: dp.Kernel,
@@ -250,7 +252,7 @@ class KernelNode(Node, WrappedKernel):
         return output_stream
 
     def record_pipeline_output(self, output_stream: dp.Stream) -> None:
-        key_column_name = "_record_hash"
+        key_column_name = self.HASH_COLUMN_NAME
         output_table = output_stream.as_table(
             include_data_context=True,
             include_source=True,
@@ -262,6 +264,26 @@ class KernelNode(Node, WrappedKernel):
             record_id_column=key_column_name,
             ignore_duplicates=True,
         )
+
+    def get_all_records(
+        self, include_system_columns: bool = False
+    ) -> "pa.Table | None":
+        results = self.pipeline_store.get_all_records(self.pipeline_path)
+
+        if results is None:
+            return None
+
+        if not include_system_columns:
+            system_columns = [
+                c
+                for c in results.column_names
+                if c.startswith(constants.META_PREFIX)
+                or c.startswith(constants.CONTEXT_KEY)
+                or c.startswith(constants.SOURCE_PREFIX)
+            ]
+            results = results.drop(system_columns)
+
+        return results
 
 
 def add_pipeline_record(
@@ -438,7 +460,6 @@ class PodNode(Node, CachedPod):
             self.PACKET_HASH_COLUMN,
             join_type="inner",
         )
-        tag_keys, packet_keys = self.keys()
 
         if not include_system_columns:
             system_columns = [
