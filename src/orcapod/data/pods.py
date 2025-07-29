@@ -458,17 +458,15 @@ class CachedPod(WrappedPod):
         packet: dp.Packet,
         skip_record_check: bool = False,
         skip_recording: bool = False,
-        overwrite_existing: bool = False,
     ) -> tuple[dp.Tag, dp.Packet | None]:
+        # TODO: consider logic for overwriting existing records
         output_packet = None
         if not skip_record_check:
             output_packet = self.get_recorded_output_packet(packet)
         if output_packet is None:
             tag, output_packet = super().call(tag, packet)
             if output_packet is not None and not skip_recording:
-                self.record_packet(
-                    packet, output_packet, overwrite_existing=overwrite_existing
-                )
+                self.record_packet(packet, output_packet)
 
         return tag, output_packet
 
@@ -476,8 +474,7 @@ class CachedPod(WrappedPod):
         self,
         input_packet: dp.Packet,
         output_packet: dp.Packet,
-        overwrite_existing: bool = False,
-        ignore_duplicates: bool = False,
+        skip_duplicates: bool = False,
     ) -> dp.Packet:
         """
         Record the output packet against the input packet in the result store.
@@ -488,15 +485,14 @@ class CachedPod(WrappedPod):
             self.record_path,
             input_packet.content_hash(),
             data_table,
-            overwrite_existing=overwrite_existing,
-            ignore_duplicates=ignore_duplicates,
+            skip_duplicates=skip_duplicates,
         )
-        if result_flag is None:
-            # TODO: do more specific error handling
-            raise ValueError(
-                f"Failed to record packet {input_packet} in result store {self.result_store}"
-            )
-        # TODO: make store return retrieved table
+        # if result_flag is None:
+        #     # TODO: do more specific error handling
+        #     raise ValueError(
+        #         f"Failed to record packet {input_packet} in result store {self.result_store}"
+        #     )
+        # # TODO: make store return retrieved table
         return output_packet
 
     def get_recorded_output_packet(self, input_packet: dp.Packet) -> dp.Packet | None:

@@ -1,6 +1,32 @@
 from abc import abstractmethod
 from ast import Not
+from abc import abstractmethod
+from ast import Not
 from collections.abc import Collection, Iterator
+from datetime import datetime
+from orcapod.data.kernels import WrappedKernel, TrackedKernelBase
+from orcapod.data.pods import ArrowDataStore, CachedPod
+from orcapod.protocols import data_protocols as dp
+from orcapod.data.streams import PodStream
+from orcapod.types import TypeSpec
+from orcapod.utils.lazy_module import LazyModule
+from typing import TYPE_CHECKING, Any
+from orcapod.data.system_constants import orcapod_constants as constants
+from orcapod.utils import arrow_utils
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+    import polars as pl
+    import pandas as pd
+else:
+    pa = LazyModule("pyarrow")
+    pl = LazyModule("polars")
+    pd = LazyModule("pandas")
+
+
+class Node(
+    TrackedKernelBase,
+):
 from datetime import datetime
 from orcapod.data.kernels import WrappedKernel, TrackedKernelBase
 from orcapod.data.pods import ArrowDataStore, CachedPod
@@ -27,6 +53,7 @@ class Node(
 ):
     """
     Mixin class for pipeline nodes
+    Mixin class for pipeline nodes
     """
 
     def __init__(
@@ -34,7 +61,21 @@ class Node(
         input_streams: Collection[dp.Stream],
         pipeline_store: ArrowDataStore,
         pipeline_path_prefix: tuple[str, ...] = (),
+        input_streams: Collection[dp.Stream],
+        pipeline_store: ArrowDataStore,
+        pipeline_path_prefix: tuple[str, ...] = (),
         **kwargs,
+    ):
+        super().__init__(**kwargs)
+        self._cached_stream: dp.LiveStream | None = None
+        self.input_streams = tuple(input_streams)
+        self.pipeline_store = pipeline_store
+        self.pipeline_path_prefix = pipeline_path_prefix
+        # compute invocation hash - note that empty () is passed into identity_structure to signify
+        # identity structure of invocation with no input streams
+        self.invocation_hash = self.data_context.object_hasher.hash_to_hex(
+            self.identity_structure(()), prefix_hasher_id=True
+        )
     ):
         super().__init__(**kwargs)
         self._cached_stream: dp.LiveStream | None = None
@@ -52,8 +93,19 @@ class Node(
         raise NotImplementedError(
             "This property should be implemented by subclasses to return the contained kernel."
         )
+    def contained_kernel(self) -> dp.Kernel:
+        raise NotImplementedError(
+            "This property should be implemented by subclasses to return the contained kernel."
+        )
 
     @property
+    def tag_keys(self) -> tuple[str, ...]:
+        """
+        Return the keys used for the tag in the pipeline run records.
+        This is used to store the run-associated tag info.
+        """
+        tag_keys, _ = self.keys()
+        return tag_keys
     def tag_keys(self) -> tuple[str, ...]:
         """
         Return the keys used for the tag in the pipeline run records.
@@ -71,10 +123,21 @@ class Node(
         # TODO: consider caching this
         _, packet_keys = self.keys()
         return packet_keys
+    def packet_keys(self) -> tuple[str, ...]:
+        """
+        Return the keys used for the packet in the pipeline run records.
+        This is used to store the run-associated packet info.
+        """
+        # TODO: consider caching this
+        _, packet_keys = self.keys()
+        return packet_keys
 
     @property
     def pipeline_path(self) -> tuple[str, ...]:
+    def pipeline_path(self) -> tuple[str, ...]:
         """
+        Return the path to the pipeline run records.
+        This is used to store the run-associated tag info.
         Return the path to the pipeline run records.
         This is used to store the run-associated tag info.
         """
@@ -87,7 +150,36 @@ class Node(
         if len(streams) > 0:
             raise NotImplementedError(
                 "At this moment, Node does not yet support handling additional input streams."
+        return self.pipeline_path_prefix + self.kernel_id + (self.invocation_hash,)
+
+    def validate_inputs(self, *processed_streams: dp.Stream) -> None:
+        pass
+
+    def forward(self, *streams: dp.Stream) -> dp.Stream:
+        if len(streams) > 0:
+            raise NotImplementedError(
+                "At this moment, Node does not yet support handling additional input streams."
             )
+        # TODO: re-evaluate the use here
+        # super().validate_inputs(*self.input_streams)
+        return super().forward(*self.input_streams)
+
+    def __call__(self, *args, **kwargs) -> dp.LiveStream:
+        if self._cached_stream is None:
+            self._cached_stream = super().__call__(*args, **kwargs)
+        return self._cached_stream
+
+    # properties and methods to act as a dp.Stream
+    @property
+    def source(self) -> dp.Kernel | None:
+        return self
+
+    @property
+    def upstreams(self) -> tuple[dp.Stream, ...]:
+        return ()
+
+    def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        return self().keys()
         # TODO: re-evaluate the use here
         # super().validate_inputs(*self.input_streams)
         return super().forward(*self.input_streams)
@@ -140,7 +232,57 @@ class Node(
 
     def flow(self) -> Collection[tuple[dp.Tag, dp.Packet]]:
         return self().flow()
+    def types(self) -> tuple[TypeSpec, TypeSpec]:
+        return self().types()
 
+    @property
+    def last_modified(self) -> datetime | None:
+        return self().last_modified
+
+    @property
+    def is_current(self) -> bool:
+        return self().is_current
+
+    def __iter__(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+        return self().__iter__()
+
+    def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+        return self().iter_packets()
+
+    def as_table(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_content_hash: bool | str = False,
+    ) -> "pa.Table":
+        return self().as_table(
+            include_data_context=include_data_context,
+            include_source=include_source,
+            include_content_hash=include_content_hash,
+        )
+
+    def flow(self) -> Collection[tuple[dp.Tag, dp.Packet]]:
+        return self().flow()
+
+    def identity_structure(self, streams: Collection[dp.Stream] | None = None) -> Any:
+        """
+        Return the identity structure of the node.
+        This is used to compute the invocation hash.
+        """
+        # construct identity structure from the node's information and the
+        # contained kernel
+        if streams is not None and len(streams) > 0:
+            raise NotImplementedError(
+                "At this moment, Node does not yet support handling additional input streams."
+            )
+        return self.contained_kernel.identity_structure(self.input_streams)
+
+    def get_all_records(
+        self, include_system_columns: bool = False
+    ) -> "pa.Table | None":
+        """
+        Retrieve all records associated with the node.
+        If include_system_columns is True, system columns will be included in the result.
     def identity_structure(self, streams: Collection[dp.Stream] | None = None) -> Any:
         """
         Return the identity structure of the node.
@@ -162,8 +304,14 @@ class Node(
         If include_system_columns is True, system columns will be included in the result.
         """
         raise NotImplementedError("This method should be implemented by subclasses.")
+        raise NotImplementedError("This method should be implemented by subclasses.")
 
     @property
+    def lazy(self) -> "pl.LazyFrame | None":
+        records = self.get_all_records(include_system_columns=False)
+        if records is not None:
+            return pl.LazyFrame(records)
+        return None
     def lazy(self) -> "pl.LazyFrame | None":
         records = self.get_all_records(include_system_columns=False)
         if records is not None:
@@ -212,9 +360,17 @@ class KernelNode(Node, WrappedKernel):
         input_streams: Collection[dp.Stream],
         pipeline_store: ArrowDataStore,
         pipeline_path_prefix: tuple[str, ...] = (),
+        kernel: dp.Kernel,
+        input_streams: Collection[dp.Stream],
+        pipeline_store: ArrowDataStore,
+        pipeline_path_prefix: tuple[str, ...] = (),
         **kwargs,
     ) -> None:
         super().__init__(
+            kernel=kernel,
+            input_streams=input_streams,
+            pipeline_store=pipeline_store,
+            pipeline_path_prefix=pipeline_path_prefix,
             kernel=kernel,
             input_streams=input_streams,
             pipeline_store=pipeline_store,
