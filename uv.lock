@@ -1216,6 +1216,7 @@ dev = [
     { name = "deltalake" },
     { name = "httpie" },
     { name = "ipykernel" },
+    { name = "pyarrow-stubs" },
     { name = "pyiceberg" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -1244,6 +1245,7 @@ dev = [
     { name = "deltalake", specifier = ">=1.0.2" },
     { name = "httpie", specifier = ">=3.2.4" },
     { name = "ipykernel", specifier = ">=6.29.5" },
+    { name = "pyarrow-stubs", specifier = ">=20.0.0.20250716" },
     { name = "pyiceberg", specifier = ">=0.9.1" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-cov", specifier = ">=6.1.1" },
@@ -1544,6 +1546,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/eb/cb/65fa110b483339add6a9bc7b6373614166b14e20375d4daa73483755f830/pyarrow-20.0.0-cp313-cp313t-musllinux_1_2_aarch64.whl", hash = "sha256:f3b117b922af5e4c6b9a9115825726cac7d8b1421c37c2b5e24fbacc8930612c", size = 42839441, upload-time = "2025-04-27T12:32:46.64Z" },
     { url = "https://files.pythonhosted.org/packages/98/7b/f30b1954589243207d7a0fbc9997401044bf9a033eec78f6cb50da3f304a/pyarrow-20.0.0-cp313-cp313t-musllinux_1_2_x86_64.whl", hash = "sha256:e724a3fd23ae5b9c010e7be857f4405ed5e679db5c93e66204db1a69f733936a", size = 44503279, upload-time = "2025-04-27T12:32:56.503Z" },
     { url = "https://files.pythonhosted.org/packages/37/40/ad395740cd641869a13bcf60851296c89624662575621968dcfafabaa7f6/pyarrow-20.0.0-cp313-cp313t-win_amd64.whl", hash = "sha256:82f1ee5133bd8f49d31be1299dc07f585136679666b502540db854968576faf9", size = 25944982, upload-time = "2025-04-27T12:33:04.72Z" },
+]
+
+[[package]]
+name = "pyarrow-stubs"
+version = "20.0.0.20250716"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyarrow" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/55/81/0506544eaa9719a4640e7949a1a3614732ab24790a3204dfb74ec5483d74/pyarrow_stubs-20.0.0.20250716.tar.gz", hash = "sha256:8fa8a93a7b7ec3c8d6df8c452628f4351419e8bc44ac45a298d7223d05dcdd0a", size = 236506, upload-time = "2025-07-16T02:28:54.907Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ca/a1/d0c333111d801c77a83a32f793222c4b9aef7de0fdb2ceb73a1980a6c98b/pyarrow_stubs-20.0.0.20250716-py3-none-any.whl", hash = "sha256:8ecfdd215af468d6b993e2290da7f3d51a32991c1d230b90682f7ee4bc5ee7cd", size = 235661, upload-time = "2025-07-16T02:28:53.394Z" },
 ]
 
 [[package]]
