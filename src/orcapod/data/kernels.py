@@ -76,6 +76,22 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
     @abstractmethod
     def kernel_id(self) -> tuple[str, ...]: ...
 
+    @abstractmethod
+    def forward(self, *streams: dp.Stream) -> dp.Stream:
+        """
+        Trigger the main computation of the kernel on a collection of streams.
+        This method is called when the kernel is invoked with a collection of streams.
+        Subclasses should override this method to provide the kernel with its unique behavior
+        """
+
+    @abstractmethod
+    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]: ...
+
+    @abstractmethod
+    def kernel_identity_structure(
+        self, streams: Collection[dp.Stream] | None = None
+    ) -> Any: ...
+
     def pre_kernel_processing(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
         """
         Pre-processing step that can be overridden by subclasses to perform any necessary pre-processing
@@ -87,7 +103,11 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         return streams
 
     @abstractmethod
-    def validate_inputs(self, *streams: dp.Stream) -> None: ...
+    def validate_inputs(self, *streams: dp.Stream) -> None:
+        """
+        Valide the input streams before the main computation but after the pre-kernel processing
+        """
+        ...
 
     def prepare_output_stream(
         self, *streams: dp.Stream, label: str | None = None
@@ -116,34 +136,10 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         self.track_invocation(*processed_streams, label=label)
         return output_stream
 
-    @abstractmethod
-    def forward(self, *streams: dp.Stream) -> dp.Stream:
-        """
-        Trigger the main computation of the kernel on a collection of streams.
-        This method is called when the kernel is invoked with a collection of streams.
-        Subclasses should override this method to provide the kernel with its unique behavior
-        """
-
     def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
         processed_streams = self.pre_kernel_processing(*streams)
         self.validate_inputs(*processed_streams)
         return self.kernel_output_types(*processed_streams)
-
-    @abstractmethod
-    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]: ...
-
-    def __repr__(self):
-        return self.__class__.__name__
-
-    def __str__(self):
-        if self._label is not None:
-            return f"{self.__class__.__name__}({self._label})"
-        return self.__class__.__name__
-
-    @abstractmethod
-    def kernel_identity_structure(
-        self, streams: Collection[dp.Stream] | None = None
-    ) -> Any: ...
 
     def identity_structure(self, streams: Collection[dp.Stream] | None = None) -> Any:
         # Default implementation of identity_structure for the kernel only
@@ -164,6 +160,14 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
             streams = self.pre_kernel_processing(*streams)
             self.validate_inputs(*streams)
         return self.kernel_identity_structure(streams)
+
+    def __repr__(self):
+        return self.__class__.__name__
+
+    def __str__(self):
+        if self._label is not None:
+            return f"{self.__class__.__name__}({self._label})"
+        return self.__class__.__name__
 
 
 class WrappedKernel(TrackedKernelBase):

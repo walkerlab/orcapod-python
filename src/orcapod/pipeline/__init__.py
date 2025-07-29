@@ -3,3 +3,9 @@
 # __all__ = [
 #     "Pipeline",
 # ]
+
+from .graph import Pipeline
+
+__all__ = [
+    "Pipeline",
+]

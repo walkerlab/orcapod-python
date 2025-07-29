@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 from typing import Any, TYPE_CHECKING
 from contextlib import contextmanager
 
+from orcapod.types import TypeSpec
+
 if TYPE_CHECKING:
     import networkx as nx
 
@@ -128,6 +130,14 @@ class StubKernel:
         """
         self.label = label or stream.label
         self.stream = stream
+
+    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+        """
+        Returns the types of the tag and packet columns in the stream.
+        This is useful for accessing the types of the columns in the stream.
+        """
+        assert len(streams) == 0, "StubKernel should not have any input streams."
+        return self.stream.types()
 
     @property
     def kernel_id(self) -> tuple[str, ...]:

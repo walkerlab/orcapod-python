@@ -263,7 +263,8 @@ class Join(NonZeroInputOperator):
         try:
             self.op_output_types(*streams)
         except Exception as e:
-            raise InputValidationError(f"Input streams are not compatible: {e}")
+            # raise InputValidationError(f"Input streams are not compatible: {e}") from e
+            raise e
 
     def op_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
         if len(streams) == 1:

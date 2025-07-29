@@ -1,7 +1,9 @@
 from .data import DEFAULT_TRACKER_MANAGER
 from .data.pods import function_pod, FunctionPod, CachedPod
 from .data import streams
-from .stores.delta_lake_stores import BatchedDeltaTableArrowStore
+from .data import operators
+from . import stores
+from .pipeline import Pipeline
 
 
 no_tracking = DEFAULT_TRACKER_MANAGER.no_tracking
@@ -13,5 +15,7 @@ __all__ = [
     "FunctionPod",
     "CachedPod",
     "streams",
-    "BatchedDeltaTableArrowStore",
+    "stores",
+    "operators",
+    "Pipeline"
 ]

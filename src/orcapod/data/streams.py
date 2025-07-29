@@ -412,6 +412,7 @@ class KernelStream(StreamBase):
             upstreams = upstreams or output_stream.upstreams
 
         super().__init__(source=source, upstreams=upstreams, **kwargs)
+        self.kernel = source
         self._cached_stream = output_stream
 
     def clear_cache(self) -> None:
@@ -427,22 +428,15 @@ class KernelStream(StreamBase):
         Returns the keys of the tag and packet columns in the stream.
         This is useful for accessing the columns in the stream.
         """
-        self.refresh()
-        assert self._cached_stream is not None, (
-            "_cached_stream should not be None here."
-        )
-        return self._cached_stream.keys()
+        tag_types, packet_types = self.kernel.output_types(*self.upstreams)
+        return tuple(tag_types.keys()), tuple(packet_types.keys())
 
     def types(self) -> tuple[TypeSpec, TypeSpec]:
         """
         Returns the types of the tag and packet columns in the stream.
         This is useful for accessing the types of the columns in the stream.
         """
-        self.refresh()
-        assert self._cached_stream is not None, (
-            "_cached_stream should not be None here."
-        )
-        return self._cached_stream.types()
+        return self.kernel.output_types(*self.upstreams)
 
     @property
     def is_current(self) -> bool:
@@ -530,6 +524,7 @@ class LazyPodResultStream(StreamBase):
 
         # Packet-level caching (from your PodStream)
         self._cached_output_packets: dict[int, tuple[dp.Tag, dp.Packet | None]] = {}
+        self._cached_output_table: pa.Table | None = None
 
     def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
         if self._prepared_stream_iterator is not None:

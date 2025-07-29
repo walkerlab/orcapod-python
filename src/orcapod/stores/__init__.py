@@ -12,3 +12,5 @@
 #     "MockArrowDataStore",
 #     "SimpleParquetDataStore",
 # ]
+
+from .delta_lake_stores import BatchedDeltaTableArrowStore

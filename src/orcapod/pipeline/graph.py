@@ -90,6 +90,13 @@ class Pipeline(GraphTracker):
             invocation_to_stream_lut[invocation] = node()
             self.nodes[node.label] = node
 
+    def run(self) -> None:
+        # FIXME: perform more efficient traversal through the graph!
+        for node in self.nodes.values():
+            node.flow()
+
+        self.flush()
+
     def wrap_invocation(
         self,
         invocation: Invocation,

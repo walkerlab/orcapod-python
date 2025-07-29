@@ -99,15 +99,19 @@ class Node(
     def source(self) -> dp.Kernel | None:
         return self
 
-    @property
-    def upstreams(self) -> tuple[dp.Stream, ...]:
-        return ()
-
     def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
-        return self().keys()
+        tag_types, packet_types = self.types()
+        return tuple(tag_types.keys()), tuple(packet_types.keys())
 
     def types(self) -> tuple[TypeSpec, TypeSpec]:
-        return self().types()
+        return self.contained_kernel.output_types(*self.input_streams)
+
+    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+        """
+        Return the output types of the node.
+        This is used to determine the types of the output streams.
+        """
+        return self.contained_kernel.output_types(*self.input_streams)
 
     @property
     def last_modified(self) -> datetime | None:
