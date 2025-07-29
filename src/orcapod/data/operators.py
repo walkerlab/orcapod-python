@@ -4,8 +4,15 @@ from orcapod.data.streams import ImmutableTableStream
 from orcapod.types import TypeSpec
 from orcapod.types.typespec_utils import union_typespecs, intersection_typespecs
 from abc import abstractmethod
-from typing import Any
+from typing import Any, TYPE_CHECKING
+from orcapod.utils.lazy_module import LazyModule
+from collections.abc import Collection
 from orcapod.errors import InputValidationError
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+else:
+    pa = LazyModule("pyarrow")
 
 
 class Operator(TrackedKernelBase):
@@ -25,21 +32,9 @@ class NonZeroInputOperator(Operator):
     such as joins, unions, etc.
     """
 
-    def validate_inputs(self, *streams: dp.Stream) -> None:
-        self.verify_non_zero_input(*streams)
-        return self.op_validate_inputs(*streams)
-
-    @abstractmethod
-    def op_validate_inputs(self, *streams: dp.Stream) -> None:
-        """
-        This method should be implemented by subclasses to validate the inputs to the operator.
-        It takes two streams as input and raises an error if the inputs are not valid.
-        """
-        ...
-
     def verify_non_zero_input(
         self,
-        *streams: dp.Stream,
+        streams: Collection[dp.Stream],
     ) -> None:
         """
         Check that the inputs to the variable inputs operator are valid.
@@ -50,6 +45,10 @@ class NonZeroInputOperator(Operator):
                 f"Operator {self.__class__.__name__} requires at least one input stream."
             )
 
+    def validate_inputs(self, *streams: dp.Stream) -> None:
+        self.verify_non_zero_input(streams)
+        return self.op_validate_inputs(*streams)
+
     def forward(self, *streams: dp.Stream) -> dp.Stream:
         """
         Forward method for variable inputs operators.
@@ -57,18 +56,25 @@ class NonZeroInputOperator(Operator):
         """
         return self.op_forward(*streams)
 
-    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
-        self.validate_inputs(*streams)
+    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
         return self.op_output_types(*streams)
 
-    def identity_structure(self, *streams: dp.Stream) -> Any:
+    def kernel_identity_structure(
+        self, streams: Collection[dp.Stream] | None = None
+    ) -> Any:
         """
         Return a structure that represents the identity of this operator.
         This is used to ensure that the operator can be uniquely identified in the computational graph.
         """
-        if len(streams) > 0:
-            self.verify_non_zero_input(*streams)
-        return self.op_identity_structure(*streams)
+        return self.op_identity_structure(streams)
+
+    @abstractmethod
+    def op_validate_inputs(self, *streams: dp.Stream) -> None:
+        """
+        This method should be implemented by subclasses to validate the inputs to the operator.
+        It takes two streams as input and raises an error if the inputs are not valid.
+        """
+        ...
 
     @abstractmethod
     def op_forward(self, *streams: dp.Stream) -> dp.Stream:
@@ -87,7 +93,9 @@ class NonZeroInputOperator(Operator):
         ...
 
     @abstractmethod
-    def op_identity_structure(self, *streams: dp.Stream) -> Any:
+    def op_identity_structure(
+        self, streams: Collection[dp.Stream] | None = None
+    ) -> Any:
         """
         This method should be implemented by subclasses to return a structure that represents the identity of the operator.
         It takes zero or more streams as input and returns a tuple containing the operator name and a set of streams.
@@ -102,10 +110,45 @@ class BinaryOperator(Operator):
     Base class for all operators.
     """
 
+    def check_binary_inputs(
+        self,
+        streams: Collection[dp.Stream],
+    ) -> None:
+        """
+        Check that the inputs to the binary operator are valid.
+        This method is called before the forward method to ensure that the inputs are valid.
+        """
+        if len(streams) != 2:
+            raise ValueError("BinaryOperator requires exactly two input streams.")
+
     def validate_inputs(self, *streams: dp.Stream) -> None:
-        self.check_binary_inputs(*streams)
+        self.check_binary_inputs(streams)
         left_stream, right_stream = streams
         return self.op_validate_inputs(left_stream, right_stream)
+
+    def forward(self, *streams: dp.Stream) -> dp.Stream:
+        """
+        Forward method for binary operators.
+        It expects exactly two streams as input.
+        """
+        left_stream, right_stream = streams
+        return self.op_forward(left_stream, right_stream)
+
+    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+        left_stream, right_stream = streams
+        return self.op_output_types(left_stream, right_stream)
+
+    def kernel_identity_structure(
+        self, streams: Collection[dp.Stream] | None = None
+    ) -> Any:
+        """
+        Return a structure that represents the identity of this operator.
+        This is used to ensure that the operator can be uniquely identified in the computational graph.
+        """
+        if streams is not None:
+            left_stream, right_stream = streams
+            self.op_identity_structure(left_stream, right_stream)
+        return self.op_identity_structure()
 
     @abstractmethod
     def op_validate_inputs(
@@ -116,38 +159,6 @@ class BinaryOperator(Operator):
         It takes two streams as input and raises an error if the inputs are not valid.
         """
         ...
-
-    def check_binary_inputs(
-        self, *streams: dp.Stream, allow_zero: bool = False
-    ) -> None:
-        """
-        Check that the inputs to the binary operator are valid.
-        This method is called before the forward method to ensure that the inputs are valid.
-        """
-        if not (allow_zero and len(streams) == 0) and len(streams) != 2:
-            raise ValueError("BinaryOperator requires exactly two input streams.")
-
-    def forward(self, *streams: dp.Stream) -> dp.Stream:
-        """
-        Forward method for binary operators.
-        It expects exactly two streams as input.
-        """
-        self.check_binary_inputs(*streams)
-        left_stream, right_stream = streams
-        return self.op_forward(left_stream, right_stream)
-
-    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
-        self.check_binary_inputs(*streams)
-        left_stream, right_stream = streams
-        return self.op_output_types(left_stream, right_stream)
-
-    def identity_structure(self, *streams: dp.Stream) -> Any:
-        """
-        Return a structure that represents the identity of this operator.
-        This is used to ensure that the operator can be uniquely identified in the computational graph.
-        """
-        self.check_binary_inputs(*streams, allow_zero=True)
-        return self.op_identity_structure(*streams)
 
     @abstractmethod
     def op_forward(self, left_stream: dp.Stream, right_stream: dp.Stream) -> dp.Stream:
@@ -248,73 +259,84 @@ class Join(NonZeroInputOperator):
         """
         return (f"{self.__class__.__name__}",)
 
-    def op_identity_structure(self, *streams: dp.Stream) -> Any:
-        # Join does not depend on the order of the streams -- convert it onto a set
-        id_struct = (self.__class__.__name__,)
-        if len(streams) > 0:
-            id_struct += (set(streams),)
-        return id_struct
+    def op_validate_inputs(self, *streams: dp.Stream) -> None:
+        try:
+            self.op_output_types(*streams)
+        except Exception as e:
+            raise InputValidationError(f"Input streams are not compatible: {e}")
 
-    def op_forward(self, *streams: dp.Stream) -> ImmutableTableStream:
+    def op_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+        if len(streams) == 1:
+            # If only one stream is provided, return its typespecs
+            return streams[0].types()
+
+        stream = streams[0]
+        tag_typespec, packet_typespec = stream.types()
+        for other_stream in streams[1:]:
+            other_tag_typespec, other_packet_typespec = other_stream.types()
+            tag_typespec = union_typespecs(tag_typespec, other_tag_typespec)
+            packet_typespec = union_typespecs(packet_typespec, other_packet_typespec)
+
+        return tag_typespec, packet_typespec
+
+    def op_forward(self, *streams: dp.Stream) -> dp.Stream:
         """
         Joins two streams together based on their tags.
         The resulting stream will contain all the tags from both streams.
         """
+        if len(streams) == 1:
+            return streams[0]
 
-        all_tag_typespecs = []
-        all_packet_typespecs = []
+        COMMON_JOIN_KEY = "_common"
 
-        joined_stream = streams[0]
-        for stream in streams[1:]:
-            joined_tag_typespec, joined_packet_typespec = joined_stream.types()
-            stream_tag_typespec, stream_packet_typespec = stream.types()
-            joined_table = joined_stream.as_table().join(
-                stream.as_table(),
-                keys=intersection_typespecs(joined_tag_typespec, stream_tag_typespec),
-                join_type="inner",
+        stream = streams[0]
+
+        tag_keys, _ = [set(k) for k in stream.keys()]
+        table = stream.as_table(include_source=True)
+        # trick to get cartesian product
+        table = table.add_column(0, COMMON_JOIN_KEY, pa.array([0] * len(table)))
+
+        for next_stream in streams[1:]:
+            next_tag_keys, _ = next_stream.keys()
+            next_table = next_stream.as_table(include_source=True)
+            next_table = next_table.add_column(
+                0, COMMON_JOIN_KEY, pa.array([0] * len(next_table))
             )
+            common_tag_keys = tag_keys.intersection(next_tag_keys)
+            common_tag_keys.add(COMMON_JOIN_KEY)
 
-        for stream in streams:
-            tag_typespec, packet_typespec = stream.types()
-            all_tag_typespecs.append(tag_typespec)
-            all_packet_typespecs.append(packet_typespec)
+            table = table.join(
+                next_table, keys=list(common_tag_keys), join_type="inner"
+            )
+            tag_keys.update(next_tag_keys)
 
-        common_tag_keys = tuple(intersection_typespecs(*all_tag_typespecs).keys())
-        joined_tag_keys = tuple(union_typespecs(*all_tag_typespecs).keys())
-
-        # performing a check to ensure that packets are compatible
-        union_typespecs(*all_packet_typespecs)
-
-        joined_table = left_stream.as_table().join(
-            right_stream.as_table(),
-            keys=common_tag_keys,
-            join_type="inner",
-        )
+        # reorder columns to bring tag columns to the front
+        # TODO: come up with a better algorithm
+        table = table.drop(COMMON_JOIN_KEY)
+        reordered_columns = [col for col in table.column_names if col in tag_keys]
+        reordered_columns += [col for col in table.column_names if col not in tag_keys]
 
         return ImmutableTableStream(
-            joined_table,
-            tag_columns=tuple(joined_tag_keys),
+            table.select(reordered_columns),
+            tag_columns=tuple(tag_keys),
             source=self,
             upstreams=streams,
         )
 
-    def op_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
-        left_stream, right_stream = streams
-        left_tag_typespec, left_packet_typespec = left_stream.types()
-        right_tag_typespec, right_packet_typespec = right_stream.types()
-        joined_tag_typespec = union_typespecs(left_tag_typespec, right_tag_typespec)
-        joined_packet_typespec = union_typespecs(
-            left_packet_typespec, right_packet_typespec
+    def op_identity_structure(
+        self, streams: Collection[dp.Stream] | None = None
+    ) -> Any:
+        return (
+            (self.__class__.__name__,) + (set(streams),) if streams is not None else ()
         )
-        return joined_tag_typespec, joined_packet_typespec
-
-    def op_validate_inputs(
-        self, left_stream: dp.Stream, right_stream: dp.Stream
-    ) -> None:
-        try:
-            self.op_output_types(left_stream, right_stream)
-        except Exception as e:
-            raise InputValidationError(f"Input streams are not compatible: {e}")
 
     def __repr__(self) -> str:
         return "Join()"
+
+
+def op_identity_structure(self, *streams: dp.Stream) -> Any:
+    # Join does not depend on the order of the streams -- convert it onto a set
+    id_struct = (self.__class__.__name__,)
+    if len(streams) > 0:
+        id_struct += (set(streams),)
+    return id_struct
