@@ -276,16 +276,16 @@ class BatchedDeltaTableArrowStore:
         self,
         record_path: tuple[str, ...],
         record_id: str,
-        data: "pa.Table",
-        schema_handling: Literal["merge", "error", "coerce"] = "error",
+        record: "pa.Table",
         skip_duplicates: bool = False,
         flush: bool = False,
-    ) -> "pa.Table | None":
-        data_with_record_id = self._ensure_record_id_column(data, record_id)
-        return self.add_records(
+        schema_handling: Literal["merge", "error", "coerce"] = "error",
+    ) -> None:
+        data_with_record_id = self._ensure_record_id_column(record, record_id)
+        self.add_records(
             record_path=record_path,
-            arrow_table=data_with_record_id,
-            id_column=self.RECORD_ID_COLUMN,
+            records=data_with_record_id,
+            record_id_column=self.RECORD_ID_COLUMN,
             schema_handling=schema_handling,
             skip_duplicates=skip_duplicates,
             flush=flush,
@@ -294,12 +294,12 @@ class BatchedDeltaTableArrowStore:
     def add_records(
         self,
         record_path: tuple[str, ...],
-        arrow_table: pa.Table,
-        id_column: str,
-        schema_handling: Literal["merge", "error", "coerce"] = "error",
+        records: pa.Table,
+        record_id_column: str | None = None,
         skip_duplicates: bool = False,
         flush: bool = False,
-    ) -> "pa.Table | None":
+        schema_handling: Literal["merge", "error", "coerce"] = "error",
+    ) -> None:
         """
         Insert new records. By default, never overwrites existing records.
 
@@ -315,23 +315,26 @@ class BatchedDeltaTableArrowStore:
         Raises:
             ValueError: If any record IDs already exist and skip_duplicates=False
         """
-        if arrow_table.num_rows == 0:
+        if records.num_rows == 0:
             return
 
-        # Step 1: Validate that id column exist
-        if id_column not in arrow_table.column_names:
+        if record_id_column is None:
+            record_id_column = records.column_names[0]
+
+        # Step 1: Validate that record ID column exist
+        if record_id_column not in records.column_names:
             raise ValueError(
-                f"Specified ID column {id_column} not found in input table {arrow_table.column_names}"
+                f"Specified record ID column {record_id_column} not found in input table {records.column_names}"
             )
 
-        # rename ID column to a standard name
-        if id_column != self.RECORD_ID_COLUMN:
-            rename_map = {id_column: self.RECORD_ID_COLUMN}
-            total_name_map = {k: rename_map.get(k, k) for k in arrow_table.column_names}
-            arrow_table = arrow_table.rename_columns(total_name_map)
+        # rename record ID column to a standard name
+        if record_id_column != self.RECORD_ID_COLUMN:
+            rename_map = {record_id_column: self.RECORD_ID_COLUMN}
+            total_name_map = {k: rename_map.get(k, k) for k in records.column_names}
+            records = records.rename_columns(total_name_map)
 
         # Step 2: Deduplicate within input table (keep last occurrence)
-        deduplicated_table = self._deduplicate_within_table(arrow_table)
+        deduplicated_table = self._deduplicate_within_table(records)
 
         # Step 3: Handle conflicts based on skip_duplicates setting
         if skip_duplicates:
@@ -637,7 +640,7 @@ class BatchedDeltaTableArrowStore:
     def get_records_by_ids(
         self,
         record_path: tuple[str, ...],
-        record_ids: "list[str] | pl.Series | pa.Array",
+        record_ids: "Collection[str] | pl.Series | pa.Array",
         record_id_column: str | None = None,
         flush: bool = False,
     ) -> "pa.Table | None":
@@ -658,22 +661,19 @@ class BatchedDeltaTableArrowStore:
             self.flush_batch(record_path)
 
         # Convert input to list of strings for consistency
-        if isinstance(record_ids, list):
-            if not record_ids:
-                return None
-            record_ids_list = record_ids
-        elif isinstance(record_ids, pl.Series):
-            if len(record_ids) == 0:
-                return None
+
+        if isinstance(record_ids, pl.Series):
             record_ids_list = cast(list[str], record_ids.to_list())
         elif isinstance(record_ids, (pa.Array, pa.ChunkedArray)):
-            if len(record_ids) == 0:
-                return None
             record_ids_list = cast(list[str], record_ids.to_pylist())
+        elif isinstance(record_ids, Collection):
+            record_ids_list = list(record_ids)
         else:
             raise TypeError(
                 f"record_ids must be list[str], pl.Series, or pa.Array, got {type(record_ids)}"
             )
+        if len(record_ids) == 0:
+            return None
 
         # check inside the batch
         delta_table = self._get_delta_table(record_path)

@@ -262,7 +262,7 @@ class KernelNode(Node, WrappedKernel):
             self.pipeline_path,
             output_table,
             record_id_column=key_column_name,
-            ignore_duplicates=True,
+            skip_duplicates=True,
         )
 
     def get_all_records(
@@ -330,7 +330,7 @@ def add_pipeline_record(
         self.pipeline_path,
         entry_id,
         combined_record,
-        ignore_duplicates=False,
+        skip_duplicates=False,
     )
 
 
@@ -372,14 +372,12 @@ class PodNode(Node, CachedPod):
         packet: dp.Packet,
         skip_record_check: bool = False,
         skip_recording: bool = False,
-        overwrite_existing: bool = False,
     ) -> tuple[dp.Tag, dp.Packet | None]:
         tag, output_packet = super().call(
             tag,
             packet,
             skip_record_check=skip_record_check,
             skip_recording=skip_recording,
-            overwrite_existing=overwrite_existing,
         )
         if output_packet is not None:
             retrieved = (
@@ -433,7 +431,7 @@ class PodNode(Node, CachedPod):
             self.pipeline_path,
             entry_id,
             combined_record,
-            ignore_duplicates=False,
+            skip_duplicates=False,
         )
 
     def get_all_records(

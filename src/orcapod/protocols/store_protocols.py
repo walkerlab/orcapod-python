@@ -1,6 +1,8 @@
-from typing import Protocol
+from typing import Protocol, TYPE_CHECKING
 from collections.abc import Collection
-import pyarrow as pa
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 
 class ArrowDataStore(Protocol):
@@ -8,32 +10,33 @@ class ArrowDataStore(Protocol):
         self,
         record_path: tuple[str, ...],
         record_id: str,
-        data: pa.Table,
-        ignore_duplicates: bool | None = None,
-        overwrite_existing: bool = False,
-    ) -> str | None: ...
+        record: "pa.Table",
+        skip_duplicates: bool = False,
+        flush: bool = False,
+    ) -> None: ...
 
     def add_records(
         self,
         record_path: tuple[str, ...],
-        records: pa.Table,
+        records: "pa.Table",
         record_id_column: str | None = None,
-        ignore_duplicates: bool | None = None,
-        overwrite_existing: bool = False,
-    ) -> list[str]: ...
+        skip_duplicates: bool = False,
+        flush: bool = False,
+    ) -> None: ...
 
     def get_record_by_id(
         self,
         record_path: tuple[str, ...],
         record_id: str,
         record_id_column: str | None = None,
-    ) -> pa.Table | None: ...
+        flush: bool = False,
+    ) -> "pa.Table | None": ...
 
     def get_all_records(
         self,
         record_path: tuple[str, ...],
         record_id_column: str | None = None,
-    ) -> pa.Table | None:
+    ) -> "pa.Table | None":
         """Retrieve all records for a given path as a stream."""
         ...
 
@@ -42,7 +45,8 @@ class ArrowDataStore(Protocol):
         record_path: tuple[str, ...],
         record_ids: Collection[str],
         record_id_column: str | None = None,
-    ) -> pa.Table: ...
+        flush: bool = False,
+    ) -> "pa.Table | None": ...
 
     def flush(self) -> None:
         """Flush any buffered writes to the underlying storage."""
