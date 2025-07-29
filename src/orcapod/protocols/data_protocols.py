@@ -1283,6 +1283,14 @@ class Kernel(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
+    @property
+    def last_modified(self) -> datetime | None:
+        """
+        When the kernel was last modified. For most kernels, this is the timestamp
+        of the kernel creation.
+        """
+        ...
+
     def __call__(
         self, *streams: Stream, label: str | None = None, **kwargs
     ) -> LiveStream:

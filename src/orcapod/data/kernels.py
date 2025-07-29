@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 from collections.abc import Collection
+from datetime import datetime, timezone
 from typing import Any
 from orcapod.protocols import data_protocols as dp
 import logging
@@ -39,6 +40,8 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
 
         self._skip_tracking = skip_tracking
         self._tracker_manager = tracker_manager or DEFAULT_TRACKER_MANAGER
+        self._last_modified = None
+        self._set_modified_time()
 
     @property
     def data_context(self) -> DataContext:
@@ -48,6 +51,26 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
     def data_context_key(self) -> str:
         """Return the data context key."""
         return self._data_context.context_key
+
+    @property
+    def last_modified(self) -> datetime | None:
+        """
+        When the kernel was last modified. For most kernels, this is the timestamp
+        of the kernel creation.
+        """
+        return self._last_modified
+
+    def _set_modified_time(
+        self, timestamp: datetime | None = None, invalidate: bool = False
+    ) -> None:
+        if invalidate:
+            self._last_modified = None
+            return
+
+        if timestamp is not None:
+            self._last_modified = timestamp
+        else:
+            self._last_modified = datetime.now(timezone.utc)
 
     @property
     @abstractmethod
@@ -68,7 +91,7 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
 
     def prepare_output_stream(
         self, *streams: dp.Stream, label: str | None = None
-    ) -> dp.LiveStream:
+    ) -> KernelStream:
         """
         Prepare the output stream for the kernel invocation.
         This method is called after the main computation is performed.
@@ -86,7 +109,7 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
 
     def __call__(
         self, *streams: dp.Stream, label: str | None = None, **kwargs
-    ) -> dp.LiveStream:
+    ) -> KernelStream:
         processed_streams = self.pre_kernel_processing(*streams)
         self.validate_inputs(*processed_streams)
         output_stream = self.prepare_output_stream(*processed_streams, label=label)
@@ -139,6 +162,7 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         # This can be achieved, for example, by returning a set over the streams instead of a tuple.
         if streams is not None:
             streams = self.pre_kernel_processing(*streams)
+            self.validate_inputs(*streams)
         return self.kernel_identity_structure(streams)
 
 

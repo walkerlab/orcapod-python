@@ -55,6 +55,9 @@ class StreamBase(ABC, LabeledContentIdentifiableBase):
         self._set_modified_time()
         # note that this is not necessary for Stream protocol, but is provided
         # for convenience to resolve semantic types and other context-specific information
+        if data_context is None and source is not None:
+            # if source is provided, use its data context
+            data_context = source.data_context_key
         self._data_context = DataContext.resolve_data_context(data_context)
 
     @property
@@ -114,6 +117,14 @@ class StreamBase(ABC, LabeledContentIdentifiableBase):
             # If there is no last_modified timestamp, we cannot determine if the stream is current
             return False
 
+        # check if the source kernel has been modified
+        if self.source is not None and (
+            self.source.last_modified is None
+            or self.source.last_modified > self.last_modified
+        ):
+            return False
+
+        # check if all upstreams are current
         for upstream in self.upstreams:
             if (
                 not upstream.is_current
@@ -202,18 +213,28 @@ class ImmutableTableStream(StreamBase):
     ) -> None:
         super().__init__(source=source, upstreams=upstreams, **kwargs)
 
-        table, data_context_table = arrow_utils.split_by_column_groups(
+        data_table, data_context_table = arrow_utils.split_by_column_groups(
             table, [constants.CONTEXT_KEY]
         )
+        if data_table is None:
+            # TODO: provide better error message
+            raise ValueError(
+                "Table must contain at least one column to be used as a stream."
+            )
+
         if data_context_table is None:
             data_context_table = pa.table(
-                {constants.CONTEXT_KEY: pa.nulls(len(table), pa.large_string())}
+                {constants.CONTEXT_KEY: pa.nulls(len(data_table), pa.large_string())}
             )
 
         prefix_info = {constants.SOURCE_PREFIX: source_info}
 
         # determine tag columns first and then exclude any source info
         self._tag_columns = tuple(c for c in tag_columns if c in table.column_names)
+        if delta := set(tag_columns) - set(self._tag_columns):
+            raise ValueError(
+                f"Specified tag columns {delta} are not present in the table."
+            )
         table, prefix_tables = arrow_utils.prepare_prefixed_columns(
             table, prefix_info, exclude_columns=self._tag_columns
         )
