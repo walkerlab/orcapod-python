@@ -1,11 +1,10 @@
 import logging
 from pathlib import Path
-import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Collection, Iterator
 from datetime import datetime, timezone
 from itertools import repeat
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from orcapod.data.base import LabeledContentIdentifiableBase
 from orcapod.data.context import DataContext
@@ -598,12 +597,16 @@ class LazyPodResultStream(StreamBase):
 
             # FIXME: this skips the semantic version conversion and thus is not
             # fully correct!
-            all_tags: pa.Table = pa.Table.from_pylist(all_tags, schema=tag_schema)
-            all_packets: pa.Table = pa.Table.from_pylist(
+            all_tags_as_tables: pa.Table = pa.Table.from_pylist(
+                all_tags, schema=tag_schema
+            )
+            all_packets_as_tables: pa.Table = pa.Table.from_pylist(
                 all_packets, schema=packet_schema
             )
 
-            self._cached_output_table = arrow_utils.hstack_tables(all_tags, all_packets)
+            self._cached_output_table = arrow_utils.hstack_tables(
+                all_tags_as_tables, all_packets_as_tables
+            )
         assert self._cached_output_table is not None, (
             "_cached_output_table should not be None here."
         )
@@ -637,188 +640,6 @@ class LazyPodResultStream(StreamBase):
                 hash_column_name, self._cached_content_hash_column
             )
         return output_table
-
-
-class PodStream(StreamBase):
-    def __init__(
-        self,
-        pod: dp.Pod,
-        input_streams: tuple[dp.Stream, ...],
-        error_handling: Literal["raise", "ignore", "warn"] = "raise",
-        **kwargs,
-    ) -> None:
-        super().__init__(upstreams=input_streams, **kwargs)
-        self.pod = pod
-        self.input_streams = input_streams
-        self.error_handling = error_handling
-        self._source = pod
-
-        # Cache for processed packets
-        # This is a dictionary mapping the index of the packet in the input stream to a tuple of (Tag, Packet)
-        # This allows us to efficiently access the processed packets without re-processing them
-        self._cached_forward_stream: dp.Stream | None = None
-        self._cached_output_packets: dict[int, tuple[dp.Tag, dp.Packet]] = {}
-        self._computation_complete: bool = False
-        self._cached_output_table: pa.Table | None = None
-        self._cached_content_hash_column: pa.Array | None = None
-
-    @property
-    def source(self) -> dp.Pod | None:
-        """
-        The source of the stream, which is the pod that generated the stream.
-        This is typically used to track the origin of the stream in the computational graph.
-        """
-        return self._source
-
-    def forward_stream(self) -> dp.Stream:
-        if self._cached_forward_stream is None:
-            self._cached_forward_stream = self.pod.forward(*self.input_streams)
-        return self._cached_forward_stream
-
-    @property
-    def is_current(self) -> bool:
-        return self.forward_stream().is_current
-
-    def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
-        """
-        Returns the keys of the tag and packet columns in the stream.
-        This is useful for accessing the columns in the stream.
-        """
-
-        tag_keys, _ = self.forward_stream().keys()
-        packet_keys = tuple(self.pod.output_packet_types().keys())
-        return tag_keys, packet_keys
-
-    def types(self) -> tuple[TypeSpec, TypeSpec]:
-        tag_typespec, _ = self.forward_stream().types()
-        # TODO: check if copying can be avoided
-        packet_typespec = dict(self.pod.output_packet_types())
-        return tag_typespec, packet_typespec
-
-    def clear_cache(self) -> None:
-        """
-        Clears the cached results of the processed stream.
-        This is useful for re-processing the stream with the same processor.
-        """
-        self._cached_forward_stream = None
-        self._cached_output_packets = {}
-        self._computation_complete = False
-        self._cached_output_table = None
-        self._cached_content_hash_column = None
-
-    def refresh(self, force: bool = False) -> bool:
-        if not self.is_current or force:
-            self.invalidate()
-            return True
-        return False
-
-    def invalidate(self) -> None:
-        """
-        Invalidate the stream, marking it as needing recomputation.
-        This will clear the cached stream and set the last modified time to None.
-        """
-        self.clear_cache()
-        self._set_modified_time(invalidate=True)
-
-    def as_table(
-        self,
-        include_data_context: bool = False,
-        include_source: bool = False,
-        include_content_hash: bool | str = False,
-    ) -> pa.Table:
-        # TODO: note that this is likely NOT multi-thread safe
-        self.refresh()
-        if self._cached_output_table is None:
-            all_tags = []
-            all_packets = []
-            tag_schema, packet_schema = None, None
-            for tag, packet in self.iter_packets():
-                if tag_schema is None:
-                    tag_schema = tag.arrow_schema()
-                if packet_schema is None:
-                    packet_schema = packet.arrow_schema(
-                        include_context=True,
-                        include_source=True,
-                    )
-                all_tags.append(tag.as_dict())
-                all_packets.append(
-                    packet.as_dict(include_context=True, include_source=True)
-                )
-
-            all_tags: pa.Table = pa.Table.from_pylist(all_tags, schema=tag_schema)
-            all_packets: pa.Table = pa.Table.from_pylist(
-                all_packets, schema=packet_schema
-            )
-
-            self._cached_output_table = arrow_utils.hstack_tables(all_tags, all_packets)
-        assert self._cached_output_table is not None, (
-            "_cached_output_table should not be None here."
-        )
-
-        drop_columns = []
-        if not include_source:
-            drop_columns.extend(f"{constants.SOURCE_PREFIX}{c}" for c in self.keys()[1])
-        if not include_data_context:
-            drop_columns.append(constants.CONTEXT_KEY)
-
-        output_table = self._cached_output_table.drop(drop_columns)
-
-        # lazily prepare content hash column if requested
-        if include_content_hash:
-            if self._cached_content_hash_column is None:
-                content_hashes = []
-                for tag, packet in self.iter_packets():
-                    content_hashes.append(packet.content_hash())
-                self._cached_content_hash_column = pa.array(
-                    content_hashes, type=pa.large_string()
-                )
-            assert self._cached_content_hash_column is not None, (
-                "_cached_content_hash_column should not be None here."
-            )
-            hash_column_name = (
-                "_content_hash"
-                if include_content_hash is True
-                else include_content_hash
-            )
-            output_table = output_table.append_column(
-                hash_column_name, self._cached_content_hash_column
-            )
-        return output_table
-
-    def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
-        self.refresh()
-        if not self._computation_complete or self._cached_output_packets is None:
-            for i, (tag, packet) in enumerate(self.forward_stream().iter_packets()):
-                if i not in self._cached_output_packets:
-                    try:
-                        processed_tag, processed_packet = self.pod.call(tag, packet)
-                    except Exception as e:
-                        logger.error(f"Error processing packet {packet}: {e}")
-                        if self.error_handling == "raise":
-                            raise e
-                        elif self.error_handling == "warn":
-                            warnings.warn(f"Error processing packet {packet}: {e}")
-                            continue
-                        elif self.error_handling == "ignore":
-                            continue
-                        else:
-                            raise ValueError(
-                                f"Unknown error handling mode: {self.error_handling} encountered while handling error:"
-                            ) from e
-                    if processed_packet is None:
-                        # call returning None means the packet should be skipped
-                        logger.debug(
-                            f"Packet {packet} with tag {tag} was processed but returned None, skipping."
-                        )
-                        continue
-                    self._cached_output_packets[i] = (processed_tag, processed_packet)
-                    yield processed_tag, processed_packet
-            self._computation_complete = True
-            self._set_modified_time()
-
-        else:
-            for i in range(len(self._cached_output_packets)):
-                yield self._cached_output_packets[i]
 
 
 class WrappedStream(StreamBase):
@@ -872,136 +693,3 @@ class WrappedStream(StreamBase):
 
     def identity_structure(self) -> Any:
         return self._stream.identity_structure()
-
-
-class InvokedPodStream(StreamBase):
-    """
-    Recomputable stream that wraps a streams produced by a kernel to provide
-    an abstraction over the stream, taking the stream's source and upstreams as the basis of
-    recomputing the stream.
-
-    This stream is used to represent the output of a kernel invocation.
-    """
-
-    def __init__(
-        self,
-        pod_stream: PodStream | None = None,
-        source: dp.Pod | None = None,
-        upstreams: tuple[
-            dp.Stream, ...
-        ] = (),  # if provided, this will override the upstreams of the output_stream
-        **kwargs,
-    ) -> None:
-        if (pod_stream is None or output_stream.source is None) and source is None:
-            raise ValueError(
-                "Either output_stream must have a kernel assigned to it or source must be provided in order to be recomputable."
-            )
-        if source is None:
-            if output_stream is None or output_stream.source is None:
-                raise ValueError(
-                    "Either output_stream must have a kernel assigned to it or source must be provided in order to be recomputable."
-                )
-            source = output_stream.source
-            upstreams = upstreams or output_stream.upstreams
-
-        super().__init__(source=source, upstreams=upstreams, **kwargs)
-        self._cached_stream = output_stream
-
-    def clear_cache(self) -> None:
-        """
-        Clears the cached stream.
-        This is useful for re-processing the stream with the same kernel.
-        """
-        self._cached_stream = None
-        self._set_modified_time(invalidate=True)
-
-    def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
-        """
-        Returns the keys of the tag and packet columns in the stream.
-        This is useful for accessing the columns in the stream.
-        """
-        self.refresh()
-        assert self._cached_stream is not None, (
-            "_cached_stream should not be None here."
-        )
-        return self._cached_stream.keys()
-
-    def types(self) -> tuple[TypeSpec, TypeSpec]:
-        """
-        Returns the types of the tag and packet columns in the stream.
-        This is useful for accessing the types of the columns in the stream.
-        """
-        self.refresh()
-        assert self._cached_stream is not None, (
-            "_cached_stream should not be None here."
-        )
-        return self._cached_stream.types()
-
-    @property
-    def is_current(self) -> bool:
-        if self._cached_stream is None or not super().is_current:
-            status = self.refresh()
-            if not status:  # if it failed to update for whatever reason
-                return False
-        return True
-
-    def refresh(self, force: bool = False) -> bool:
-        updated = False
-        if force or (self._cached_stream is not None and not super().is_current):
-            self.clear_cache()
-
-        if self._cached_stream is None:
-            assert self.source is not None, (
-                "Stream source must be set to recompute the stream."
-            )
-            self._cached_stream = self.source.forward(*self.upstreams)
-            self._set_modified_time()
-            updated = True
-
-        if self._cached_stream is None:
-            # TODO: use beter error type
-            raise ValueError(
-                "Stream could not be updated. Ensure that the source is valid and upstreams are correct."
-            )
-
-        return updated
-
-    def invalidate(self) -> None:
-        """
-        Invalidate the stream, marking it as needing recomputation.
-        This will clear the cached stream and set the last modified time to None.
-        """
-        self.clear_cache()
-        self._set_modified_time(invalidate=True)
-
-    @property
-    def last_modified(self) -> datetime | None:
-        if self._cached_stream is None:
-            return None
-        return self._cached_stream.last_modified
-
-    def as_table(
-        self,
-        include_data_context: bool = False,
-        include_source: bool = False,
-        include_content_hash: bool | str = False,
-    ) -> pa.Table:
-        self.refresh()
-        assert self._cached_stream is not None, (
-            "Stream has not been updated or is empty."
-        )
-        return self._cached_stream.as_table(
-            include_data_context=include_data_context,
-            include_source=include_source,
-            include_content_hash=include_content_hash,
-        )
-
-    def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
-        self.refresh()
-        assert self._cached_stream is not None, (
-            "Stream has not been updated or is empty."
-        )
-        yield from self._cached_stream.iter_packets()
-
-    def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(kernel={self.source}, upstreams={self.upstreams})"
