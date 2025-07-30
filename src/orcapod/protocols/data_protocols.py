@@ -1158,6 +1158,54 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
+    def join(self, other_stream: "Stream") -> "Stream":
+        """
+        Join this stream with another stream.
+
+        Combines two streams into a single stream by merging their content.
+        The resulting stream contains all (tag, packet) pairs from both
+        streams, preserving their order.
+
+        Args:
+            other_stream: The other stream to join with this one.
+
+        Returns:
+            Self: New stream containing combined content from both streams.
+        """
+        ...
+
+    def semi_join(self, other_stream: "Stream") -> "Stream":
+        """
+        Perform a semi-join with another stream.
+
+        This operation filters this stream to only include packets that have
+        corresponding tags in the other stream. The resulting stream contains
+        all (tag, packet) pairs from this stream that match tags in the other.
+
+        Args:
+            other_stream: The other stream to semi-join with this one.
+
+        Returns:
+            Self: New stream containing filtered content based on the semi-join.
+        """
+        ...
+
+    def map_tags(
+        self, name_map: Mapping[str, str], drop_unmapped: bool = True
+    ) -> "Stream":
+        """
+        Map tag names in this stream to new names based on the provided mapping.
+        """
+        ...
+
+    def map_packets(
+        self, name_map: Mapping[str, str], drop_unmapped: bool = True
+    ) -> "Stream":
+        """
+        Map packet names in this stream to new names based on the provided mapping.
+        """
+        ...
+
 
 class LiveStream(Stream, Protocol):
     """
