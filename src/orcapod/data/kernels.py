@@ -41,7 +41,22 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         self._skip_tracking = skip_tracking
         self._tracker_manager = tracker_manager or DEFAULT_TRACKER_MANAGER
         self._last_modified = None
+        self._kernel_hash = None
         self._set_modified_time()
+
+    @property
+    def kernel_id(self) -> tuple[str, ...]:
+        """
+        Returns a unique identifier for the kernel.
+        This is used to identify the kernel in the computational graph.
+        """
+        if self._kernel_hash is None:
+            # If the kernel hash is not set, compute it based on the class name and label.
+            # This is a simple way to ensure that each kernel has a unique identifier.
+            self._kernel_hash = self.data_context.object_hasher.hash_to_hex(
+                self.identity_structure(), prefix_hasher_id=True
+            )
+        return (f"{self.__class__.__name__}", self._kernel_hash)
 
     @property
     def data_context(self) -> DataContext:
@@ -76,16 +91,6 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
             self._last_modified = timestamp
         else:
             self._last_modified = datetime.now(timezone.utc)
-
-    @property
-    @abstractmethod
-    def kernel_id(self) -> tuple[str, ...]:
-        """
-        Return a unique identifier for the kernel.
-        This identifier is used to track the kernel and its invocations. Kernels with distinct identifiers
-        are considered distinct, even if they have the same label or content.
-        """
-        ...
 
     @abstractmethod
     def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:

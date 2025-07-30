@@ -25,20 +25,6 @@ class Operator(TrackedKernelBase):
     and returns a new stream as output (note that output stream is always singular).
     """
 
-    def __init__(self, **kwargs: Any):
-        super().__init__(**kwargs)
-        self._operator_hash = self.data_context.object_hasher.hash_to_hex(
-            self.identity_structure(), prefix_hasher_id=True
-        )
-
-    @property
-    def kernel_id(self) -> tuple[str, ...]:
-        """
-        Returns a unique identifier for the kernel.
-        This is used to identify the kernel in the computational graph.
-        """
-        return (f"{self.__class__.__name__}", self._operator_hash)
-
 
 class NonZeroInputOperator(Operator):
     """
