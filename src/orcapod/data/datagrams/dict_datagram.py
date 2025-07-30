@@ -1,4 +1,3 @@
-from curses import meta
 import logging
 from collections.abc import Collection, Iterator, Mapping
 from typing import Self, cast
@@ -473,7 +472,7 @@ class DictDatagram(BaseDatagram):
 
         return self._meta_data.get(key, default)
 
-    def with_meta_columns(self, **meta_updates: DataValue) -> "DictDatagram":
+    def with_meta_columns(self, **meta_updates: DataValue) -> Self:
         """
         Create a new DictDatagram with updated meta columns.
         Maintains immutability by returning a new instance.
@@ -499,15 +498,13 @@ class DictDatagram(BaseDatagram):
         full_data = dict(self._data)  # User data
         full_data.update(new_meta_data)  # Meta data
 
-        return DictDatagram(
+        return self.__class__(
             data=full_data,
             semantic_converter=self._semantic_converter,
             data_context=self._data_context,
         )
 
-    def drop_meta_columns(
-        self, *keys: str, ignore_missing: bool = False
-    ) -> "DictDatagram":
+    def drop_meta_columns(self, *keys: str, ignore_missing: bool = False) -> Self:
         """
         Create a new DictDatagram with specified meta columns dropped.
         Maintains immutability by returning a new instance.
@@ -544,14 +541,14 @@ class DictDatagram(BaseDatagram):
         full_data = dict(self._data)  # User data
         full_data.update(new_meta_data)  # Filtered meta data
 
-        return DictDatagram(
+        return self.__class__(
             data=full_data,
             semantic_converter=self._semantic_converter,
             data_context=self._data_context,
         )
 
     # 6. Data Column Operations
-    def select(self, *column_names: str) -> "DictDatagram":
+    def select(self, *column_names: str) -> Self:
         """
         Create a new DictDatagram with only specified data columns.
         Maintains immutability by returning a new instance.
@@ -574,13 +571,13 @@ class DictDatagram(BaseDatagram):
         full_data = new_data  # Selected user data
         full_data.update(self._meta_data)  # Keep existing meta data
 
-        return DictDatagram(
+        return self.__class__(
             data=full_data,
             semantic_converter=self._semantic_converter,
             data_context=self._data_context,
         )
 
-    def drop(self, *column_names: str, ignore_missing: bool = False) -> "DictDatagram":
+    def drop(self, *column_names: str, ignore_missing: bool = False) -> Self:
         """
         Create a new DictDatagram with specified data columns dropped.
         Maintains immutability by returning a new instance.
@@ -607,13 +604,13 @@ class DictDatagram(BaseDatagram):
         full_data = new_data  # Filtered user data
         full_data.update(self._meta_data)  # Keep existing meta data
 
-        return DictDatagram(
+        return self.__class__(
             data=full_data,
             semantic_converter=self._semantic_converter,
             data_context=self._data_context,
         )
 
-    def rename(self, column_mapping: Mapping[str, str]) -> "DictDatagram":
+    def rename(self, column_mapping: Mapping[str, str]) -> Self:
         """
         Create a new DictDatagram with data columns renamed.
         Maintains immutability by returning a new instance.
@@ -647,14 +644,14 @@ class DictDatagram(BaseDatagram):
         full_data = new_data  # Renamed user data
         full_data.update(self._meta_data)  # Keep existing meta data
 
-        return DictDatagram(
+        return self.__class__(
             data=full_data,
             typespec=new_typespec,
             semantic_converter=self._semantic_converter,
             data_context=self._data_context,
         )
 
-    def update(self, **updates: DataValue) -> "DictDatagram":
+    def update(self, **updates: DataValue) -> Self:
         """
         Create a new DictDatagram with existing column values updated.
         Maintains immutability by returning a new instance.
@@ -687,7 +684,7 @@ class DictDatagram(BaseDatagram):
         full_data = new_data  # Updated user data
         full_data.update(self._meta_data)  # Keep existing meta data
 
-        return DictDatagram(
+        return self.__class__(
             data=full_data,
             semantic_converter=self._semantic_converter,  # Keep existing converter
             data_context=self._data_context,
@@ -697,7 +694,7 @@ class DictDatagram(BaseDatagram):
         self,
         column_types: Mapping[str, type] | None = None,
         **updates: DataValue,
-    ) -> "DictDatagram":
+    ) -> Self:
         """
         Create a new DictDatagram with new data columns added.
         Maintains immutability by returning a new instance.
@@ -744,7 +741,7 @@ class DictDatagram(BaseDatagram):
         full_data = new_data  # Updated user data
         full_data.update(self._meta_data)  # Keep existing meta data
 
-        return DictDatagram(
+        return self.__class__(
             data=full_data,
             typespec=new_typespec,
             # semantic converter needs to be rebuilt for new columns
@@ -752,7 +749,7 @@ class DictDatagram(BaseDatagram):
         )
 
     # 7. Context Operations
-    def with_context_key(self, new_context_key: str) -> "DictDatagram":
+    def with_context_key(self, new_context_key: str) -> Self:
         """
         Create a new DictDatagram with a different data context key.
         Maintains immutability by returning a new instance.
@@ -767,7 +764,7 @@ class DictDatagram(BaseDatagram):
         full_data = dict(self._data)  # User data
         full_data.update(self._meta_data)  # Meta data
 
-        return DictDatagram(
+        return self.__class__(
             data=full_data,
             data_context=new_context_key,  # New context
             # Note: semantic_converter will be rebuilt for new context

@@ -1,4 +1,3 @@
-from hmac import new
 import logging
 from collections.abc import Collection, Mapping
 from typing import Self

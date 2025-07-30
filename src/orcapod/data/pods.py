@@ -1,28 +1,27 @@
-from datetime import datetime, timezone
 import logging
 import sys
 from abc import abstractmethod
 from collections.abc import Callable, Collection, Iterable, Sequence
-from typing import Any, Literal, cast, TYPE_CHECKING
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any, Literal
 
-from orcapod.data.datagrams import (
-    DictPacket,
-    ArrowPacket,
-)
 from orcapod.data.context import DataContext
+from orcapod.data.datagrams import (
+    ArrowPacket,
+    DictPacket,
+)
 from orcapod.data.kernels import KernelStream, TrackedKernelBase
 from orcapod.data.operators import Join
-from orcapod.data.streams import LazyPodResultStream, PodStream
+from orcapod.data.streams import LazyPodResultStream
+from orcapod.data.system_constants import orcapod_constants as constants
 from orcapod.hashing.hash_utils import get_function_signature
 from orcapod.protocols import data_protocols as dp
 from orcapod.protocols import hashing_protocols as hp
 from orcapod.protocols.store_protocols import ArrowDataStore
 from orcapod.types import TypeSpec
+from orcapod.types import typespec_utils as tsutils
 from orcapod.types.schemas import PythonSchema
 from orcapod.types.semantic_converter import SemanticConverter
-from orcapod.types import typespec_utils as tsutils
-from orcapod.utils import arrow_utils
-from orcapod.data.system_constants import orcapod_constants as constants
 from orcapod.utils.lazy_module import LazyModule
 
 if TYPE_CHECKING:

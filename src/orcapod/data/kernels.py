@@ -63,6 +63,11 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
     def _set_modified_time(
         self, timestamp: datetime | None = None, invalidate: bool = False
     ) -> None:
+        """
+        Sets the last modified time of the kernel.
+        If `invalidate` is True, it resets the last modified time to None to indicate unstable state that'd signal downstream
+        to recompute when using the kernel. Othewrise, sets the last modified time to the current time or to the provided timestamp.
+        """
         if invalidate:
             self._last_modified = None
             return
@@ -74,7 +79,50 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
 
     @property
     @abstractmethod
-    def kernel_id(self) -> tuple[str, ...]: ...
+    def kernel_id(self) -> tuple[str, ...]:
+        """
+        Return a unique identifier for the kernel.
+        This identifier is used to track the kernel and its invocations. Kernels with distinct identifiers
+        are considered distinct, even if they have the same label or content.
+        """
+        ...
+
+    @abstractmethod
+    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+        """
+        Return the output types of the kernel given the input streams.
+        """
+        ...
+
+    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+        processed_streams = self.pre_kernel_processing(*streams)
+        self.validate_inputs(*processed_streams)
+        return self.kernel_output_types(*processed_streams)
+
+    @abstractmethod
+    def kernel_identity_structure(
+        self, streams: Collection[dp.Stream] | None = None
+    ) -> Any: ...
+
+    def identity_structure(self, streams: Collection[dp.Stream] | None = None) -> Any:
+        # Default implementation of identity_structure for the kernel only
+        # concerns the kernel class and the streams if present. Subclasses of
+        # Kernels should override this method to provide a more meaningful
+        # representation of the kernel. Note that kernel must provide the notion
+        # of identity under possibly two distinct contexts:
+        # 1) identity of the kernel in itself when invoked without any stream
+        # 2) identity of the specific invocation of the kernel with a collection of streams
+        # While the latter technically corresponds to the identity of the invocation and not
+        # the kernel, only kernel can provide meaningful information as to the uniqueness of
+        # the invocation as only kernel would know if / how the input stream(s) alter the identity
+        # of the invocation. For example, if the kernel corresponds to an commutative computation
+        # and therefore kernel K(x, y) == K(y, x), then the identity structure must reflect the
+        # equivalence of the two by returning the same identity structure for both invocations.
+        # This can be achieved, for example, by returning a set over the streams instead of a tuple.
+        if streams is not None:
+            streams = self.pre_kernel_processing(*streams)
+            self.validate_inputs(*streams)
+        return self.kernel_identity_structure(streams)
 
     @abstractmethod
     def forward(self, *streams: dp.Stream) -> dp.Stream:
@@ -83,14 +131,6 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         This method is called when the kernel is invoked with a collection of streams.
         Subclasses should override this method to provide the kernel with its unique behavior
         """
-
-    @abstractmethod
-    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]: ...
-
-    @abstractmethod
-    def kernel_identity_structure(
-        self, streams: Collection[dp.Stream] | None = None
-    ) -> Any: ...
 
     def pre_kernel_processing(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
         """
@@ -105,7 +145,7 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
     @abstractmethod
     def validate_inputs(self, *streams: dp.Stream) -> None:
         """
-        Valide the input streams before the main computation but after the pre-kernel processing
+        Validate the input streams before the main computation but after the pre-kernel processing
         """
         ...
 
@@ -136,31 +176,6 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         self.track_invocation(*processed_streams, label=label)
         return output_stream
 
-    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
-        processed_streams = self.pre_kernel_processing(*streams)
-        self.validate_inputs(*processed_streams)
-        return self.kernel_output_types(*processed_streams)
-
-    def identity_structure(self, streams: Collection[dp.Stream] | None = None) -> Any:
-        # Default implementation of identity_structure for the kernel only
-        # concerns the kernel class and the streams if present. Subclasses of
-        # Kernels should override this method to provide a more meaningful
-        # representation of the kernel. Note that kernel must provide the notion
-        # of identity under possibly two distinct contexts:
-        # 1) identity of the kernel in itself when invoked without any stream
-        # 2) identity of the specific invocation of the kernel with a collection of streams
-        # While the latter technically corresponds to the identity of the invocation and not
-        # the kernel, only kernel can provide meaningful information as to the uniqueness of
-        # the invocation as only kernel would know if / how the input stream(s) alter the identity
-        # of the invocation. For example, if the kernel corresponds to an commutative computation
-        # and therefore kernel K(x, y) == K(y, x), then the identity structure must reflect the
-        # equivalence of the two by returning the same identity structure for both invocations.
-        # This can be achieved, for example, by returning a set over the streams instead of a tuple.
-        if streams is not None:
-            streams = self.pre_kernel_processing(*streams)
-            self.validate_inputs(*streams)
-        return self.kernel_identity_structure(streams)
-
     def __repr__(self):
         return self.__class__.__name__
 
@@ -172,19 +187,19 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
 
 class WrappedKernel(TrackedKernelBase):
     """
-    A wrapper for a kernel that allows it to be used as a stream source.
-    This is useful for cases where you want to use a kernel as a source of data
-    in a pipeline or other data processing context.
+    A wrapper for a kernels useful when you want to use an existing kernel
+    but need to provide some extra functionality.
+
+    Default implementation provides a simple passthrough to the wrapped kernel.
+    If you want to provide a custom behavior, be sure to override the methods
+    that you want to change. Note that the wrapped kernel must implement the
+    `Kernel` protocol. Refer to `orcapod.protocols.data_protocols.Kernel` for more details.
     """
 
     def __init__(self, kernel: dp.Kernel, **kwargs) -> None:
         # TODO: handle fixed input stream already set on the kernel
         super().__init__(**kwargs)
         self.kernel = kernel
-
-    @property
-    def kernel_id(self) -> tuple[str, ...]:
-        return self.kernel.kernel_id
 
     def computed_label(self) -> str | None:
         """
@@ -194,22 +209,26 @@ class WrappedKernel(TrackedKernelBase):
         """
         return self.kernel.label
 
-    def forward(self, *streams: dp.Stream) -> dp.Stream:
-        return self.kernel.forward(*streams)
+    @property
+    def kernel_id(self) -> tuple[str, ...]:
+        return self.kernel.kernel_id
 
     def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
         return self.kernel.output_types(*streams)
 
+    def kernel_identity_structure(
+        self, streams: Collection[dp.Stream] | None = None
+    ) -> Any:
+        return self.kernel.identity_structure(streams)
+
     def validate_inputs(self, *streams: dp.Stream) -> None:
-        pass
+        return self.kernel.validate_inputs(*streams)
+
+    def forward(self, *streams: dp.Stream) -> dp.Stream:
+        return self.kernel.forward(*streams)
 
     def __repr__(self):
         return f"WrappedKernel({self.kernel!r})"
 
     def __str__(self):
         return f"WrappedKernel:{self.kernel!s}"
-
-    def kernel_identity_structure(
-        self, streams: Collection[dp.Stream] | None = None
-    ) -> Any:
-        return self.kernel.identity_structure(streams)
