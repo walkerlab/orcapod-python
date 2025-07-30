@@ -2,7 +2,7 @@ from abc import abstractmethod
 from collections.abc import Collection, Iterator
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from deltalake import DeltaTable, write_deltalake
 from deltalake.exceptions import TableNotFoundError
@@ -112,6 +112,14 @@ class SourceBase(TrackedKernelBase):
         """Delegate to the cached KernelStream."""
         return self().is_current
 
+    def __iter__(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+        """
+        Iterate over the cached KernelStream.
+
+        This allows direct iteration over the source as if it were a stream.
+        """
+        return self().iter_packets()
+
     def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
         """Delegate to the cached KernelStream."""
         return self().iter_packets()
@@ -143,7 +151,53 @@ class SourceBase(TrackedKernelBase):
         """Delegate to the cached KernelStream."""
         return self().invalidate()
 
-    # ==================== Source-Specific Utilities ====================
+    # ==================== Source Protocol ====================
+
+    @abstractmethod
+    def get_all_records(
+        self, include_system_columns: bool = False
+    ) -> "pa.Table | None":
+        """
+        Retrieve all records from the source.
+
+        This method should be implemented by subclasses to return the full dataset.
+        If the source has no records, return None.
+        """
+        ...
+
+    @property
+    def lazy(self) -> "pl.LazyFrame | None":
+        records = self.get_all_records(include_system_columns=False)
+        if records is not None:
+            return pl.LazyFrame(records)
+        return None
+
+    @property
+    def df(self) -> "pl.DataFrame | None":
+        """
+        Return the DataFrame representation of the pod's records.
+        """
+        lazy_df = self.lazy
+        if lazy_df is not None:
+            return lazy_df.collect()
+        return None
+
+    @property
+    def polars_df(self) -> "pl.DataFrame | None":
+        """
+        Return the DataFrame representation of the pod's records.
+        """
+        return self.df
+
+    @property
+    def pandas_df(self) -> "pd.DataFrame | None":
+        """
+        Return the pandas DataFrame representation of the pod's records.
+        """
+        records = self.get_all_records(include_system_columns=False)
+        if records is not None:
+            return records.to_pandas()
+        return None
 
     def reset_cache(self) -> None:
         """
@@ -200,10 +254,20 @@ class CSVSource(SourceBase):
         return sample_stream.types()
 
 
+class DuplicateTagError(ValueError):
+    """Raised when duplicate tag values are found and skip_duplicates=False"""
+
+    pass
+
+
 class ManualDeltaTableSource(SourceBase):
     """
     A source that allows manual delta updates to a table.
     This is useful for testing and debugging purposes.
+
+    Supports duplicate tag handling:
+    - skip_duplicates=True: Use merge operation to only insert new tag combinations
+    - skip_duplicates=False: Raise error if duplicate tags would be created
     """
 
     def __init__(
@@ -218,7 +282,7 @@ class ManualDeltaTableSource(SourceBase):
         """
         super().__init__(**kwargs)
 
-        self.table_path = table_path
+        self.table_path = Path(table_path)
         self._delta_table: DeltaTable | None = None
         self.load_delta_table()
 
@@ -239,12 +303,12 @@ class ManualDeltaTableSource(SourceBase):
             fields = []
             for field in arrow_schema:
                 if field.name in tag_columns:
-                    field = field.with_metadata({b"table": b"True"})
+                    field = field.with_metadata({b"tag": b"True"})
                 fields.append(field)
             arrow_schema = pa.schema(fields)
 
         else:
-            arrow_schema = pa.schema(self._delta_table.schema().to_arrow())  # type: ignore
+            arrow_schema = pa.schema(self._delta_table.schema().to_arrow())
             python_schema = schemas.PythonSchema.from_arrow_schema(
                 arrow_schema, self.data_context.semantic_type_registry
             )
@@ -252,16 +316,18 @@ class ManualDeltaTableSource(SourceBase):
             for field in arrow_schema:
                 if (
                     field.metadata is not None
-                    and field.metadata.get(b"table", b"False").decode().lower()
-                    == "true"
+                    and field.metadata.get(b"tag", b"False").decode().lower() == "true"
                 ):
                     inferred_tag_columns.append(field.name)
             tag_columns = tag_columns or inferred_tag_columns
+
         self.python_schema = python_schema
         self.arrow_schema = arrow_schema
-        self.tag_columns = tag_columns
+        self.tag_columns = list(tag_columns) if tag_columns else []
 
-        self._is_current = True
+    @property
+    def kernel_id(self) -> tuple[str, ...]:
+        return (self.__class__.__name__, str(self.table_path))
 
     @property
     def delta_table_version(self) -> int | None:
@@ -273,22 +339,25 @@ class ManualDeltaTableSource(SourceBase):
             return self._delta_table.version()
         return None
 
-    @property
-    def is_current(self) -> bool:
-        return self._is_current
-
     def forward(self, *streams: dp.Stream) -> dp.Stream:
+        """Load current delta table data as a stream."""
         if len(streams) > 0:
             raise ValueError("ManualDeltaTableSource takes no input streams")
+
         if self._delta_table is None:
             arrow_data = pa.Table.from_pylist([], schema=self.arrow_schema)
         else:
             arrow_data = self._delta_table.to_pyarrow_dataset(
                 as_large_types=True
             ).to_table()
-        return ImmutableTableStream(arrow_data, self.tag_columns, source=self)
 
-    def kernel_identity_structure(self, streams: Collection[dp.Stream] | None = None):
+        return ImmutableTableStream(
+            arrow_data, tag_columns=self.tag_columns, source=self, upstreams=()
+        )
+
+    def kernel_identity_structure(
+        self, streams: Collection[dp.Stream] | None = None
+    ) -> Any:
         """
         Return the identity structure of the kernel.
         This is a unique identifier for the kernel based on its class name and table path.
@@ -296,6 +365,7 @@ class ManualDeltaTableSource(SourceBase):
         return (self.__class__.__name__, str(self.table_path))
 
     def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+        """Return tag and packet types based on schema and tag columns."""
         tag_types: TypeSpec = {}
         packet_types: TypeSpec = {}
         for field, field_type in self.python_schema.items():
@@ -305,41 +375,199 @@ class ManualDeltaTableSource(SourceBase):
                 packet_types[field] = field_type
         return tag_types, packet_types
 
-    def get_all_records(self, include_system_columns: bool = False) -> Table | None:
+    def get_all_records(self, include_system_columns: bool = False) -> pa.Table | None:
+        """Get all records from the delta table."""
         if self._delta_table is None:
             return None
+
         arrow_data = self._delta_table.to_pyarrow_dataset(
             as_large_types=True
         ).to_table()
+
         if not include_system_columns:
             arrow_data = arrow_data.drop(
                 [col for col in arrow_data.column_names if col.startswith("_")]
             )
         return arrow_data
 
+    def _normalize_data_to_table(
+        self, data: "dict | pa.Table | pl.DataFrame | pd.DataFrame"
+    ) -> pa.Table:
+        """Convert input data to PyArrow Table with correct schema."""
+        if isinstance(data, dict):
+            return pa.Table.from_pylist([data], schema=self.arrow_schema)
+        elif isinstance(data, pa.Table):
+            return data
+        else:
+            # Handle polars/pandas DataFrames
+            if hasattr(data, "to_arrow"):  # Polars DataFrame
+                return data.to_arrow()  # type: ignore
+            elif hasattr(data, "to_pandas"):  # Polars to pandas fallback
+                return pa.Table.from_pandas(data.to_pandas(), schema=self.arrow_schema)  # type: ignore
+            else:  # Assume pandas DataFrame
+                return pa.Table.from_pandas(
+                    cast(pd.DataFrame, data), schema=self.arrow_schema
+                )
+
+    def _check_for_duplicates(self, new_data: pa.Table) -> None:
+        """
+        Check if new data contains tag combinations that already exist.
+        Raises DuplicateTagError if duplicates found.
+        """
+        if self._delta_table is None or not self.tag_columns:
+            return  # No existing data or no tag columns to check
+
+        # Get existing tag combinations
+        existing_data = self._delta_table.to_pyarrow_dataset(
+            as_large_types=True
+        ).to_table()
+        if len(existing_data) == 0:
+            return  # No existing data
+
+        # Extract tag combinations from existing data
+        existing_tags = existing_data.select(self.tag_columns)
+        new_tags = new_data.select(self.tag_columns)
+
+        # Convert to sets of tuples for comparison
+        existing_tag_tuples = set()
+        for i in range(len(existing_tags)):
+            tag_tuple = tuple(
+                existing_tags.column(col)[i].as_py() for col in self.tag_columns
+            )
+            existing_tag_tuples.add(tag_tuple)
+
+        # Check for duplicates in new data
+        duplicate_tags = []
+        for i in range(len(new_tags)):
+            tag_tuple = tuple(
+                new_tags.column(col)[i].as_py() for col in self.tag_columns
+            )
+            if tag_tuple in existing_tag_tuples:
+                duplicate_tags.append(tag_tuple)
+
+        if duplicate_tags:
+            tag_names = ", ".join(self.tag_columns)
+            duplicate_strs = [str(tags) for tags in duplicate_tags]
+            raise DuplicateTagError(
+                f"Duplicate tag combinations found for columns [{tag_names}]: "
+                f"{duplicate_strs}. Use skip_duplicates=True to merge instead."
+            )
+
+    def _merge_data(self, new_data: pa.Table) -> None:
+        """
+        Merge new data using Delta Lake merge operation.
+        Only inserts rows where tag combinations don't already exist.
+        """
+        if self._delta_table is None:
+            # No existing table, just write the data
+            write_deltalake(
+                self.table_path,
+                new_data,
+                mode="overwrite",
+            )
+        else:
+            # Use merge operation - only insert if tag combination doesn't exist
+            # Build merge condition based on tag columns
+            # Format: "target.col1 = source.col1 AND target.col2 = source.col2"
+            merge_conditions = " AND ".join(
+                f"target.{col} = source.{col}" for col in self.tag_columns
+            )
+
+            try:
+                # Use Delta Lake's merge functionality
+                (
+                    self._delta_table.merge(
+                        source=new_data,
+                        predicate=merge_conditions,
+                        source_alias="source",
+                        target_alias="target",
+                    )
+                    .when_not_matched_insert_all()  # Insert when no match found
+                    .execute()
+                )
+            except Exception:
+                # Fallback: manual duplicate filtering if merge fails
+                self._manual_merge_fallback(new_data)
+
+    def _manual_merge_fallback(self, new_data: pa.Table) -> None:
+        """
+        Fallback merge implementation that manually filters duplicates.
+        """
+        if self._delta_table is None or not self.tag_columns:
+            write_deltalake(self.table_path, new_data, mode="append")
+            return
+
+        # Get existing tag combinations
+        existing_data = self._delta_table.to_pyarrow_dataset(
+            as_large_types=True
+        ).to_table()
+        existing_tags = existing_data.select(self.tag_columns)
+
+        # Create set of existing tag tuples
+        existing_tag_tuples = set()
+        for i in range(len(existing_tags)):
+            tag_tuple = tuple(
+                existing_tags.column(col)[i].as_py() for col in self.tag_columns
+            )
+            existing_tag_tuples.add(tag_tuple)
+
+        # Filter new data to only include non-duplicate rows
+        filtered_rows = []
+        new_tags = new_data.select(self.tag_columns)
+
+        for i in range(len(new_data)):
+            tag_tuple = tuple(
+                new_tags.column(col)[i].as_py() for col in self.tag_columns
+            )
+            if tag_tuple not in existing_tag_tuples:
+                # Extract this row
+                row_dict = {}
+                for col_name in new_data.column_names:
+                    row_dict[col_name] = new_data.column(col_name)[i].as_py()
+                filtered_rows.append(row_dict)
+
+        # Only append if there are new rows to add
+        if filtered_rows:
+            filtered_table = pa.Table.from_pylist(
+                filtered_rows, schema=self.arrow_schema
+            )
+            write_deltalake(self.table_path, filtered_table, mode="append")
+
     def insert(
         self,
         data: "dict | pa.Table | pl.DataFrame | pd.DataFrame",
+        skip_duplicates: bool = False,
     ) -> None:
         """
         Insert data into the delta table.
+
+        Args:
+            data: Data to insert (dict, PyArrow Table, Polars DataFrame, or Pandas DataFrame)
+            skip_duplicates: If True, use merge operation to skip duplicate tag combinations.
+                           If False, raise error if duplicate tag combinations are found.
+
+        Raises:
+            DuplicateTagError: If skip_duplicates=False and duplicate tag combinations are found.
         """
-        if isinstance(data, dict):
-            data = pa.Table.from_pylist([data], schema=self.arrow_schema)
-        elif isinstance(data, pl.DataFrame):
-            data = data.to_arrow()
-        elif isinstance(data, pd.DataFrame):
-            data = pa.Table.from_pandas(data, schema=self.arrow_schema)
+        # Normalize data to PyArrow Table
+        new_data_table = self._normalize_data_to_table(data)
 
+        if skip_duplicates:
+            # Use merge operation to only insert new tag combinations
+            self._merge_data(new_data_table)
+        else:
+            # Check for duplicates first, raise error if found
+            self._check_for_duplicates(new_data_table)
+
+            # No duplicates found, safe to append
+            write_deltalake(self.table_path, new_data_table, mode="append")
+
+        # Update our delta table reference and mark as modified
         self._set_modified_time()
-        write_deltalake(
-            self.table_path,
-            data,
-            mode="append",
-        )
-
-        # update the delta table
         self._delta_table = DeltaTable(self.table_path)
+
+        # Invalidate any cached streams
+        self.invalidate()
 
     def load_delta_table(self) -> None:
         """
@@ -350,14 +578,15 @@ class ManualDeltaTableSource(SourceBase):
             delta_table = DeltaTable(self.table_path)
         except TableNotFoundError:
             delta_table = None
-        new_version = self.delta_table_version
-        if (current_version is None and new_version is not None) or (
-            current_version is not None
-            and new_version is not None
-            and current_version < new_version
-        ):
-            # delta table has been updated
-            self._set_modified_time()
+
+        if delta_table is not None:
+            new_version = delta_table.version()
+            if (current_version is None) or (
+                current_version is not None and new_version > current_version
+            ):
+                # Delta table has been updated
+                self._set_modified_time()
+
         self._delta_table = delta_table
 
 

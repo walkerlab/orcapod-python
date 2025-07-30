@@ -1,6 +1,6 @@
 from collections.abc import Collection, Iterator
 from datetime import datetime
-from orcapod.data.kernels import WrappedKernel, TrackedKernelBase
+from orcapod.data.kernels import KernelStream, WrappedKernel, TrackedKernelBase
 from orcapod.data.pods import ArrowDataStore, CachedPod
 from orcapod.protocols import data_protocols as dp
 from orcapod.types import TypeSpec
@@ -34,7 +34,7 @@ class Node(
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self._cached_stream: dp.LiveStream | None = None
+        self._cached_stream: KernelStream | None = None
         self.input_streams = tuple(input_streams)
         self.pipeline_store = pipeline_store
         self.pipeline_path_prefix = pipeline_path_prefix
@@ -89,7 +89,7 @@ class Node(
         # super().validate_inputs(*self.input_streams)
         return super().forward(*self.input_streams)
 
-    def __call__(self, *args, **kwargs) -> dp.LiveStream:
+    def __call__(self, *args, **kwargs) -> KernelStream:
         if self._cached_stream is None:
             self._cached_stream = super().__call__(*args, **kwargs)
         return self._cached_stream

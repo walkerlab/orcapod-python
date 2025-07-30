@@ -6,6 +6,8 @@ from orcapod.types import DataValue, TypeSpec
 
 if TYPE_CHECKING:
     import pyarrow as pa
+    import polars as pl
+    import pandas as pd
 
 
 class Datagram(Protocol):
@@ -1589,7 +1591,47 @@ class Source(Kernel, Stream, Protocol):
     - May have their own refresh/update mechanisms
     """
 
-    pass
+    @property
+    def tag_keys(self) -> tuple[str, ...]:
+        """
+        Return the keys used for the tag in the pipeline run records.
+        This is used to store the run-associated tag info.
+        """
+        ...
+
+    @property
+    def packet_keys(self) -> tuple[str, ...]:
+        """
+        Return the keys used for the packet in the pipeline run records.
+        This is used to store the run-associated packet info.
+        """
+        ...
+
+    def get_all_records(
+        self, include_system_columns: bool = False
+    ) -> "pa.Table | None":
+        """
+        Retrieve all records from the source.
+
+        Args:
+            include_system_columns: Whether to include system columns in the output
+
+        Returns:
+            pa.Table | None: A table containing all records, or None if no records are available
+        """
+        ...
+
+    @property
+    def lazy(self) -> "pl.LazyFrame | None": ...
+
+    @property
+    def df(self) -> "pl.DataFrame | None": ...
+
+    @property
+    def polars_df(self) -> "pl.DataFrame | None": ...
+
+    @property
+    def pandas_df(self) -> "pd.DataFrame | None": ...
 
 
 class Tracker(Protocol):
