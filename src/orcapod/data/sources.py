@@ -9,7 +9,11 @@ from deltalake.exceptions import TableNotFoundError
 from pyarrow.lib import Table
 
 from orcapod.data.kernels import TrackedKernelBase
-from orcapod.data.streams import ImmutableTableStream, KernelStream
+from orcapod.data.streams import (
+    ImmutableTableStream,
+    KernelStream,
+    OperatorStreamBaseMixin,
+)
 from orcapod.protocols import data_protocols as dp
 from orcapod.types import TypeSpec, schemas
 from orcapod.utils.lazy_module import LazyModule
@@ -24,7 +28,7 @@ else:
     pa = LazyModule("pyarrow")
 
 
-class SourceBase(TrackedKernelBase):
+class SourceBase(TrackedKernelBase, OperatorStreamBaseMixin):
     """
     Base class for sources that act as both Kernels and LiveStreams.
 
@@ -45,26 +49,27 @@ class SourceBase(TrackedKernelBase):
 
     # =========================== Kernel Methods ===========================
 
-    @abstractmethod
-    def forward(self, *streams: dp.Stream) -> dp.Stream:
-        """
-        Pure computation: return a static snapshot of the data.
+    # The following are inherited from TrackedKernelBase as abstract methods.
+    # @abstractmethod
+    # def forward(self, *streams: dp.Stream) -> dp.Stream:
+    #     """
+    #     Pure computation: return a static snapshot of the data.
 
-        This is the core method that subclasses must implement.
-        Each call should return a fresh stream representing the current state of the data.
-        This is what KernelStream calls when it needs to refresh its data.
-        """
-        ...
+    #     This is the core method that subclasses must implement.
+    #     Each call should return a fresh stream representing the current state of the data.
+    #     This is what KernelStream calls when it needs to refresh its data.
+    #     """
+    #     ...
 
-    @abstractmethod
-    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
-        """Return the tag and packet types this source produces."""
-        ...
+    # @abstractmethod
+    # def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    #     """Return the tag and packet types this source produces."""
+    #     ...
 
-    @abstractmethod
-    def kernel_identity_structure(
-        self, streams: Collection[dp.Stream] | None = None
-    ) -> dp.Any: ...
+    # @abstractmethod
+    # def kernel_identity_structure(
+    #     self, streams: Collection[dp.Stream] | None = None
+    # ) -> dp.Any: ...
 
     def validate_inputs(self, *streams: dp.Stream) -> None:
         """Sources take no input streams."""
@@ -81,6 +86,10 @@ class SourceBase(TrackedKernelBase):
                 *streams, label=label
             )
         return self._cached_kernel_stream
+
+    def track_invocation(self, *streams: dp.Stream, label: str | None = None) -> None:
+        if not self._skip_tracking and self._tracker_manager is not None:
+            self._tracker_manager.record_source_invocation(self, label=label)
 
     # ==================== Stream Protocol (Delegation) ====================
 
@@ -152,6 +161,25 @@ class SourceBase(TrackedKernelBase):
         return self().invalidate()
 
     # ==================== Source Protocol ====================
+
+    @property
+    def tag_keys(self) -> tuple[str, ...]:
+        """
+        Return the keys used for the tag in the pipeline run records.
+        This is used to store the run-associated tag info.
+        """
+        tag_keys, _ = self.keys()
+        return tag_keys
+
+    @property
+    def packet_keys(self) -> tuple[str, ...]:
+        """
+        Return the keys used for the packet in the pipeline run records.
+        This is used to store the run-associated packet info.
+        """
+        # TODO: consider caching this
+        _, packet_keys = self.keys()
+        return packet_keys
 
     @abstractmethod
     def get_all_records(

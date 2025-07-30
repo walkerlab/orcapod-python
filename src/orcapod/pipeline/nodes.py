@@ -1,6 +1,7 @@
 from collections.abc import Collection, Iterator
 from datetime import datetime
 from orcapod.data.kernels import KernelStream, WrappedKernel, TrackedKernelBase
+from orcapod.data.sources import SourceBase
 from orcapod.data.pods import ArrowDataStore, CachedPod
 from orcapod.protocols import data_protocols as dp
 from orcapod.types import TypeSpec
@@ -20,7 +21,7 @@ else:
 
 
 class Node(
-    TrackedKernelBase,
+    SourceBase,
 ):
     """
     Mixin class for pipeline nodes
@@ -51,34 +52,12 @@ class Node(
         )
 
     @property
-    def tag_keys(self) -> tuple[str, ...]:
-        """
-        Return the keys used for the tag in the pipeline run records.
-        This is used to store the run-associated tag info.
-        """
-        tag_keys, _ = self.keys()
-        return tag_keys
-
-    @property
-    def packet_keys(self) -> tuple[str, ...]:
-        """
-        Return the keys used for the packet in the pipeline run records.
-        This is used to store the run-associated packet info.
-        """
-        # TODO: consider caching this
-        _, packet_keys = self.keys()
-        return packet_keys
-
-    @property
     def pipeline_path(self) -> tuple[str, ...]:
         """
         Return the path to the pipeline run records.
         This is used to store the run-associated tag info.
         """
         return self.pipeline_path_prefix + self.kernel_id + (self.invocation_hash,)
-
-    def validate_inputs(self, *processed_streams: dp.Stream) -> None:
-        pass
 
     def forward(self, *streams: dp.Stream) -> dp.Stream:
         if len(streams) > 0:
@@ -87,62 +66,18 @@ class Node(
             )
         # TODO: re-evaluate the use here
         # super().validate_inputs(*self.input_streams)
-        return super().forward(*self.input_streams)
+        return super().forward(*self.input_streams)  # type: ignore[return-value]
 
-    def __call__(self, *args, **kwargs) -> KernelStream:
-        if self._cached_stream is None:
-            self._cached_stream = super().__call__(*args, **kwargs)
-        return self._cached_stream
-
-    # properties and methods to act as a dp.Stream
-    @property
-    def source(self) -> dp.Kernel | None:
-        return self
-
-    def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
-        tag_types, packet_types = self.types()
-        return tuple(tag_types.keys()), tuple(packet_types.keys())
-
-    def types(self) -> tuple[TypeSpec, TypeSpec]:
-        return self.contained_kernel.output_types(*self.input_streams)
-
-    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
         """
         Return the output types of the node.
         This is used to determine the types of the output streams.
         """
         return self.contained_kernel.output_types(*self.input_streams)
 
-    @property
-    def last_modified(self) -> datetime | None:
-        return self().last_modified
-
-    @property
-    def is_current(self) -> bool:
-        return self().is_current
-
-    def __iter__(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
-        return self().__iter__()
-
-    def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
-        return self().iter_packets()
-
-    def as_table(
-        self,
-        include_data_context: bool = False,
-        include_source: bool = False,
-        include_content_hash: bool | str = False,
-    ) -> "pa.Table":
-        return self().as_table(
-            include_data_context=include_data_context,
-            include_source=include_source,
-            include_content_hash=include_content_hash,
-        )
-
-    def flow(self) -> Collection[tuple[dp.Tag, dp.Packet]]:
-        return self().flow()
-
-    def identity_structure(self, streams: Collection[dp.Stream] | None = None) -> Any:
+    def kernel_identity_structure(
+        self, streams: Collection[dp.Stream] | None = None
+    ) -> Any:
         """
         Return the identity structure of the node.
         This is used to compute the invocation hash.
@@ -163,40 +98,6 @@ class Node(
         If include_system_columns is True, system columns will be included in the result.
         """
         raise NotImplementedError("This method should be implemented by subclasses.")
-
-    @property
-    def lazy(self) -> "pl.LazyFrame | None":
-        records = self.get_all_records(include_system_columns=False)
-        if records is not None:
-            return pl.LazyFrame(records)
-        return None
-
-    @property
-    def df(self) -> "pl.DataFrame | None":
-        """
-        Return the DataFrame representation of the pod's records.
-        """
-        lazy_df = self.lazy
-        if lazy_df is not None:
-            return lazy_df.collect()
-        return None
-
-    @property
-    def polars_df(self) -> "pl.DataFrame | None":
-        """
-        Return the DataFrame representation of the pod's records.
-        """
-        return self.df
-
-    @property
-    def pandas_df(self) -> "pd.DataFrame | None":
-        """
-        Return the pandas DataFrame representation of the pod's records.
-        """
-        records = self.get_all_records(include_system_columns=False)
-        if records is not None:
-            return records.to_pandas()
-        return None
 
 
 class KernelNode(Node, WrappedKernel):

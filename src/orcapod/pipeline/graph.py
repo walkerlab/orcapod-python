@@ -113,6 +113,15 @@ class Pipeline(GraphTracker):
                 pipeline_path_prefix=self.pipeline_store_path_prefix,
                 label=invocation.label,
             )
+        elif invocation in self.invocation_to_source_lut:
+            source = self.invocation_to_source_lut[invocation]
+            node = KernelNode(
+                kernel=source,
+                input_streams=new_input_streams,
+                pipeline_store=self.pipeline_store,
+                pipeline_path_prefix=self.pipeline_store_path_prefix,
+                label=invocation.label,
+            )
         else:
             node = KernelNode(
                 kernel=invocation.kernel,

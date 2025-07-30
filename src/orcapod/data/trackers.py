@@ -66,6 +66,16 @@ class BasicTrackerManager:
         for tracker in self.get_active_trackers():
             tracker.record_kernel_invocation(kernel, upstreams, label=label)
 
+    def record_source_invocation(
+        self, source: dp.Source, label: str | None = None
+    ) -> None:
+        """
+        Record the output stream of a source invocation in the tracker.
+        This is used to track the computational graph and the invocations of sources.
+        """
+        for tracker in self.get_active_trackers():
+            tracker.record_source_invocation(source, label=label)
+
     def record_pod_invocation(
         self, pod: dp.Pod, upstreams: tuple[dp.Stream, ...], label: str | None = None
     ) -> None:
@@ -107,6 +117,11 @@ class AutoRegisteringContextBasedTracker(ABC):
         kernel: dp.Kernel,
         upstreams: tuple[dp.Stream, ...],
         label: str | None = None,
+    ) -> None: ...
+
+    @abstractmethod
+    def record_source_invocation(
+        self, source: dp.Source, label: str | None = None
     ) -> None: ...
 
     @abstractmethod
@@ -234,9 +249,7 @@ class GraphTracker(AutoRegisteringContextBasedTracker):
         # This is used to track the computational graph and the invocations of kernels
         self.kernel_invocations: set[Invocation] = set()
         self.invocation_to_pod_lut: dict[Invocation, dp.Pod] = {}
-        self.id_to_invocation_lut: dict[str, Invocation] = {}
-        self.id_to_label_lut: dict[str, list[str]] = defaultdict(list)
-        self.id_to_pod_lut: dict[str, dp.Pod] = {}
+        self.invocation_to_source_lut: dict[Invocation, dp.Source] = {}
 
     def _record_kernel_and_get_invocation(
         self,
@@ -259,6 +272,15 @@ class GraphTracker(AutoRegisteringContextBasedTracker):
         This is used to track the computational graph and the invocations of kernels.
         """
         self._record_kernel_and_get_invocation(kernel, upstreams, label)
+
+    def record_source_invocation(
+        self, source: dp.Source, label: str | None = None
+    ) -> None:
+        """
+        Record the output stream of a source invocation in the tracker.
+        """
+        invocation = self._record_kernel_and_get_invocation(source, (), label)
+        self.invocation_to_source_lut[invocation] = source
 
     def record_pod_invocation(
         self, pod: dp.Pod, upstreams: tuple[dp.Stream, ...], label: str | None = None
@@ -288,43 +310,6 @@ class GraphTracker(AutoRegisteringContextBasedTracker):
             for upstream_invocation in invocation.parents():
                 G.add_edge(upstream_invocation, invocation)
         return G
-
-    # def generate_namemap(self) -> dict[Invocation, str]:
-    #     namemap = {}
-    #     for kernel, invocations in self.invocation_lut.items():
-    #         # if only one entry present, use the kernel name alone
-    #         if kernel.label is not None:
-    #             node_label = kernel.label
-    #         else:
-    #             node_label = str(kernel)
-    #         if len(invocations) == 1:
-    #             namemap[invocations[0]] = node_label
-    #             continue
-    #         # if multiple entries, use the kernel name and index
-    #         for idx, invocation in enumerate(invocations):
-    #             namemap[invocation] = f"{node_label}_{idx}"
-    #     return namemap
-
-    # def draw_graph(self):
-    #     import networkx as nx
-    #     import matplotlib.pyplot as plt
-
-    #     G = self.generate_graph()
-    #     labels = self.generate_namemap()
-
-    #     pos = nx.drawing.nx_agraph.graphviz_layout(G, prog="dot")
-    #     nx.draw(
-    #         G,
-    #         pos,
-    #         labels=labels,
-    #         node_size=2000,
-    #         node_color="lightblue",
-    #         with_labels=True,
-    #         font_size=10,
-    #         font_weight="bold",
-    #         arrowsize=20,
-    #     )
-    #     plt.tight_layout()
 
 
 DEFAULT_TRACKER_MANAGER = BasicTrackerManager()

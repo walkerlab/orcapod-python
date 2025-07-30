@@ -1695,6 +1695,23 @@ class Tracker(Protocol):
         """
         ...
 
+    def record_source_invocation(
+        self, source: Source, label: str | None = None
+    ) -> None:
+        """
+        Record a source invocation in the computational graph.
+
+        This method is called whenever a source is invoked. The tracker
+        should record:
+        - The source and its properties
+        - Timing and performance information
+        - Any relevant metadata
+
+        Args:
+            source: The source that was invoked
+        """
+        ...
+
     def record_pod_invocation(
         self, pod: Pod, upstreams: tuple[Stream, ...], label: str | None = None
     ) -> None:
@@ -1784,6 +1801,23 @@ class TrackerManager(Protocol):
 
         Args:
             stream: The stream to record in all active trackers
+        """
+        ...
+
+    def record_source_invocation(
+        self, source: Source, label: str | None = None
+    ) -> None:
+        """
+        Record a source invocation in the computational graph.
+
+        This method is called whenever a source is invoked. The tracker
+        should record:
+        - The source and its properties
+        - Timing and performance information
+        - Any relevant metadata
+
+        Args:
+            source: The source that was invoked
         """
         ...
 
