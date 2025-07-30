@@ -214,7 +214,7 @@ class StreamBase(ABC, LabeledContentIdentifiableBase):
         return MapTags(name_map, drop_unmapped)(self)
 
     def map_packets(
-        self, packet_map: Mapping[str, str], drop_unmapped: bool = True
+        self, name_map: Mapping[str, str], drop_unmapped: bool = True
     ) -> dp.Stream:
         """
         Maps the packets in this stream according to the provided packet_map.
@@ -222,7 +222,7 @@ class StreamBase(ABC, LabeledContentIdentifiableBase):
         """
         from orcapod.data.operators import MapPackets
 
-        return MapPackets(packet_map, drop_unmapped)(self)
+        return MapPackets(name_map, drop_unmapped)(self)
 
 
 class ImmutableTableStream(StreamBase):
