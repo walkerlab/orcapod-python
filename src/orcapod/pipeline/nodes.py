@@ -1,5 +1,3 @@
-from collections.abc import Collection, Iterator
-from datetime import datetime
 from orcapod.data.kernels import KernelStream, WrappedKernel, TrackedKernelBase
 from orcapod.data.sources import SourceBase
 from orcapod.data.pods import ArrowDataStore, CachedPod
@@ -272,15 +270,16 @@ class PodNode(Node, CachedPod):
         self,
         tag: dp.Tag,
         packet: dp.Packet,
-        skip_record_check: bool = False,
-        skip_recording: bool = False,
+        skip_cache_lookup: bool = False,
+        skip_cache_insert: bool = False,
     ) -> tuple[dp.Tag, dp.Packet | None]:
         tag, output_packet = super().call(
             tag,
             packet,
-            skip_record_check=skip_record_check,
-            skip_recording=skip_recording,
+            skip_cache_lookup=skip_cache_lookup,
+            skip_cache_insert=skip_cache_insert,
         )
+
         if output_packet is not None:
             retrieved = (
                 output_packet.get_meta_value(self.DATA_RETRIEVED_FLAG) is not None
@@ -294,9 +293,10 @@ class PodNode(Node, CachedPod):
     ) -> None:
         # combine dp.Tag with packet content hash to compute entry hash
         tag_with_hash = tag.as_table().append_column(
-            self.PACKET_HASH_COLUMN,
+            constants.INPUT_PACKET_HASH,
             pa.array([input_packet.content_hash()], type=pa.large_string()),
         )
+
         entry_id = self.data_context.arrow_hasher.hash_table(
             tag_with_hash, prefix_hasher_id=True
         )
@@ -307,14 +307,18 @@ class PodNode(Node, CachedPod):
         )
 
         if existing_record is not None:
-            # if the record already exists, return it
+            # if the record already exists, then skip
             return
-
-        # no record matching, so construct the full record
 
         input_packet_info = (
             input_packet.as_table(
                 include_source=True,
+            )
+            .append_column(
+                constants.PACKET_RECORD_ID,
+                pa.array(
+                    [self.pod.get_record_id(input_packet)], type=pa.large_string()
+                ),
             )
             .append_column(
                 f"{constants.META_PREFIX}input_packet{constants.CONTEXT_KEY}",
@@ -327,7 +331,7 @@ class PodNode(Node, CachedPod):
             .drop(input_packet.keys())
         )
 
-        combined_record = arrow_utils.hstack_tables(tag_with_hash, input_packet_info)
+        combined_record = arrow_utils.hstack_tables(tag.as_table(), input_packet_info)
 
         self.pipeline_store.add_record(
             self.pipeline_path,
@@ -340,7 +344,7 @@ class PodNode(Node, CachedPod):
         self, include_system_columns: bool = False
     ) -> "pa.Table | None":
         results = self.result_store.get_all_records(
-            self.record_path, record_id_column=self.PACKET_HASH_COLUMN
+            self.record_path, record_id_column=constants.PACKET_RECORD_ID
         )
 
         if self.pipeline_store is None:
@@ -354,10 +358,9 @@ class PodNode(Node, CachedPod):
         if results is None or taginfo is None:
             return None
 
-        # TODO: do not hardcode the join keys
         joined_info = taginfo.join(
             results,
-            self.PACKET_HASH_COLUMN,
+            constants.PACKET_RECORD_ID,
             join_type="inner",
         )
 
@@ -366,8 +369,7 @@ class PodNode(Node, CachedPod):
                 c
                 for c in joined_info.column_names
                 if c.startswith(constants.META_PREFIX)
-                or c.startswith(constants.CONTEXT_KEY)
-                or c.startswith(constants.SOURCE_PREFIX)
+                or c.startswith(constants.DATAGRAM_PREFIX)
             ]
             joined_info = joined_info.drop(system_columns)
         return joined_info

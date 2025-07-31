@@ -5,7 +5,7 @@ import logging
 from deltalake import DeltaTable, write_deltalake
 from deltalake.exceptions import TableNotFoundError
 from collections import defaultdict
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 
 from pyarrow import Table
 from orcapod.data import constants
@@ -554,7 +554,9 @@ class BatchedDeltaTableArrowStore:
         # Add Delta table data
         if (delta_table := self._get_delta_table(record_path)) is not None:
             try:
-                delta_table_data = delta_table.to_pyarrow_table()
+                delta_table_data = delta_table.to_pyarrow_dataset(
+                    as_large_types=True
+                ).to_table()
                 if delta_table_data.num_rows > 0:
                     tables_to_combine.append(delta_table_data)
             except Exception as e:
@@ -578,6 +580,56 @@ class BatchedDeltaTableArrowStore:
 
         # Handle record_id_column if specified
         return self._handle_record_id_column(table_to_return, record_id_column)
+
+    def get_records_with_column_value(
+        self,
+        record_path: tuple[str, ...],
+        column_values: Collection[tuple[str, Any]] | Mapping[str, Any],
+        record_id_column: str | None = None,
+        flush: bool = False,
+    ):
+        if flush:
+            self.flush_batch(record_path)
+        # check if record_id is found in pending batches
+        record_key = self._get_record_key(record_path)
+        pending_batch = self._pending_batches.get(record_key)
+
+        if isinstance(column_values, Mapping):
+            # Convert Mapping to list of tuples
+            pair_list = list(column_values.items())
+        elif isinstance(column_values, Collection):
+            # Ensure it's a list of tuples
+            pair_list = cast(list[tuple[str, Any]], list(column_values))
+
+        expressions = [pc.field(c) == v for c, v in pair_list]
+        combined_expression = expressions[0]
+        for next_expression in expressions[1:]:
+            combined_expression = combined_expression & next_expression
+
+        if pending_batch is not None:
+            filtered_table = pending_batch.filter(combined_expression)
+            return self._handle_record_id_column(filtered_table, record_id_column)
+
+        # Now check the Delta table
+        delta_table = self._get_delta_table(record_path)
+        if delta_table is None:
+            return None
+
+        try:
+            # Use schema-preserving read
+            result = self._read_delta_table(delta_table, expression=combined_expression)
+
+            if len(result) == 0:
+                return None
+
+            # Handle (remove/rename) the record id column before returning
+            return self._handle_record_id_column(result, record_id_column)
+
+        except Exception as e:
+            logger.error(
+                f"Error getting record with {column_values} from {'/'.join(record_path)}: {e}"
+            )
+            raise e
 
     def get_record_by_id(
         self,
@@ -700,6 +752,7 @@ class BatchedDeltaTableArrowStore:
         self,
         delta_table: DeltaTable,
         filters: list | None = None,
+        expression: "pc.Expression | None" = None,
     ) -> "pa.Table":
         """
         Read table using to_pyarrow_dataset with original schema preservation.
@@ -711,10 +764,10 @@ class BatchedDeltaTableArrowStore:
         Returns:
             Arrow table with preserved schema
         """
+        filter_expr = None
         # Use to_pyarrow_dataset with as_large_types for Polars compatible arrow table loading
         dataset = delta_table.to_pyarrow_dataset(as_large_types=True)
-        if filters:
-            filter_expr = None
+        if filters and expression is None:
             for filt in filters:
                 if len(filt) == 3:
                     col, op, val = filt
@@ -733,9 +786,11 @@ class BatchedDeltaTableArrowStore:
                         filter_expr = expr
                     else:
                         filter_expr = pc.and_(filter_expr, expr)  # type: ignore
+        elif expression is not None:
+            filter_expr = expression
 
-            if filter_expr is not None:
-                return dataset.to_table(filter=filter_expr)
+        if filter_expr is not None:
+            return dataset.to_table(filter=filter_expr)
 
         return dataset.to_table()
 

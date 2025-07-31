@@ -47,7 +47,6 @@ class DataContextManager(dict[str, DataContext]):
                 raise ValueError(f"DataContext with key {context_info} not found.")
 
 
-
 default_data_context = DataContext(
     "std:v0.1.0:default",
     default_registry,

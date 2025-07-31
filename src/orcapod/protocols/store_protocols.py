@@ -1,5 +1,5 @@
-from typing import Protocol, TYPE_CHECKING
-from collections.abc import Collection
+from typing import Any, Protocol, TYPE_CHECKING
+from collections.abc import Collection, Mapping
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -44,6 +44,14 @@ class ArrowDataStore(Protocol):
         self,
         record_path: tuple[str, ...],
         record_ids: Collection[str],
+        record_id_column: str | None = None,
+        flush: bool = False,
+    ) -> "pa.Table | None": ...
+
+    def get_records_with_column_value(
+        self,
+        record_path: tuple[str, ...],
+        column_name_value: Collection[tuple[str, Any]] | Mapping[str, Any],
         record_id_column: str | None = None,
         flush: bool = False,
     ) -> "pa.Table | None": ...

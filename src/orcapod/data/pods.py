@@ -12,7 +12,7 @@ from orcapod.data.datagrams import (
 )
 from orcapod.data.kernels import KernelStream, TrackedKernelBase
 from orcapod.data.operators import Join
-from orcapod.data.streams import LazyPodResultStream
+from orcapod.data.streams import LazyPodResultStream, EfficientPodResultStream
 from orcapod.data.system_constants import orcapod_constants as constants
 from orcapod.hashing.hash_utils import get_function_signature
 from orcapod.protocols import data_protocols as dp
@@ -23,11 +23,14 @@ from orcapod.types import typespec_utils as tsutils
 from orcapod.types.schemas import PythonSchema
 from orcapod.types.semantic_converter import SemanticConverter
 from orcapod.utils.lazy_module import LazyModule
+from orcapod.hashing.hash_utils import get_function_signature, get_function_components
 
 if TYPE_CHECKING:
     import pyarrow as pa
+    import pyarrow.compute as pc
 else:
     pa = LazyModule("pyarrow")
+    pc = LazyModule("pyarrow.compute")
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +54,21 @@ class ActivatablePodBase(TrackedKernelBase):
     def output_packet_types(self) -> TypeSpec:
         """
         Return the output typespec for the pod. This is used to validate the output streams.
+        """
+        ...
+
+    @abstractmethod
+    def get_record_id(self, packet: dp.Packet) -> str:
+        """
+        Return the record ID for the input packet. This is used to identify the pod in the system.
+        """
+        ...
+
+    @property
+    @abstractmethod
+    def tiered_pod_id(self) -> dict[str, str]:
+        """
+        Return the tiered pod ID for the pod. This is used to identify the pod in a tiered architecture.
         """
         ...
 
@@ -147,6 +165,7 @@ class ActivatablePodBase(TrackedKernelBase):
 def function_pod(
     output_keys: str | Collection[str] | None = None,
     function_name: str | None = None,
+    version: str = "v0.0",
     label: str | None = None,
     **kwargs,
 ) -> Callable[..., "FunctionPod"]:
@@ -186,6 +205,7 @@ def function_pod(
             function=func,
             output_keys=output_keys,
             function_name=function_name or base_function_name,
+            version=version,
             label=label,
             **kwargs,
         )
@@ -200,6 +220,7 @@ class FunctionPod(ActivatablePodBase):
         function: dp.PodFunction,
         output_keys: str | Collection[str] | None = None,
         function_name=None,
+        version: str = "v0.0",
         input_typespec: TypeSpec | None = None,
         output_typespec: TypeSpec | Sequence[type] | None = None,
         label: str | None = None,
@@ -221,6 +242,7 @@ class FunctionPod(ActivatablePodBase):
                     "function_name must be provided if function has no __name__ attribute"
                 )
         self.function_name = function_name
+        self.version = version
         super().__init__(label=label or self.function_name, **kwargs)
 
         # extract input and output types from the function signature
@@ -238,15 +260,30 @@ class FunctionPod(ActivatablePodBase):
             )
         )
         self._function_info_extractor = function_info_extractor
-
-        # now compute hash for the self and store that info
-        self._pod_hash = self.data_context.object_hasher.hash_to_hex(
-            self, prefix_hasher_id=True
+        object_hasher = self.data_context.object_hasher
+        self._function_signature_hash = object_hasher.hash_to_hex(
+            get_function_signature(self.function), prefix_hasher_id=True
+        )
+        self._function_content_hash = object_hasher.hash_to_hex(
+            get_function_components(self.function), prefix_hasher_id=True
         )
 
     @property
+    def tiered_pod_id(self) -> dict[str, str]:
+        return {
+            "signature": self._function_signature_hash,
+            "content": self._function_content_hash,
+        }
+
+    @property
     def kernel_id(self) -> tuple[str, ...]:
-        return (self.function_name, self._pod_hash)
+        return (self.function_name, self.version)
+
+    def get_record_id(self, packet: dp.Packet) -> str:
+        content = (packet.content_hash(), self.tiered_pod_id)
+        return self.data_context.object_hasher.hash_to_hex(
+            content, prefix_hasher_id=True
+        )
 
     def input_packet_types(self) -> PythonSchema:
         """
@@ -303,9 +340,9 @@ class FunctionPod(ActivatablePodBase):
             )
 
         output_data = {k: v for k, v in zip(self.output_keys, output_values)}
+        record_id = self.get_record_id(packet)
         source_info = {
-            k: ":".join(self.kernel_id + (packet.content_hash(), k))
-            for k in output_data
+            k: ":".join(self.kernel_id + (record_id, k)) for k in output_data
         }
 
         output_packet = DictPacket(
@@ -381,6 +418,16 @@ class WrappedPod(ActivatablePodBase):
         """
         return self.pod.kernel_id
 
+    def get_record_id(self, packet: dp.Packet) -> str:
+        return self.pod.get_record_id(packet)
+
+    @property
+    def tiered_pod_id(self) -> dict[str, str]:
+        """
+        Return the tiered pod ID for the wrapped pod. This is used to identify the pod in a tiered architecture.
+        """
+        return self.pod.tiered_pod_id
+
     def computed_label(self) -> str | None:
         return self.pod.label
 
@@ -402,8 +449,7 @@ class WrappedPod(ActivatablePodBase):
         self.pod.validate_inputs(*streams)
 
     def call(self, tag: dp.Tag, packet: dp.Packet) -> tuple[dp.Tag, dp.Packet | None]:
-        output_tag, output_packet = self.pod.call(tag, packet)
-        return output_tag, output_packet
+        return self.pod.call(tag, packet)
 
     def kernel_identity_structure(
         self, streams: Collection[dp.Stream] | None = None
@@ -417,7 +463,7 @@ class WrappedPod(ActivatablePodBase):
         return f"WrappedPod:{self.pod!s}"
 
 
-class CachedPod(WrappedPod):
+class CachedPod2(WrappedPod):
     """
     A pod that caches the results of the wrapped pod.
     This is useful for pods that are expensive to compute and can benefit from caching.
@@ -439,9 +485,17 @@ class CachedPod(WrappedPod):
         self.result_store = result_store
         # unset data_context native to the object
 
-        self.pod_hash = self.data_context.object_hasher.hash_to_hex(
+        self._pod_hash = self.data_context.object_hasher.hash_to_hex(
             self.pod, prefix_hasher_id=True
         )
+
+    @property
+    def kernel_id(self) -> tuple[str, ...]:
+        """
+        Return the pod ID, which is the function name of the wrapped pod.
+        This is used to identify the pod in the system.
+        """
+        return self.pod.kernel_id + (self._pod_hash,)
 
     @property
     def record_path(self) -> tuple[str, ...]:
@@ -510,3 +564,192 @@ class CachedPod(WrappedPod):
             result_table,
             meta_info={self.DATA_RETRIEVED_FLAG: str(datetime.now(timezone.utc))},
         )
+
+
+class CachedPod(WrappedPod):
+    """
+    A pod that caches the results of the wrapped pod.
+    This is useful for pods that are expensive to compute and can benefit from caching.
+    """
+
+    # name of the column in the tag store that contains the packet hash
+    PACKET_HASH_COLUMN = f"{constants.META_PREFIX}packet_hash"
+    DATA_RETRIEVED_FLAG = f"{constants.META_PREFIX}data_retrieved"
+
+    def __init__(
+        self,
+        pod: dp.Pod,
+        result_store: ArrowDataStore,
+        record_path_prefix: tuple[str, ...] = (),
+        match_tier: str | None = None,
+        retrieval_mode: Literal["latest", "most_specific"] = "latest",
+        **kwargs,
+    ):
+        super().__init__(pod, **kwargs)
+        self.record_path_prefix = record_path_prefix
+        self.result_store = result_store
+        self.match_tier = match_tier
+        self.retrieval_mode = retrieval_mode
+
+    @property
+    def record_path(self) -> tuple[str, ...]:
+        """
+        Return the path to the record in the result store.
+        This is used to store the results of the pod.
+        """
+        return self.record_path_prefix + self.kernel_id
+
+    def call(
+        self,
+        tag: dp.Tag,
+        packet: dp.Packet,
+        skip_cache_lookup: bool = False,
+        skip_cache_insert: bool = False,
+    ) -> tuple[dp.Tag, dp.Packet | None]:
+        # TODO: consider logic for overwriting existing records
+        output_packet = None
+        if not skip_cache_lookup:
+            output_packet = self.get_recorded_output_packet(packet)
+        if output_packet is None:
+            tag, output_packet = super().call(tag, packet)
+            if output_packet is not None and not skip_cache_insert:
+                self.record_packet(packet, output_packet)
+
+        return tag, output_packet
+
+    def forward(self, *streams: dp.Stream) -> dp.Stream:
+        assert len(streams) == 1, "PodBase.forward expects exactly one input stream"
+        return EfficientPodResultStream(pod=self, input_stream=streams[0])
+
+    def record_packet(
+        self,
+        input_packet: dp.Packet,
+        output_packet: dp.Packet,
+        skip_duplicates: bool = False,
+    ) -> dp.Packet:
+        """
+        Record the output packet against the input packet in the result store.
+        """
+        data_table = output_packet.as_table(include_context=True, include_source=True)
+
+        for i, (k, v) in enumerate(self.tiered_pod_id.items()):
+            # add the tiered pod ID to the data table
+            data_table = data_table.add_column(
+                i,
+                f"{constants.POD_ID_PREFIX}{k}",
+                pa.array([v], type=pa.large_string()),
+            )
+
+        # add the input packet hash as a column
+        data_table = data_table.add_column(
+            0,
+            constants.INPUT_PACKET_HASH,
+            pa.array([input_packet.content_hash()], type=pa.large_string()),
+        )
+
+        result_flag = self.result_store.add_record(
+            self.record_path,
+            self.pod.get_record_id(input_packet),
+            data_table,
+            skip_duplicates=skip_duplicates,
+        )
+        # if result_flag is None:
+        #     # TODO: do more specific error handling
+        #     raise ValueError(
+        #         f"Failed to record packet {input_packet} in result store {self.result_store}"
+        #     )
+        # # TODO: make store return retrieved table
+        return output_packet
+
+    def get_recorded_output_packet(self, input_packet: dp.Packet) -> dp.Packet | None:
+        """
+        Retrieve the output packet from the result store based on the input packet.
+        If more than one output packet is found, conflict resolution strategy
+        will be applied.
+        If the output packet is not found, return None.
+        """
+        # result_table = self.result_store.get_record_by_id(
+        #     self.record_path,
+        #     self.get_entry_hash(input_packet),
+        # )
+
+        # get all records with matching the input packet hash
+        # TODO: add match based on match_tier if specified
+        constraints = {constants.INPUT_PACKET_HASH: input_packet.content_hash()}
+        if self.match_tier is not None:
+            constraints[f"{constants.POD_ID_PREFIX}{self.match_tier}"] = (
+                self.pod.tiered_pod_id[self.match_tier]
+            )
+
+        result_table = self.result_store.get_records_with_column_value(
+            self.record_path,
+            constraints,
+        )
+        if result_table is None or result_table.num_rows == 0:
+            return None
+
+        if result_table.num_rows > 1:
+            logger.info(
+                f"Performing conflict resolution for multiple records for {input_packet.content_hash()}"
+            )
+            if self.retrieval_mode == "latest":
+                result_table = result_table.sort_by(
+                    self.DATA_RETRIEVED_FLAG, ascending=False
+                ).take([0])
+            elif self.retrieval_mode == "most_specific":
+                # match by the most specific pod ID
+                # trying next level if not found
+                for k, v in reversed(self.tiered_pod_id.items()):
+                    search_result = result_table.filter(
+                        pc.field(f"{constants.POD_ID_PREFIX}{k}") == v
+                    )
+                    if search_result.num_rows > 0:
+                        result_table = search_result.take([0])
+                        break
+                if result_table.num_rows > 1:
+                    logger.warning(
+                        f"No matching record found for {input_packet.content_hash()} with tiered pod ID {self.tiered_pod_id}"
+                    )
+                    result_table = result_table.sort_by(
+                        self.DATA_RETRIEVED_FLAG, ascending=False
+                    ).take([0])
+
+            else:
+                raise ValueError(
+                    f"Unknown retrieval mode: {self.retrieval_mode}. Supported modes are 'latest' and 'most_specific'."
+                )
+
+        pod_id_columns = [
+            f"{constants.POD_ID_PREFIX}{k}" for k in self.tiered_pod_id.keys()
+        ]
+        result_table = result_table.drop_columns(pod_id_columns)
+        result_table = result_table.drop_columns(constants.INPUT_PACKET_HASH)
+
+        # note that data context will be loaded from the result store
+        return ArrowPacket(
+            result_table,
+            meta_info={self.DATA_RETRIEVED_FLAG: str(datetime.now(timezone.utc))},
+        )
+
+    def get_all_records(
+        self, include_system_columns: bool = False
+    ) -> "pa.Table | None":
+        """
+        Get all records from the result store for this pod.
+        If include_system_columns is True, include system columns in the result.
+        """
+        result_table = self.result_store.get_all_records(
+            self.record_path, record_id_column=constants.INPUT_PACKET_HASH
+        )
+        if result_table is None or result_table.num_rows == 0:
+            return None
+
+        if not include_system_columns:
+            # remove input packet hash and tiered pod ID columns
+            pod_id_columns = [
+                f"{constants.POD_ID_PREFIX}{k}" for k in self.tiered_pod_id.keys()
+            ]
+            result_table = result_table.drop_columns(pod_id_columns)
+            result_table = result_table.drop_columns(constants.INPUT_PACKET_HASH)
+
+        return result_table

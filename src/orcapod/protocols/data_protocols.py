@@ -1494,6 +1494,22 @@ class Pod(Kernel, Protocol):
     and fine-grained caching.
     """
 
+    def get_record_id(self, packet: Packet) -> str: ...
+
+    @property
+    def tiered_pod_id(self) -> dict[str, str]:
+        """
+        Return a dictionary representation of the tiered pod's unique identifier.
+        The key is supposed to be ordered from least to most specific, allowing
+        for hierarchical identification of the pod.
+
+        This is primarily used for tiered memoization/caching strategies.
+
+        Returns:
+            dict[str, str]: Dictionary representation of the pod's ID
+        """
+        ...
+
     def input_packet_types(self) -> TypeSpec:
         """
         TypeSpec for input packets that this Pod can process.
@@ -1560,6 +1576,66 @@ class Pod(Kernel, Protocol):
         Raises:
             TypeError: If packet doesn't match input_packet_types
             ValueError: If packet data is invalid for processing
+        """
+        ...
+
+
+class CachedPod(Pod, Protocol):
+    def call(
+        self,
+        tag: Tag,
+        packet: Packet,
+        skip_cache_lookup: bool = False,
+        skip_cache_insert: bool = False,
+    ) -> tuple[Tag, Packet | None]:
+        """
+        Process a single packet with its associated tag.
+
+        This is the core method that defines the Pod's computational behavior.
+        It processes one (tag, packet) pair at a time, enabling:
+        - Fine-grained caching at the packet level
+        - Parallelization opportunities
+        - Just-in-time evaluation
+        - Filtering operations (by returning None)
+
+        The method signature supports:
+        - Tag transformation (modify metadata)
+        - Packet transformation (modify content)
+        - Filtering (return None to exclude packet)
+        - Pass-through (return inputs unchanged)
+
+        Args:
+            tag: Metadata associated with the packet
+            packet: The data payload to process
+
+        Returns:
+            tuple[Tag, Packet | None]:
+                - Tag: Output tag (may be modified from input)
+                - Packet: Processed packet, or None to filter it out
+
+        Raises:
+            TypeError: If packet doesn't match input_packet_types
+            ValueError: If packet data is invalid for processing
+        """
+        ...
+
+    def get_all_records(
+        self, include_system_columns: bool = False
+    ) -> "pa.Table | None":
+        """
+        Retrieve all records processed by this Pod.
+
+        This method returns a table containing all packets processed by the Pod,
+        including metadata and system columns if requested. It is useful for:
+        - Debugging and analysis
+        - Auditing and data lineage tracking
+        - Performance monitoring
+
+        Args:
+            include_system_columns: Whether to include system columns in the output
+
+        Returns:
+            pa.Table | None: A table containing all processed records, or None if no records are available
         """
         ...
 

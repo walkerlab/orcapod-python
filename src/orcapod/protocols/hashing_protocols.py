@@ -123,6 +123,8 @@ class FunctionInfoExtractor(Protocol):
         function_name: str | None = None,
         input_typespec: TypeSpec | None = None,
         output_typespec: TypeSpec | None = None,
+        exclude_function_signature: bool = False,
+        exclude_function_body: bool = False,
     ) -> dict[str, Any]: ...
 
 

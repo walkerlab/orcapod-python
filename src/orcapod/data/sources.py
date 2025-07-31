@@ -1,6 +1,5 @@
 from abc import abstractmethod
 from collections.abc import Collection, Iterator
-from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
@@ -9,14 +8,18 @@ from deltalake.exceptions import TableNotFoundError
 from pyarrow.lib import Table
 
 from orcapod.data.kernels import TrackedKernelBase
+from orcapod.data.pods import PythonSchema
 from orcapod.data.streams import (
     ImmutableTableStream,
     KernelStream,
     OperatorStreamBaseMixin,
 )
+from orcapod.errors import DuplicateTagError
 from orcapod.protocols import data_protocols as dp
-from orcapod.types import TypeSpec, schemas
+from orcapod.types import DataValue, TypeSpec, schemas, typespec_utils
+from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule
+from orcapod.data.system_constants import orcapod_constants as constants
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -280,12 +283,6 @@ class CSVSource(SourceBase):
         # For demonstration - in practice you might cache this
         sample_stream = self.forward()
         return sample_stream.types()
-
-
-class DuplicateTagError(ValueError):
-    """Raised when duplicate tag values are found and skip_duplicates=False"""
-
-    pass
 
 
 class ManualDeltaTableSource(SourceBase):
@@ -618,31 +615,79 @@ class ManualDeltaTableSource(SourceBase):
         self._delta_table = delta_table
 
 
-class GlobSource(SourceBase):
-    """
-    A source that reads files from the file system using a glob pattern.
-    It generates its own stream from the file system.
-    """
+class DictSource(SourceBase):
+    """Construct source from a collection of dictionaries"""
 
     def __init__(
         self,
-        name: str,
-        file_path: str | Path,
-        glob_pattern: str,
+        tags: Collection[dict[str, DataValue]],
+        packets: Collection[dict[str, DataValue]],
+        tag_typespec: TypeSpec | None = None,
+        packet_typespec: TypeSpec | None = None,
         **kwargs,
     ):
-        super().__init__(name=name, **kwargs)
-        self.file_path = Path(file_path)
-        self.glob_pattern = glob_pattern
-
-    @staticmethod
-    def default_tag_function(file_path: Path) -> dict:
-        return {"file_path": str(file_path)}
-
-    def kernel_identity_structure(self, streams: Collection[dp.Stream] | None = None):
-        hash_function_kwargs = {
-            "include_declaration": True,
-            "include_source": True,
-            "include_content_hash": True,
-            "include_data_context": True,
+        super().__init__(**kwargs)
+        self.tags = list(tags)
+        self.packets = list(packets)
+        if len(self.tags) != len(self.packets) or len(self.tags) == 0:
+            raise ValueError(
+                "Tags and packets must be non-empty collections of equal length"
+            )
+        self.tag_typespec = tag_typespec or typespec_utils.get_typespec_from_dict(
+            self.tags[0]
+        )
+        self.packet_typespec = packet_typespec or typespec_utils.get_typespec_from_dict(
+            self.packets[0]
+        )
+        source_info = ":".join(self.kernel_id)
+        self.source_info = {
+            f"{constants.SOURCE_PREFIX}{k}": f"{source_info}:{k}"
+            for k in self.tag_typespec
         }
+
+    def kernel_identity_structure(
+        self, streams: Collection[dp.Stream] | None = None
+    ) -> Any:
+        return (
+            self.__class__.__name__,
+            tuple(self.tag_typespec.items()),
+            tuple(self.packet_typespec.items()),
+        )
+
+    def get_all_records(self, include_system_columns: bool = False) -> Table | None:
+        return self().as_table(include_source=include_system_columns)
+
+    def forward(self, *streams: dp.Stream) -> dp.Stream:
+        """
+        Load data from file and return a static stream.
+
+        This is called by forward() and creates a fresh snapshot each time.
+        """
+        tag_arrow_schema = schemas.PythonSchema(self.tag_typespec).to_arrow_schema(
+            self.data_context.semantic_type_registry
+        )
+        packet_arrow_schema = schemas.PythonSchema(
+            self.packet_typespec
+        ).to_arrow_schema(self.data_context.semantic_type_registry)
+
+        joined_data = [
+            {**tag, **packet} for tag, packet in zip(self.tags, self.packets)
+        ]
+
+        table = pa.Table.from_pylist(
+            joined_data,
+            schema=arrow_utils.join_arrow_schemas(
+                tag_arrow_schema, packet_arrow_schema
+            ),
+        )
+
+        return ImmutableTableStream(
+            table=table,
+            tag_columns=self.tag_keys,
+            source=self,
+            upstreams=(),
+        )
+
+    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+        """Return tag and packet types based on provided typespecs."""
+        return self.tag_typespec, self.packet_typespec

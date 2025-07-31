@@ -22,8 +22,10 @@ from orcapod.utils.lazy_module import LazyModule
 
 if TYPE_CHECKING:
     import pyarrow as pa
+    import pyarrow.compute as pc
 else:
     pa = LazyModule("pyarrow")
+    pc = LazyModule("pyarrow.compute")
 
 # TODO: consider using this instead of making copy of dicts
 # from types import MappingProxyType
@@ -600,6 +602,207 @@ class LazyPodResultStream(StreamBase):
 
     def types(self) -> tuple[TypeSpec, TypeSpec]:
         tag_typespec, _ = self.prepared_stream.types()
+        # TODO: check if copying can be avoided
+        packet_typespec = dict(self.pod.output_packet_types())
+        return tag_typespec, packet_typespec
+
+    def as_table(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_content_hash: bool | str = False,
+    ) -> pa.Table:
+        if self._cached_output_table is None:
+            all_tags = []
+            all_packets = []
+            tag_schema, packet_schema = None, None
+            for tag, packet in self.iter_packets():
+                if tag_schema is None:
+                    tag_schema = tag.arrow_schema()
+                if packet_schema is None:
+                    packet_schema = packet.arrow_schema(
+                        include_context=True,
+                        include_source=True,
+                    )
+                all_tags.append(tag.as_dict())
+                # FIXME: using in the pinch conversion to str from path
+                # replace with an appropriate semantic converter-based approach!
+                dict_patcket = packet.as_dict(include_context=True, include_source=True)
+                for k, v in dict_patcket.items():
+                    if isinstance(v, Path):
+                        dict_patcket[k] = str(v)
+                all_packets.append(dict_patcket)
+
+            # FIXME: this skips the semantic version conversion and thus is not
+            # fully correct!
+            all_tags_as_tables: pa.Table = pa.Table.from_pylist(
+                all_tags, schema=tag_schema
+            )
+            all_packets_as_tables: pa.Table = pa.Table.from_pylist(
+                all_packets, schema=packet_schema
+            )
+
+            self._cached_output_table = arrow_utils.hstack_tables(
+                all_tags_as_tables, all_packets_as_tables
+            )
+        assert self._cached_output_table is not None, (
+            "_cached_output_table should not be None here."
+        )
+
+        drop_columns = []
+        if not include_source:
+            drop_columns.extend(f"{constants.SOURCE_PREFIX}{c}" for c in self.keys()[1])
+        if not include_data_context:
+            drop_columns.append(constants.CONTEXT_KEY)
+
+        output_table = self._cached_output_table.drop(drop_columns)
+
+        # lazily prepare content hash column if requested
+        if include_content_hash:
+            if self._cached_content_hash_column is None:
+                content_hashes = []
+                for tag, packet in self.iter_packets():
+                    content_hashes.append(packet.content_hash())
+                self._cached_content_hash_column = pa.array(
+                    content_hashes, type=pa.large_string()
+                )
+            assert self._cached_content_hash_column is not None, (
+                "_cached_content_hash_column should not be None here."
+            )
+            hash_column_name = (
+                "_content_hash"
+                if include_content_hash is True
+                else include_content_hash
+            )
+            output_table = output_table.append_column(
+                hash_column_name, self._cached_content_hash_column
+            )
+        return output_table
+
+
+class EfficientPodResultStream(StreamBase):
+    """
+    A fixed stream that lazily processes packets from a prepared input stream.
+    This is what Pod.process() returns - it's static/fixed but efficient.
+    """
+
+    # TODO: define interface for storage or pod storage
+    def __init__(self, pod: dp.CachedPod, input_stream: dp.Stream, **kwargs):
+        super().__init__(source=pod, upstreams=(input_stream,), **kwargs)
+        self.pod = pod
+        self.input_stream = input_stream
+        self._set_modified_time()  # set modified time to when we obtain the iterator
+        # capture the immutable iterator from the input stream
+
+        self._prepared_stream_iterator = input_stream.iter_packets()
+
+        # Packet-level caching (from your PodStream)
+        self._cached_output_packets: dict[int, tuple[dp.Tag, dp.Packet | None]] = {}
+        self._cached_output_table: pa.Table | None = None
+
+    def process_inputs(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+        """
+        Processes the input stream and prepares the output stream.
+        This is typically called before iterating over the packets.
+        """
+        # identify all entries in the input stream for which we still don't have computed packets
+        target_entries = self.input_stream.as_table(
+            include_content_hash=constants.INPUT_PACKET_HASH
+        )
+        existing_entries = self.pod.get_all_records(include_system_columns=True)
+        if existing_entries is None or existing_entries.num_rows == 0:
+            missing = target_entries.drop_columns([constants.INPUT_PACKET_HASH])
+            existing = None
+        else:
+            # missing = target_entries.join(
+            #     existing_entries,
+            #     keys=[constants.INPUT_PACKET_HASH],
+            #     join_type="left anti",
+            # )
+            # Single join that gives you both missing and existing
+            # More efficient - only bring the key column from existing_entries
+            # .select([constants.INPUT_PACKET_HASH]).append_column(
+            #     "_exists", pa.array([True] * len(existing_entries))
+            # ),
+            all_results = target_entries.join(
+                existing_entries.append_column(
+                    "_exists", pa.array([True] * len(existing_entries))
+                ),
+                keys=[constants.INPUT_PACKET_HASH],
+                join_type="left outer",
+                right_suffix="_right",
+            )
+            # grab all columns from target_entries first
+            missing = (
+                all_results.filter(pc.is_null(pc.field("_exists")))
+                .select(target_entries.column_names)
+                .drop_columns([constants.INPUT_PACKET_HASH])
+            )
+
+            existing = all_results.filter(pc.is_valid(pc.field("_exists"))).drop(
+                target_entries.column_names
+            )
+            renamed = [
+                c.removesuffix("_right") if c.endswith("_right") else c
+                for c in existing.column_names
+            ]
+            existing = existing.rename_columns(renamed)
+
+        tag_keys = self.input_stream.keys()[0]
+
+        if existing is not None and existing.num_rows > 0:
+            # If there are existing entries, we can cache them
+            existing_stream = ImmutableTableStream(existing, tag_columns=tag_keys)
+            yield from existing_stream.iter_packets()
+
+        if missing is not None and missing.num_rows > 0:
+            for tag, packet in ImmutableTableStream(missing, tag_columns=tag_keys):
+                # Since these packets are known to be missing, skip the cache lookup
+                tag, packet = self.pod.call(tag, packet, skip_cache_lookup=True)
+                if packet is not None:
+                    yield tag, packet
+
+            self._set_modified_time()
+
+    def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+        if self._prepared_stream_iterator is not None:
+            for i, (tag, packet) in enumerate(self._prepared_stream_iterator):
+                if i in self._cached_output_packets:
+                    # Use cached result
+                    tag, packet = self._cached_output_packets[i]
+                    if packet is not None:
+                        yield tag, packet
+                else:
+                    # Process packet
+                    processed = self.pod.call(tag, packet)
+                    if processed is not None:
+                        # Update shared cache for future iterators (optimization)
+                        self._cached_output_packets[i] = processed
+                        tag, packet = processed
+                        if packet is not None:
+                            yield tag, packet
+
+            # Mark completion by releasing the iterator
+            self._prepared_stream_iterator = None
+        else:
+            # Yield from snapshot of complete cache
+            for i in range(len(self._cached_output_packets)):
+                tag, packet = self._cached_output_packets[i]
+                if packet is not None:
+                    yield tag, packet
+
+    def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """
+        Returns the keys of the tag and packet columns in the stream.
+        This is useful for accessing the columns in the stream.
+        """
+
+        tag_keys, _ = self.input_stream.keys()
+        packet_keys = tuple(self.pod.output_packet_types().keys())
+        return tag_keys, packet_keys
+
+    def types(self) -> tuple[TypeSpec, TypeSpec]:
+        tag_typespec, _ = self.input_stream.types()
         # TODO: check if copying can be avoided
         packet_typespec = dict(self.pod.output_packet_types())
         return tag_typespec, packet_typespec
