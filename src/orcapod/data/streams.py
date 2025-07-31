@@ -4,7 +4,7 @@ from collections.abc import Collection, Iterator, Mapping
 from datetime import datetime, timezone
 from itertools import repeat
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from orcapod.data.base import LabeledContentIdentifiableBase
 from orcapod.data.context import DataContext
@@ -398,12 +398,16 @@ class ImmutableTableStream(StreamBase):
                         )
 
                     else:
-                        tag = tag_batch
+                        tag = cast(DictTag, tag_batch)
+
                     self._cached_elements.append(
                         (
                             tag,
                             ArrowPacket(
                                 packet_batch.slice(i, 1),
+                                source_info=self._source_info_table.slice(
+                                    i, 1
+                                ).to_pylist()[0],
                                 semantic_converter=self._packet_converter,
                                 data_context=self._data_context,
                             ),
@@ -736,7 +740,7 @@ class EfficientPodResultStream(StreamBase):
             missing = (
                 all_results.filter(pc.is_null(pc.field("_exists")))
                 .select(target_entries.column_names)
-                .drop_columns([constants.INPUT_PACKET_HASH])
+                .drop_columns([constants.INPUT_PACKET_HASH, "_exists"])
             )
 
             existing = all_results.filter(pc.is_valid(pc.field("_exists"))).drop(

@@ -80,7 +80,7 @@ class ArrowPacket(ArrowDatagram):
 
     def __init__(
         self,
-        table: pa.Table,
+        table: pa.Table | pa.RecordBatch,
         meta_info: Mapping[str, DataValue] | None = None,
         source_info: Mapping[str, str | None] | None = None,
         semantic_converter: SemanticConverter | None = None,
@@ -93,6 +93,16 @@ class ArrowPacket(ArrowDatagram):
             )
         if source_info is None:
             source_info = {}
+        else:
+            # normalize by removing any existing prefixes
+            source_info = {
+                (
+                    k.removeprefix(constants.SOURCE_PREFIX)
+                    if k.startswith(constants.SOURCE_PREFIX)
+                    else k
+                ): v
+                for k, v in source_info.items()
+            }
 
         # normalize the table to ensure it has the expected source_info columns
         # TODO: use simpler function to ensure source_info columns

@@ -167,7 +167,7 @@ def split_by_column_groups(
 
 
 def prepare_prefixed_columns(
-    table: pa.Table,
+    table: pa.Table | pa.RecordBatch,
     prefix_info: Collection[str]
     | Mapping[str, Any | None]
     | Mapping[str, Mapping[str, Any | None]],
@@ -239,7 +239,7 @@ def prepare_prefixed_columns(
                 column_values = pa.array([value] * num_rows, type=pa.large_string())
             # if col_name is in existing_source_info, use that column
             elif col_name in existing_columns:
-                # Use existing source_info column, but convert to large_string
+                # Use existing prefixed column, but convert to large_string
                 existing_col = table[prefixed_col_name]
 
                 if existing_col.type == pa.string():
