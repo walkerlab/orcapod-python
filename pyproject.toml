@@ -44,6 +44,7 @@ dev = [
     "deltalake>=1.0.2",
     "httpie>=3.2.4",
     "ipykernel>=6.29.5",
+    "jsonschema>=4.25.0",
     "pyarrow-stubs>=20.0.0.20250716",
     "pyiceberg>=0.9.1",
     "pytest>=8.3.5",
