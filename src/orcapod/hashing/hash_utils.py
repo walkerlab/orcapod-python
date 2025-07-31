@@ -362,3 +362,133 @@ def get_function_signature(
     if "returns" in parts:
         fn_string = fn_string + f"-> {str(parts['returns'])}"
     return fn_string
+
+
+def _is_in_string(line, pos):
+    """Helper to check if a position in a line is inside a string literal."""
+    # This is a simplified check - would need proper parsing for robust handling
+    in_single = False
+    in_double = False
+    for i in range(pos):
+        if line[i] == "'" and not in_double and (i == 0 or line[i - 1] != "\\"):
+            in_single = not in_single
+        elif line[i] == '"' and not in_single and (i == 0 or line[i - 1] != "\\"):
+            in_double = not in_double
+    return in_single or in_double
+
+
+def get_function_components(
+    func: Callable,
+    name_override: str | None = None,
+    include_name: bool = True,
+    include_module: bool = True,
+    include_declaration: bool = True,
+    include_docstring: bool = True,
+    include_comments: bool = True,
+    preserve_whitespace: bool = True,
+    include_annotations: bool = True,
+    include_code_properties: bool = True,
+) -> list:
+    """
+    Extract the components of a function that determine its identity for hashing.
+
+    Args:
+        func: The function to process
+        include_name: Whether to include the function name
+        include_module: Whether to include the module name
+        include_declaration: Whether to include the function declaration line
+        include_docstring: Whether to include the function's docstring
+        include_comments: Whether to include comments in the function body
+        preserve_whitespace: Whether to preserve original whitespace/indentation
+        include_annotations: Whether to include function type annotations
+        include_code_properties: Whether to include code object properties
+
+    Returns:
+        A list of string components
+    """
+    components = []
+
+    # Add function name
+    if include_name:
+        components.append(f"name:{name_override or func.__name__}")
+
+    # Add module
+    if include_module and hasattr(func, "__module__"):
+        components.append(f"module:{func.__module__}")
+
+    # Get the function's source code
+    try:
+        source = inspect.getsource(func)
+
+        # Handle whitespace preservation
+        if not preserve_whitespace:
+            source = inspect.cleandoc(source)
+
+        # Process source code components
+        if not include_declaration:
+            # Remove function declaration line
+            lines = source.split("\n")
+            for i, line in enumerate(lines):
+                if line.strip().startswith("def "):
+                    lines.pop(i)
+                    break
+            source = "\n".join(lines)
+
+        # Extract and handle docstring separately if needed
+        if not include_docstring and func.__doc__:
+            # This approach assumes the docstring is properly indented
+            # For multi-line docstrings, we need more sophisticated parsing
+            doc_str = inspect.getdoc(func)
+            if doc_str:
+                doc_lines = doc_str.split("\n")
+            else:
+                doc_lines = []
+            doc_pattern = '"""' + "\\n".join(doc_lines) + '"""'
+            # Try different quote styles
+            if doc_pattern not in source:
+                doc_pattern = "'''" + "\\n".join(doc_lines) + "'''"
+            source = source.replace(doc_pattern, "")
+
+        # Handle comments (this is more complex and may need a proper parser)
+        if not include_comments:
+            # This is a simplified approach - would need a proper parser for robust handling
+            lines = source.split("\n")
+            for i, line in enumerate(lines):
+                comment_pos = line.find("#")
+                if comment_pos >= 0 and not _is_in_string(line, comment_pos):
+                    lines[i] = line[:comment_pos].rstrip()
+            source = "\n".join(lines)
+
+        components.append(f"source:{source}")
+
+    except (IOError, TypeError):
+        # If source can't be retrieved, fall back to signature
+        components.append(f"name:{name_override or func.__name__}")
+        try:
+            sig = inspect.signature(func)
+            components.append(f"signature:{str(sig)}")
+        except ValueError:
+            components.append("builtin:True")
+
+    # Add function annotations if requested
+    if (
+        include_annotations
+        and hasattr(func, "__annotations__")
+        and func.__annotations__
+    ):
+        sorted_annotations = sorted(func.__annotations__.items())
+        annotations_str = ";".join(f"{k}:{v}" for k, v in sorted_annotations)
+        components.append(f"annotations:{annotations_str}")
+
+    # Add code object properties if requested
+    if include_code_properties:
+        code = func.__code__
+        stable_code_props = {
+            "co_argcount": code.co_argcount,
+            "co_kwonlyargcount": getattr(code, "co_kwonlyargcount", 0),
+            "co_nlocals": code.co_nlocals,
+            "co_varnames": code.co_varnames[: code.co_argcount],
+        }
+        components.append(f"code_properties:{stable_code_props}")
+
+    return components
