@@ -135,11 +135,12 @@ class JSONDataContextRegistry:
                 f"but spec contains '{spec_version}'"
             )
 
+        # TODO: clean this up -- sounds redundant to the validation performed by schema check
         # Validate required fields
         required_fields = [
             "context_key",
             "version",
-            "semantic_type_registry",
+            "type_converter",
             "arrow_hasher",
             "object_hasher",
         ]
@@ -264,8 +265,8 @@ class JSONDataContextRegistry:
             version = spec["version"]
             description = spec.get("description", "")
 
-            logger.debug(f"Creating semantic registry for {version}")
-            semantic_registry = parse_objectspec(spec["semantic_type_registry"])
+            logger.debug(f"Creating type converter for {version}")
+            type_converter = parse_objectspec(spec["type_converter"])
 
             logger.debug(f"Creating arrow hasher for {version}")
             arrow_hasher = parse_objectspec(spec["arrow_hasher"])
@@ -277,13 +278,15 @@ class JSONDataContextRegistry:
                 context_key=context_key,
                 version=version,
                 description=description,
-                semantic_type_registry=semantic_registry,
+                type_converter=type_converter,
                 arrow_hasher=arrow_hasher,
                 object_hasher=object_hasher,
             )
 
         except Exception as e:
-            raise ContextValidationError(f"Failed to create context from spec: {e}")
+            raise ContextValidationError(
+                f"Failed to create context from spec: {e}"
+            ) from e
 
     def set_default_version(self, version: str) -> None:
         """Set the default context version."""

@@ -6,7 +6,7 @@ the context management system.
 """
 
 from dataclasses import dataclass
-from orcapod.semantic_types import SemanticTypeRegistry
+from orcapod.semantic_types import UniversalTypeConverter
 from orcapod.protocols import hashing_protocols as hp
 
 
@@ -31,7 +31,7 @@ class DataContext:
     context_key: str
     version: str
     description: str
-    semantic_type_registry: SemanticTypeRegistry
+    type_converter: UniversalTypeConverter
     arrow_hasher: hp.ArrowHasher
     object_hasher: hp.ObjectHasher
 

@@ -8,7 +8,7 @@
     "required": [
         "context_key",
         "version",
-        "semantic_type_registry",
+        "type_converter",
         "arrow_hasher",
         "object_hasher"
     ],
@@ -41,9 +41,9 @@
                 "Enhanced version with timestamp support and improved hashing"
             ]
         },
-        "semantic_type_registry": {
+        "type_converter": {
             "$ref": "#/$defs/objectspec",
-            "description": "ObjectSpec for the semantic type registry"
+            "description": "ObjectSpec for the python-arrow type converter"
         },
         "arrow_hasher": {
             "$ref": "#/$defs/objectspec",

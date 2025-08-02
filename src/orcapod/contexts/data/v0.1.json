@@ -2,15 +2,20 @@
     "context_key": "std:v0.1:default",
     "version": "v0.1",
     "description": "Initial stable release with basic Path semantic type support",
-    "semantic_type_registry": {
-        "_class": "orcapod.semantic_types.semantic_registry.SemanticTypeRegistry",
+    "type_converter": {
+        "_class": "orcapod.semantic_types.universal_converter.UniversalTypeConverter",
         "_config": {
-            "converters": [
-                {
-                    "_class": "orcapod.semantic_types.struct_converters.PathStructConverter",
-                    "_config": {}
+            "semantic_registry": {
+                "_class": "orcapod.semantic_types.semantic_registry.SemanticTypeRegistry",
+                "_config": {
+                    "converters": [
+                        {
+                            "_class": "orcapod.semantic_types.semantic_struct_converters.PathStructConverter",
+                            "_config": {}
+                        }
+                    ]
                 }
-            ]
+            }
         }
     },
     "arrow_hasher": {
