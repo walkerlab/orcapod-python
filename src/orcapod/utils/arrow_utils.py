@@ -6,6 +6,78 @@ from collections.abc import Mapping, Collection
 from typing import Any
 
 
+def pylist_to_pydict(pylist: list[dict]) -> dict:
+    """
+    Convert a list of dictionaries to a dictionary of lists (columnar format).
+
+    This function transforms row-based data (list of dicts) to column-based data
+    (dict of lists), similar to converting from records format to columnar format.
+    Missing keys in individual dictionaries are filled with None values.
+
+    Args:
+        pylist: List of dictionaries representing rows of data
+
+    Returns:
+        Dictionary where keys are column names and values are lists of column data
+
+    Example:
+        >>> data = [{'a': 1, 'b': 2}, {'a': 3, 'c': 4}]
+        >>> pylist_to_pydict(data)
+        {'a': [1, 3], 'b': [2, None], 'c': [None, 4]}
+    """
+    result = {}
+    known_keys = set()
+    for i, d in enumerate(pylist):
+        known_keys.update(d.keys())
+        for k in known_keys:
+            result.setdefault(k, [None] * i).append(d.get(k, None))
+    return result
+
+
+def pydict_to_pylist(pydict: dict) -> list[dict]:
+    """
+    Convert a dictionary of lists (columnar format) to a list of dictionaries.
+
+    This function transforms column-based data (dict of lists) to row-based data
+    (list of dicts), similar to converting from columnar format to records format.
+    All arrays in the input dictionary must have the same length.
+
+    Args:
+        pydict: Dictionary where keys are column names and values are lists of column data
+
+    Returns:
+        List of dictionaries representing rows of data
+
+    Raises:
+        ValueError: If arrays in the dictionary have inconsistent lengths
+
+    Example:
+        >>> data = {'a': [1, 3], 'b': [2, None], 'c': [None, 4]}
+        >>> pydict_to_pylist(data)
+        [{'a': 1, 'b': 2, 'c': None}, {'a': 3, 'b': None, 'c': 4}]
+    """
+    if not pydict:
+        return []
+
+    # Check all arrays have same length
+    lengths = [len(v) for v in pydict.values()]
+    if not all(length == lengths[0] for length in lengths):
+        raise ValueError(
+            f"Inconsistent array lengths: {dict(zip(pydict.keys(), lengths))}"
+        )
+
+    num_rows = lengths[0]
+    if num_rows == 0:
+        return []
+
+    result = []
+    keys = pydict.keys()
+    for i in range(num_rows):
+        row = {k: pydict[k][i] for k in keys}
+        result.append(row)
+    return result
+
+
 def join_arrow_schemas(*schemas: pa.Schema) -> pa.Schema:
     """Join multiple Arrow schemas into a single schema, ensuring compatibility of fields. In particular,
     no field names should collide."""
