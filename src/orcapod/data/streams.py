@@ -16,7 +16,6 @@ from orcapod.data.datagrams import (
 from orcapod.data.system_constants import orcapod_constants as constants
 from orcapod.protocols import data_protocols as dp
 from orcapod.types import TypeSpec, schemas
-from orcapod.types.semantic_converter import SemanticConverter
 from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule
 
@@ -102,6 +101,28 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
             # if source is provided, use its data context
             data_context = source.data_context_key
         self._data_context = DataContext.resolve_data_context(data_context)
+
+    @property
+    def substream_identities(self) -> tuple[str, ...]:
+        """
+        Returns the identities of the substreams that this stream is composed of.
+        This is used to identify the substreams in the computational graph.
+        """
+        return (
+            self._data_context.object_hasher.hash_to_hex(
+                self.identity_structure(), compressed=True, prefix_hasher_id=True
+            ),
+        )
+
+    def get_substream(self, substream_id: str) -> dp.Stream:
+        """
+        Returns the substream with the given substream_id.
+        This is used to retrieve a specific substream from the stream.
+        """
+        if substream_id == self.substream_identities[0]:
+            return self
+        else:
+            raise ValueError(f"Substream with ID {substream_id} not found.")
 
     @property
     def data_context(self) -> DataContext:

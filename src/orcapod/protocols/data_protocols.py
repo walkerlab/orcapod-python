@@ -995,6 +995,35 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
     """
 
     @property
+    def substream_identities(self) -> tuple[str, ...]:
+        """
+        Unique identifiers for sub-streams within this stream.
+
+        This property provides a way to identify and differentiate
+        sub-streams that may be part of a larger stream. It is useful
+        for tracking and managing complex data flows.
+
+        Returns:
+            tuple[str, ...]: Unique identifiers for each sub-stream
+        """
+        ...
+
+    def get_substream(self, substream_id: str) -> "Stream":
+        """
+        Retrieve a specific sub-stream by its identifier.
+
+        This method allows access to individual sub-streams within the
+        main stream, enabling focused operations on specific data segments.
+
+        Args:
+            substream_id: Unique identifier for the desired sub-stream.
+
+        Returns:
+            Stream: The requested sub-stream if it exists
+        """
+        ...
+
+    @property
     def source(self) -> "Kernel | None":
         """
         The kernel that produced this stream.
