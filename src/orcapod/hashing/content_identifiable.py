@@ -16,18 +16,12 @@ class ContentIdentifiableBase:
 
     def __init__(
         self,
-        identity_structure_hasher: ObjectHasher | None = None,
         label: str | None = None,
     ) -> None:
         """
         Initialize the ContentHashable with an optional ObjectHasher.
-
-        Args:
-            identity_structure_hasher (ObjectHasher | None): An instance of ObjectHasher to use for hashing.
         """
-        self.identity_structure_hasher = (
-            identity_structure_hasher or get_default_object_hasher()
-        )
+
         self._label = label
 
     @property
@@ -94,7 +88,7 @@ class ContentIdentifiableBase:
             # If no identity structure is provided, use the default hash
             return super().__hash__()
 
-        return self.identity_structure_hasher.hash_to_int(structure)
+        return hash(structure)
 
     def __eq__(self, other: object) -> bool:
         """

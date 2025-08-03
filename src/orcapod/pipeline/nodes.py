@@ -359,11 +359,16 @@ class PodNode(Node, CachedPod):
         if results is None or taginfo is None:
             return None
 
-        joined_info = taginfo.join(
-            results,
-            constants.PACKET_RECORD_ID,
-            join_type="inner",
-        )
+        # hack - use polars for join as it can deal with complex data type
+        # TODO: convert the entire load logic to use polars with lazy evaluation
+
+        joined_info = pl.DataFrame(taginfo).join(pl.DataFrame(results), on=constants.PACKET_RECORD_ID, how="inner").to_arrow()
+
+        # joined_info = taginfo.join(
+        #     results,
+        #     constants.PACKET_RECORD_ID,
+        #     join_type="inner",
+        # )
 
         if not include_system_columns:
             system_columns = [
