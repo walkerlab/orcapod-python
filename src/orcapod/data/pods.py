@@ -136,7 +136,7 @@ class ActivatablePodBase(TrackedKernelBase):
         ):
             # TODO: use custom exception type for better error handling
             raise ValueError(
-                f"Input typespec {incoming_packet_types} is not compatible with expected input typespec {self.input_packet_types}"
+                f"Incoming packet data type {incoming_packet_types} from {input_stream} is not compatible with expected input typespec {self.input_packet_types()}"
             )
 
     def prepare_output_stream(
