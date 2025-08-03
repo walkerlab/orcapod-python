@@ -1,3 +1,4 @@
+from ast import Not
 from orcapod.data.kernels import TrackedKernelBase
 from orcapod.protocols import data_protocols as dp
 from orcapod.types import TypeSpec
@@ -42,7 +43,18 @@ class UnaryOperator(Operator):
         It expects exactly one stream as input.
         """
         stream = streams[0]
-        return self.op_forward(stream)
+        # visit each substream
+        output_substreams = []
+        for substream_id in stream.substream_identities:
+            substream = stream.get_substream(substream_id)
+            output_substreams.append(self.op_forward(substream))
+
+        # at the moment only single output substream is supported
+        if len(output_substreams) != 1:
+            raise NotImplementedError(
+                "Support for multiple output substreams is not implemented yet."
+            )
+        return output_substreams[0]
 
     def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
         stream = streams[0]

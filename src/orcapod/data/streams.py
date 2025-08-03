@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from orcapod.data.base import LabeledContentIdentifiableBase
-from orcapod.data.context import DataContext
+from orcapod import contexts
 from orcapod.data.datagrams import (
     ArrowPacket,
     ArrowTag,
@@ -15,7 +15,7 @@ from orcapod.data.datagrams import (
 )
 from orcapod.data.system_constants import orcapod_constants as constants
 from orcapod.protocols import data_protocols as dp
-from orcapod.types import TypeSpec, schemas
+from orcapod.types import TypeSpec
 from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule
 
@@ -87,7 +87,7 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
         self,
         source: dp.Kernel | None = None,
         upstreams: tuple[dp.Stream, ...] = (),
-        data_context: str | DataContext | None = None,
+        data_context: str | contexts.DataContext | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -100,7 +100,7 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
         if data_context is None and source is not None:
             # if source is provided, use its data context
             data_context = source.data_context_key
-        self._data_context = DataContext.resolve_data_context(data_context)
+        self._data_context = contexts.resolve_context(data_context)
 
     @property
     def substream_identities(self) -> tuple[str, ...]:
@@ -125,7 +125,7 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
             raise ValueError(f"Substream with ID {substream_id} not found.")
 
     @property
-    def data_context(self) -> DataContext:
+    def data_context(self) -> contexts.DataContext:
         """
         Returns the data context for the stream.
         This is used to resolve semantic types and other context-specific information.
@@ -318,16 +318,16 @@ class ImmutableTableStream(StreamBase):
 
         self._tag_schema = tag_schema
         self._packet_schema = packet_schema
-        self._tag_converter = SemanticConverter.from_semantic_schema(
-            schemas.SemanticSchema.from_arrow_schema(
-                tag_schema, self._data_context.semantic_type_registry
-            )
-        )
-        self._packet_converter = SemanticConverter.from_semantic_schema(
-            schemas.SemanticSchema.from_arrow_schema(
-                packet_schema, self._data_context.semantic_type_registry
-            )
-        )
+        # self._tag_converter = SemanticConverter.from_semantic_schema(
+        #     schemas.SemanticSchema.from_arrow_schema(
+        #         tag_schema, self._data_context.semantic_type_registry
+        #     )
+        # )
+        # self._packet_converter = SemanticConverter.from_semantic_schema(
+        #     schemas.SemanticSchema.from_arrow_schema(
+        #         packet_schema, self._data_context.semantic_type_registry
+        #     )
+        # )
 
         self._cached_elements: list[tuple[dp.Tag, ArrowPacket]] | None = None
         self._set_modified_time()  # set modified time to now
@@ -339,19 +339,16 @@ class ImmutableTableStream(StreamBase):
         """
         return self._tag_columns, self._packet_columns
 
-    def types(self) -> tuple[schemas.PythonSchema, schemas.PythonSchema]:
+    def types(self) -> tuple[dict[str, type], dict[str, type]]:
         """
         Returns the types of the tag and packet columns in the stream.
         This is useful for accessing the types of the columns in the stream.
         """
         # TODO: consider using MappingProxyType to avoid copying the dicts
+        converter = self._data_context.type_converter
         return (
-            schemas.PythonSchema.from_arrow_schema(
-                self._tag_schema, converters=self._tag_converter.as_dict()
-            ),
-            schemas.PythonSchema.from_arrow_schema(
-                self._packet_schema, converters=self._packet_converter.as_dict()
-            ),
+            converter.arrow_schema_to_python_schema(self._tag_schema),
+            converter.arrow_schema_to_python_schema(self._packet_schema)
         )
 
     def as_table(
@@ -414,7 +411,6 @@ class ImmutableTableStream(StreamBase):
                     if tag_present:
                         tag = ArrowTag(
                             tag_batch.slice(i, 1),  # type: ignore
-                            semantic_converter=self._tag_converter,
                             data_context=self._data_context,
                         )
 
@@ -429,7 +425,6 @@ class ImmutableTableStream(StreamBase):
                                 source_info=self._source_info_table.slice(
                                     i, 1
                                 ).to_pylist()[0],
-                                semantic_converter=self._packet_converter,
                                 data_context=self._data_context,
                             ),
                         )

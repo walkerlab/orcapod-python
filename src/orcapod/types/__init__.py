@@ -1,6 +1,5 @@
 from .core import PathLike, PathSet, TypeSpec, DataValue
 from . import typespec_utils
-from .defaults import DEFAULT_REGISTRY as default_registry
 
 Packet = dict[str, str]
 PacketLike = Packet

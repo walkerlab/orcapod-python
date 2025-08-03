@@ -4,14 +4,11 @@ from typing import Self
 
 import pyarrow as pa
 
-from orcapod.data.context import (
-    DataContext,
-)
+from orcapod import contexts
 from orcapod.data.datagrams.base import BaseDatagram
 from orcapod.data.system_constants import orcapod_constants as constants
-from orcapod.types import schemas, typespec_utils
+from orcapod.types import TypeSpec, typespec_utils
 from orcapod.types.core import DataValue
-from orcapod.types.semantic_converter import SemanticConverter
 from orcapod.utils import arrow_utils
 
 logger = logging.getLogger(__name__)
@@ -53,8 +50,7 @@ class ArrowDatagram(BaseDatagram):
         self,
         table: pa.Table,
         meta_info: Mapping[str, DataValue] | None = None,
-        semantic_converter: SemanticConverter | None = None,
-        data_context: str | DataContext | None = None,
+        data_context: str | contexts.DataContext | None = None,
     ) -> None:
         """
         Initialize ArrowDatagram from PyArrow Table.
@@ -86,7 +82,7 @@ class ArrowDatagram(BaseDatagram):
             else []
         )
 
-        # Extract context table if present
+        # Extract context table from passed in table if present
         if constants.CONTEXT_KEY in table.column_names and data_context is None:
             context_table = table.select([constants.CONTEXT_KEY])
             data_context = context_table[constants.CONTEXT_KEY].to_pylist()[0]
@@ -104,16 +100,6 @@ class ArrowDatagram(BaseDatagram):
         if len(self._data_table.column_names) == 0:
             raise ValueError("Data table must contain at least one data column.")
 
-        # Create semantic converter
-        if semantic_converter is None:
-            semantic_converter = SemanticConverter.from_semantic_schema(
-                schemas.SemanticSchema.from_arrow_schema(
-                    self._data_table.schema,
-                    self._data_context.semantic_type_registry,
-                )
-            )
-        self._semantic_converter = semantic_converter
-
         # process supplemented meta info if provided
         if meta_info is not None:
             # make sure it has the expected prefixes
@@ -125,11 +111,12 @@ class ArrowDatagram(BaseDatagram):
                 ): v
                 for k, v in meta_info.items()
             }
-            # Note that meta information cannot contain semantic types
-            typespec = typespec_utils.get_typespec_from_dict(meta_info)
-            new_meta_table = self._semantic_converter.from_python_to_arrow(
-                meta_info, typespec
+            new_meta_table = (
+                self._data_context.type_converter.python_dicts_to_arrow_table(
+                    [meta_info],
+                )
             )
+
             if self._meta_table is None:
                 self._meta_table = new_meta_table
             else:
@@ -151,9 +138,9 @@ class ArrowDatagram(BaseDatagram):
         )
 
         # Initialize caches
-        self._cached_python_schema: schemas.PythonSchema | None = None
+        self._cached_python_schema: TypeSpec | None = None
         self._cached_python_dict: dict[str, DataValue] | None = None
-        self._cached_meta_python_schema: schemas.PythonSchema | None = None
+        self._cached_meta_python_schema: TypeSpec | None = None
         self._cached_content_hash: str | None = None
 
     # 1. Core Properties (Identity & Structure)
@@ -224,7 +211,7 @@ class ArrowDatagram(BaseDatagram):
         include_all_info: bool = False,
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
-    ) -> schemas.PythonSchema:
+    ) -> dict[str, type]:
         """
         Return Python schema for the datagram.
 
@@ -244,7 +231,7 @@ class ArrowDatagram(BaseDatagram):
         # Get data schema (cached)
         if self._cached_python_schema is None:
             self._cached_python_schema = (
-                self._semantic_converter.from_arrow_to_python_schema(
+                self._data_context.type_converter.arrow_schema_to_python_schema(
                     self._data_table.schema
                 )
             )
@@ -259,7 +246,7 @@ class ArrowDatagram(BaseDatagram):
         if include_meta_columns and self._meta_table is not None:
             if self._cached_meta_python_schema is None:
                 self._cached_meta_python_schema = (
-                    self._semantic_converter.from_arrow_to_python_schema(
+                    self._data_context.type_converter.arrow_schema_to_python_schema(
                         self._meta_table.schema
                     )
                 )
@@ -274,7 +261,7 @@ class ArrowDatagram(BaseDatagram):
                 }
                 schema.update(filtered_meta_schema)
 
-        return schemas.PythonSchema(schema)
+        return schema
 
     def arrow_schema(
         self,
@@ -371,9 +358,11 @@ class ArrowDatagram(BaseDatagram):
 
         # Get data dict (cached)
         if self._cached_python_dict is None:
-            self._cached_python_dict = self._semantic_converter.from_arrow_to_python(
-                self._data_table
-            )[0]
+            self._cached_python_dict = (
+                self._data_context.type_converter.arrow_table_to_python_dicts(
+                    self._data_table
+                )[0]
+            )
 
         result_dict = dict(self._cached_python_dict)
 
@@ -569,7 +558,7 @@ class ArrowDatagram(BaseDatagram):
             )
 
         new_datagram = self.copy(include_cache=False)
-        new_datagram._meta_table = self._meta_table.drop_columns(prefixed_keys)
+        new_datagram._meta_table = self._meta_table.drop_columns(list(prefixed_keys))
 
         return new_datagram
 
@@ -616,7 +605,7 @@ class ArrowDatagram(BaseDatagram):
         column_names = tuple(c for c in column_names if self._data_table.columns)
 
         new_datagram = self.copy(include_cache=False)
-        new_datagram._data_table = self._data_table.drop_columns(column_names)
+        new_datagram._data_table = self._data_table.drop_columns(list(column_names))
         # TODO: consider dropping extra semantic columns if they are no longer needed
         return new_datagram
 
@@ -640,11 +629,6 @@ class ArrowDatagram(BaseDatagram):
 
         new_datagram = self.copy(include_cache=False)
         new_datagram._data_table = new_datagram._data_table.rename_columns(new_names)
-
-        # apply the same rename to the converters
-        new_datagram._semantic_converter = self._semantic_converter.rename(
-            column_mapping
-        )
 
         return new_datagram
 
@@ -681,12 +665,12 @@ class ArrowDatagram(BaseDatagram):
 
         new_datagram = self.copy(include_cache=False)
 
-        updates_typespec = schemas.PythonSchema(
-            {k: v for k, v in self.types().items() if k in updates}
+        updates_typespec = {k: v for k, v in self.types().items() if k in updates}
+
+        update_table = self._data_context.type_converter.python_dicts_to_arrow_table(
+            [updates], python_schema=updates_typespec
         )
-        update_table = self._semantic_converter.from_python_to_arrow(
-            updates, updates_typespec
-        )
+
         new_datagram._data_table = arrow_utils.hstack_tables(
             self._data_table.drop_columns(list(updates.keys())), update_table
         ).select(self._data_table.column_names)  # adjsut the order to match original
@@ -731,25 +715,20 @@ class ArrowDatagram(BaseDatagram):
 
         # TODO: consider simplifying this conversion logic
         # prepare update's table
-        typespec = typespec_utils.get_typespec_from_dict(updates, column_types)
+        typespec: dict[str, type] = typespec_utils.get_typespec_from_dict(
+            updates, column_types
+        )  # type: ignore[assignment]
 
-        updates_converter = SemanticConverter.from_semantic_schema(
-            schemas.SemanticSchema.from_typespec(
-                typespec, self._data_context.semantic_type_registry
-            )
-        )
         # TODO: cleanup the handling of typespec python schema and various conversion points
-        new_data_table = updates_converter.from_python_to_arrow(updates, typespec)
+        new_data_table = self._data_context.type_converter.python_dicts_to_arrow_table(
+            [updates], python_schema=typespec
+        )
 
         # perform in-place update
         new_datagram._data_table = arrow_utils.hstack_tables(
             new_datagram._data_table, new_data_table
         )
 
-        # prepare the joined converter
-        new_datagram._semantic_converter = self._semantic_converter.join(
-            updates_converter
-        )
         return new_datagram
 
     # 7. Context Operations
@@ -784,7 +763,6 @@ class ArrowDatagram(BaseDatagram):
         new_datagram._data_table = self._data_table
         new_datagram._meta_table = self._meta_table
         new_datagram._data_context = self._data_context
-        new_datagram._semantic_converter = self._semantic_converter
 
         if include_cache:
             new_datagram._cached_python_schema = self._cached_python_schema

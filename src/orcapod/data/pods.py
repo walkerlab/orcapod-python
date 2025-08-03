@@ -4,8 +4,7 @@ from abc import abstractmethod
 from collections.abc import Callable, Collection, Iterable, Sequence
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
-
-from orcapod.data.context import DataContext
+from orcapod import contexts
 from orcapod.data.datagrams import (
     ArrowPacket,
     DictPacket,
@@ -14,14 +13,11 @@ from orcapod.data.kernels import KernelStream, TrackedKernelBase
 from orcapod.data.operators import Join
 from orcapod.data.streams import LazyPodResultStream, EfficientPodResultStream
 from orcapod.data.system_constants import orcapod_constants as constants
-from orcapod.hashing.hash_utils import get_function_signature
 from orcapod.protocols import data_protocols as dp
 from orcapod.protocols import hashing_protocols as hp
 from orcapod.protocols.store_protocols import ArrowDataStore
 from orcapod.types import TypeSpec
 from orcapod.types import typespec_utils as tsutils
-from orcapod.types.schemas import PythonSchema
-from orcapod.types.semantic_converter import SemanticConverter
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.hashing.hash_utils import get_function_signature, get_function_components
 
@@ -252,13 +248,10 @@ class FunctionPod(ActivatablePodBase):
             input_typespec=input_typespec,
             output_typespec=output_typespec,
         )
-        self._input_packet_schema = PythonSchema(input_packet_types)
-        self._output_packet_schema = PythonSchema(output_packet_types)
-        self._output_semantic_converter = SemanticConverter.from_semantic_schema(
-            self._output_packet_schema.to_semantic_schema(
-                semantic_type_registry=self.data_context.semantic_type_registry
-            )
-        )
+        self._input_packet_schema = input_packet_types
+        self._output_packet_schema = output_packet_types
+        # TODO: add output packet converter for speed up
+        
         self._function_info_extractor = function_info_extractor
         object_hasher = self.data_context.object_hasher
         self._function_signature_hash = object_hasher.hash_to_hex(
@@ -285,14 +278,14 @@ class FunctionPod(ActivatablePodBase):
             content, prefix_hasher_id=True
         )
 
-    def input_packet_types(self) -> PythonSchema:
+    def input_packet_types(self) -> dict[str, type]:
         """
         Return the input typespec for the function pod.
         This is used to validate the input streams.
         """
         return self._input_packet_schema.copy()
 
-    def output_packet_types(self) -> PythonSchema:
+    def output_packet_types(self) -> dict[str, type]:
         """
         Return the output typespec for the function pod.
         This is used to validate the output streams.
@@ -349,7 +342,6 @@ class FunctionPod(ActivatablePodBase):
             {k: v for k, v in zip(self.output_keys, output_values)},
             source_info=source_info,
             typespec=self.output_packet_types(),
-            semantic_converter=self._output_semantic_converter,
             data_context=self._data_context,
         )
         return tag, output_packet
@@ -398,7 +390,7 @@ class WrappedPod(ActivatablePodBase):
         self,
         pod: dp.Pod,
         label: str | None = None,
-        data_context: str | DataContext | None = None,
+        data_context: str | contexts.DataContext | None = None,
         **kwargs,
     ) -> None:
         if data_context is None:
@@ -544,7 +536,7 @@ class CachedPod(WrappedPod):
             pa.array([input_packet.content_hash()], type=pa.large_string()),
         )
 
-        result_flag = self.result_store.add_record(
+        self.result_store.add_record(
             self.record_path,
             self.pod.get_record_id(input_packet),
             data_table,

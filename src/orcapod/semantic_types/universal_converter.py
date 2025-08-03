@@ -9,15 +9,76 @@ This provides a comprehensive, self-contained system that:
 5. Integrates seamlessly with semantic type registries
 """
 
-from typing import TypedDict, Dict, Type, Any, Callable, Tuple, Optional, get_type_hints
+import types
+from typing import TypedDict, Any
+from collections.abc import Callable
 import pyarrow as pa
-from functools import lru_cache
 import hashlib
+import logging
+from orcapod.contexts import DataContext, resolve_context
 from orcapod.semantic_types.semantic_registry import SemanticTypeRegistry
+from orcapod.semantic_types.type_inference import infer_schema_from_pylist_data
 
 # Handle generic types
 from typing import get_origin, get_args
 import typing
+
+logger = logging.getLogger(__name__)
+
+
+# Basic type mapping for Python -> Arrow conversion
+_PYTHON_TO_ARROW_MAP = {
+    # Python built-ins
+    int: pa.int64(),
+    float: pa.float64(),
+    str: pa.large_string(),  # Use large_string by default for Polars compatibility
+    bool: pa.bool_(),
+    bytes: pa.large_binary(),  # Use large_binary by default for Polars compatibility
+    # String representations (for when we get type names as strings)
+    "int": pa.int64(),
+    "float": pa.float64(),
+    "str": pa.large_string(),
+    "bool": pa.bool_(),
+    "bytes": pa.large_binary(),
+    # Specific integer types
+    "int8": pa.int8(),
+    "int16": pa.int16(),
+    "int32": pa.int32(),
+    "int64": pa.int64(),
+    "uint8": pa.uint8(),
+    "uint16": pa.uint16(),
+    "uint32": pa.uint32(),
+    "uint64": pa.uint64(),
+    # Specific float types
+    "float32": pa.float32(),
+    "float64": pa.float64(),
+    # Date/time types
+    "date": pa.date32(),
+    "datetime": pa.timestamp("us"),
+    "timestamp": pa.timestamp("us"),
+}
+
+# Add numpy types if available
+try:
+    import numpy as np
+
+    _PYTHON_TO_ARROW_MAP.update(
+        {
+            np.int8: pa.int8(),
+            np.int16: pa.int16(),
+            np.int32: pa.int32(),
+            np.int64: pa.int64(),
+            np.uint8: pa.uint8(),
+            np.uint16: pa.uint16(),
+            np.uint32: pa.uint32(),
+            np.uint64: pa.uint64(),
+            np.float32: pa.float32(),
+            np.float64: pa.float64(),
+            np.bool_: pa.bool_(),
+        }
+    )
+except ImportError:
+    pass
 
 
 class UniversalTypeConverter:
@@ -65,7 +126,37 @@ class UniversalTypeConverter:
 
         return arrow_type
 
-    def arrow_type_to_python_type(self, arrow_type: pa.DataType) -> Type:
+    def python_schema_to_arrow_schema(
+        self, python_schema: dict[str, type]
+    ) -> pa.Schema:
+        """
+        Convert a Python schema (dict of field names to types) to an Arrow schema.
+
+        This uses the main conversion logic and caches results for performance.
+        """
+        fields = []
+        for field_name, python_type in python_schema.items():
+            arrow_type = self.python_type_to_arrow_type(python_type)
+            fields.append(pa.field(field_name, arrow_type))
+
+        return pa.schema(fields)
+
+    def infer_python_schema_from_data(self, python_data: Any) -> type:
+        """
+        Infer Python schema from data, returning a TypedDict type.
+
+        This is useful for dynamic data structures where the schema is not known in advance.
+        """
+        if not isinstance(python_data, dict):
+            raise ValueError("Expected a dictionary to infer schema")
+
+        field_specs = {}
+        for key, value in python_data.items():
+            field_specs[key] = type(value)
+
+        return TypedDict("DynamicSchema", field_specs)  # type: ignore[call-arg]
+
+    def arrow_type_to_python_type(self, arrow_type: pa.DataType) -> type:
         """
         Convert Arrow type to Python type hint with caching.
 
@@ -82,7 +173,79 @@ class UniversalTypeConverter:
 
         return python_type
 
-    def get_python_to_arrow_converter(self, python_type: Type) -> Callable[[Any], Any]:
+    def arrow_schema_to_python_schema(self, arrow_schema: pa.Schema) -> dict[str, type]:
+        """
+        Convert an Arrow schema to a Python schema (dict of field names to types).
+
+        This uses the main conversion logic and caches results for performance.
+        """
+        python_schema = {}
+        for field in arrow_schema:
+            python_type = self.arrow_type_to_python_type(field.type)
+            python_schema[field.name] = python_type
+
+        return python_schema
+
+    def python_dicts_to_arrow_table(
+        self,
+        python_dicts: list[dict[str, Any]],
+        python_schema: dict[str, type] | None = None,
+    ) -> pa.Table:
+        """
+        Convert a list of Python dictionaries to an Arrow table.
+
+        This uses the main conversion logic and caches results for performance.
+        """
+        if python_schema is None:
+            python_schema = infer_schema_from_pylist_data(python_dicts)
+
+        converters = {
+            field_name: self.get_python_to_arrow_converter(python_type)
+            for field_name, python_type in python_schema.items()
+        }
+
+        converted_data = []
+        for record in python_dicts:
+            converted_record = {}
+            for field_name, converter in converters.items():
+                if field_name in record:
+                    converted_record[field_name] = converter(record[field_name])
+                else:
+                    converted_record[field_name] = None
+            converted_data.append(converted_record)
+
+        # Convert to Arrow schema
+        arrow_schema = self.python_schema_to_arrow_schema(python_schema)
+
+        return pa.Table.from_pylist(converted_data, schema=arrow_schema)
+
+    def arrow_table_to_python_dicts(
+        self, arrow_table: pa.Table
+    ) -> list[dict[str, Any]]:
+        """
+        Convert an Arrow table to a list of Python dictionaries.
+
+        This uses the main conversion logic and caches results for performance.
+        """
+        # Prepare converters for each field
+        converters = {
+            field.name: self.get_arrow_to_python_converter(field.type)
+            for field in arrow_table.schema
+        }
+
+        python_dicts = []
+        for row in arrow_table.to_pylist():
+            python_dict = {}
+            for field_name, value in row.items():
+                if value is not None:
+                    python_dict[field_name] = converters[field_name](value)
+                else:
+                    python_dict[field_name] = None
+            python_dicts.append(python_dict)
+
+        return python_dicts
+
+    def get_python_to_arrow_converter(self, python_type: type) -> Callable[[Any], Any]:
         """
         Get cached conversion function for Python value → Arrow value.
 
@@ -116,20 +279,11 @@ class UniversalTypeConverter:
 
         return converter
 
-    def _convert_python_to_arrow(self, python_type: Type) -> pa.DataType:
+    def _convert_python_to_arrow(self, python_type: type) -> pa.DataType:
         """Core Python → Arrow type conversion logic."""
 
-        # Handle basic types
-        basic_type_map = {
-            int: pa.int64(),
-            float: pa.float64(),
-            str: pa.large_string(),
-            bool: pa.bool_(),
-            bytes: pa.large_binary(),
-        }
-
-        if python_type in basic_type_map:
-            return basic_type_map[python_type]
+        if python_type in _PYTHON_TO_ARROW_MAP:
+            return _PYTHON_TO_ARROW_MAP[python_type]
 
         # Check semantic registry for registered types
         if self.semantic_registry:
@@ -151,8 +305,8 @@ class UniversalTypeConverter:
             # Handle string type names
             if hasattr(python_type, "__name__"):
                 type_name = python_type.__name__
-                if type_name in basic_type_map:
-                    return basic_type_map[type_name]
+                if type_name in _PYTHON_TO_ARROW_MAP:
+                    return _PYTHON_TO_ARROW_MAP[type_name]
             raise ValueError(f"Unsupported Python type: {python_type}")
 
         # Handle list types
@@ -193,7 +347,7 @@ class UniversalTypeConverter:
             return pa.large_list(key_value_struct)
 
         # Handle Union/Optional types
-        elif origin is typing.Union:
+        elif origin is typing.Union or origin is types.UnionType:
             if len(args) == 2 and type(None) in args:
                 # Optional[T] → just T (nullability handled at field level)
                 non_none_type = args[0] if args[1] is type(None) else args[1]
@@ -233,13 +387,35 @@ class UniversalTypeConverter:
         elif pa.types.is_struct(arrow_type):
             # Check if it's a registered semantic type first
             if self.semantic_registry:
-                python_type = (
-                    self.semantic_registry.get_python_type_for_struct_signature(
-                        arrow_type
-                    )
+                python_type = self.semantic_registry.get_python_type_for_semantic_struct_signature(
+                    arrow_type
                 )
                 if python_type:
                     return python_type
+
+            # Check if it is heterogeneous tuple
+            if len(arrow_type) > 0 and all(
+                field.name.startswith("f") and field.name[1:].isdigit()
+                for field in arrow_type
+            ):
+                # This is likely a heterogeneous tuple, extract digits and ensure it
+                # is continuous
+                field_digits = [int(field.name[1:]) for field in arrow_type]
+                if field_digits == list(range(len(field_digits))):
+                    return tuple[
+                        tuple(
+                            self.arrow_type_to_python_type(
+                                arrow_type.field(f"f{pos}").type
+                            )
+                            for pos in range(len(arrow_type))
+                        )
+                    ]
+                else:
+                    # Non-continuous field names, treat as dynamic TypedDict
+                    logger.info(
+                        "Detected heterogeneous tuple with non-continuous field names, "
+                        "treating as dynamic TypedDict"
+                    )
 
             # Create dynamic TypedDict for unregistered struct
             # TODO: add check for heterogeneous tuple checking each field starts with f
@@ -303,7 +479,7 @@ class UniversalTypeConverter:
             # Default case for unsupported types
             return Any
 
-    def _get_or_create_typeddict_for_struct(self, struct_type: pa.StructType) -> Type:
+    def _get_or_create_typeddict_for_struct(self, struct_type: pa.StructType) -> type:
         """Get or create a TypedDict class for an Arrow struct type."""
 
         # Check cache first
@@ -321,7 +497,7 @@ class UniversalTypeConverter:
         type_name = self._generate_unique_type_name(field_specs)
 
         # Create TypedDict dynamically
-        typeddict_class = TypedDict(type_name, field_specs)
+        typeddict_class = TypedDict(type_name, field_specs)  # type: ignore[call-arg]
 
         # Cache the mapping
         self._struct_signature_to_typeddict[struct_type] = typeddict_class
@@ -329,7 +505,7 @@ class UniversalTypeConverter:
 
         return typeddict_class
 
-    def _generate_unique_type_name(self, field_specs: Dict[str, Type]) -> str:
+    def _generate_unique_type_name(self, field_specs: dict[str, type]) -> str:
         """Generate a unique name for TypedDict based on field specifications."""
 
         # Create deterministic signature that includes both names and types
@@ -439,7 +615,9 @@ class UniversalTypeConverter:
         # Check for semantic type first
         if self.semantic_registry and pa.types.is_struct(arrow_type):
             registered_python_type = (
-                self.semantic_registry.get_python_type_for_struct_signature(arrow_type)
+                self.semantic_registry.get_python_type_for_semantic_struct_signature(
+                    arrow_type
+                )
             )
             if registered_python_type:
                 converter = self.semantic_registry.get_converter_for_python_type(
@@ -509,8 +687,21 @@ class UniversalTypeConverter:
                     else []
                 )
 
-        # Handle struct types (TypedDict)
+        # Handle struct types - heterogeneous tuple or dynamic TypedDict
         elif pa.types.is_struct(arrow_type):
+            # if python_type
+            if python_type is tuple or get_origin(python_type) is tuple:
+                n = len(get_args(python_type))
+                # prepare list of converters
+                converters = [
+                    self.get_arrow_to_python_converter(arrow_type.field(f"f{i}").type)
+                    for i in range(n)
+                ]
+                # this is a heterogeneous tuple
+                return lambda value: tuple(
+                    converter(value[f"f{i}"]) for i, converter in enumerate(converters)
+                )
+
             # Create converters for each field
             field_converters = {}
             for field in arrow_type:
@@ -562,176 +753,137 @@ class UniversalTypeConverter:
         }
 
 
-# Convenience functions that use a global instance
-_global_converter: UniversalTypeConverter | None = None
+# def infer_schema_from_pylist_data(data: list[dict]) -> dict[str, type]:
+#     """
+#     Infer schema from sample data (best effort).
 
+#     Args:
+#         data: List of sample dictionaries
 
-def prepare_arrow_table_to_python_dicts_converter(
-    schema: pa.Schema, semantic_registry: SemanticTypeRegistry | None = None
-) -> Callable[[pa.Table], list[dict]]:
-    """
-    Prepare a converter function that converts an Arrow Table to a list of Python dicts.
+#     Returns:
+#         Dictionary mapping field names to inferred Python types
 
-    This uses the global UniversalTypeConverter instance to handle type conversions.
-    """
+#     Note: This is best-effort inference and may not handle all edge cases.
+#     For production use, explicit schemas are recommended.
+#     """
+#     if not data:
+#         return {}
 
-    # TODO:
-    converter = get_global_converter(semantic_registry)
+#     schema = {}
 
-    # construct the converter lookup table to be used as closure
-    converter_lut: dict[str, Callable[[Any], Any]] = {}
-    for field in schema:
-        python_type = converter.arrow_type_to_python_type(field.type)
-        python_to_arrow = converter.get_python_to_arrow_converter(python_type)
-        converter_lut[field.name] = python_to_arrow
+#     # Get all possible field names
+#     # use list to preserve order of appearance as much as possible
+#     all_fields = []
+#     for record in data:
+#         all_fields.extend(record.keys())
 
-    def schema_specific_converter(table: pa.Table) -> list[dict]:
-        result = []
-        for row in table.to_pylist():
-            converted_row = {k: converter_lut[k](v) for k, v in row.items()}
-            result.append(converted_row)
-        return result
+#     all_fields = list(
+#         dict.fromkeys(all_fields)
+#     )  # Remove duplicates while preserving order
 
-    return schema_specific_converter
+#     # Infer type for each field
+#     for field_name in all_fields:
+#         field_values = [
+#             record.get(field_name)
+#             for record in data
+#             if field_name in record and record[field_name] is not None
+#         ]
 
+#         if not field_values:
+#             schema[field_name] = Any  # No non-null values found
+#             continue
 
-def get_global_converter(
-    semantic_registry: SemanticTypeRegistry | None = None,
-) -> UniversalTypeConverter:
-    """Get or create the global type converter instance."""
-    global _global_converter
-    if (
-        _global_converter is None
-        or _global_converter.semantic_registry != semantic_registry
-    ):
-        _global_converter = UniversalTypeConverter(semantic_registry)
-    return _global_converter
+#         # Get types of all values
+#         value_types = {type(v) for v in field_values}
+
+#         if len(value_types) == 1:
+#             # All values have same type
+#             value_type = next(iter(value_types))
+
+#             # For containers, try to infer element types
+#             if value_type is list and field_values:
+#                 # Infer list element type from first non-empty list
+#                 for lst in field_values:
+#                     if lst:  # non-empty list
+#                         element_types = {type(elem) for elem in lst}
+#                         if len(element_types) == 1:
+#                             element_type = next(iter(element_types))
+#                             schema[field_name] = list[element_type]
+#                         else:
+#                             schema[field_name] = list[Any]  # Mixed types
+#                         break
+#                 else:
+#                     schema[field_name] = list[Any]  # All lists empty
+
+#             elif value_type in {set, frozenset} and field_values:
+#                 # Infer set element type from first non-empty set
+#                 for s in field_values:
+#                     if s:  # non-empty set
+#                         element_types = {type(elem) for elem in s}
+#                         if len(element_types) == 1:
+#                             element_type = next(iter(element_types))
+#                             schema[field_name] = set[element_type]
+#                         else:
+#                             schema[field_name] = set[Any]  # Mixed types
+#                         break
+#                 else:
+#                     schema[field_name] = set[Any]  # All sets empty
+
+#             elif value_type is dict and field_values:
+#                 # Infer dict types from first non-empty dict
+#                 for d in field_values:
+#                     if d:  # non-empty dict
+#                         key_types = {type(k) for k in d.keys()}
+#                         value_types = {type(v) for v in d.values()}
+
+#                         if len(key_types) == 1 and len(value_types) == 1:
+#                             key_type = next(iter(key_types))
+#                             val_type = next(iter(value_types))
+#                             schema[field_name] = dict[key_type, val_type]
+#                         else:
+#                             schema[field_name] = dict[Any, Any]  # Mixed types
+#                         break
+#                 else:
+#                     schema[field_name] = dict[Any, Any]  # All dicts empty
+
+#             else:
+#                 schema[field_name] = value_type
+
+#         else:
+#             # Mixed types - use Union or Any
+#             schema[field_name] = Any
+
+#     return schema
 
 
 # Public API functions
 def python_type_to_arrow_type(
-    python_type: type, semantic_registry: SemanticTypeRegistry | None = None
+    python_type: type, data_context: DataContext | str | None = None
 ) -> pa.DataType:
     """Convert Python type to Arrow type using the global converter."""
-    converter = get_global_converter(semantic_registry)
+    data_context = resolve_context(data_context)
+    converter = data_context.type_converter
     return converter.python_type_to_arrow_type(python_type)
 
 
 def arrow_type_to_python_type(
-    arrow_type: pa.DataType, semantic_registry: SemanticTypeRegistry | None = None
+    arrow_type: pa.DataType, data_context: DataContext | str | None = None
 ) -> type:
     """Convert Arrow type to Python type using the global converter."""
-    converter = get_global_converter(semantic_registry)
+    data_context = resolve_context(data_context)
+    converter = data_context.type_converter
     return converter.arrow_type_to_python_type(arrow_type)
 
 
 def get_conversion_functions(
-    python_type: type, semantic_registry: SemanticTypeRegistry | None = None
+    python_type: type, data_context: DataContext | str | None = None
 ) -> tuple[Callable, Callable]:
     """Get both conversion functions for a Python type."""
-    converter = get_global_converter(semantic_registry)
+    data_context = resolve_context(data_context)
+    converter = data_context.type_converter
     arrow_type = converter.python_type_to_arrow_type(python_type)
 
     python_to_arrow = converter.get_python_to_arrow_converter(python_type)
     arrow_to_python = converter.get_arrow_to_python_converter(arrow_type)
 
     return python_to_arrow, arrow_to_python
-
-
-# Example usage and demonstration
-if __name__ == "__main__":
-    print("=== Universal Type Conversion Engine ===\n")
-
-    from pathlib import Path
-    import uuid
-    from sample_converters import create_standard_semantic_registry
-
-    # Create converter with semantic registry
-    registry = create_standard_semantic_registry()
-    converter = UniversalTypeConverter(registry)
-
-    print("Testing comprehensive type conversion:")
-    print("=" * 50)
-
-    # Test various type conversions
-    test_types = [
-        int,
-        str,
-        list[int],
-        dict[str, float],
-        tuple[int, str, bool],
-        Path,  # Semantic type
-        uuid.UUID,  # Semantic type
-    ]
-
-    print("\nType Conversions:")
-    for python_type in test_types:
-        arrow_type = converter.python_type_to_arrow_type(python_type)
-        recovered_type = converter.arrow_type_to_python_type(arrow_type)
-
-        print(f"  {python_type} → {arrow_type} → {recovered_type}")
-        print(f"    Round-trip successful: {recovered_type == python_type}")
-
-    print(f"\n" + "=" * 50)
-    print("Testing conversion function caching:")
-
-    # Test conversion functions
-    test_data = {
-        "id": 123,
-        "name": "Alice",
-        "tags": ["python", "arrow"],
-        "metadata": {"active": True, "score": 95.5},
-        "file_path": Path("/home/alice/data.csv"),
-        "user_id": uuid.uuid4(),
-    }
-
-    schema = {
-        "id": int,
-        "name": str,
-        "tags": list[str],
-        "metadata": dict[str, Any],
-        "file_path": Path,
-        "user_id": uuid.UUID,
-    }
-
-    # Get conversion functions (these get cached)
-    converters = {}
-    for field_name, python_type in schema.items():
-        python_to_arrow = converter.get_python_to_arrow_converter(python_type)
-        arrow_type = converter.python_type_to_arrow_type(python_type)
-        arrow_to_python = converter.get_arrow_to_python_converter(arrow_type)
-        converters[field_name] = (python_to_arrow, arrow_to_python)
-
-    print("Conversion functions created and cached for all fields")
-
-    # Test round-trip conversion using cached functions
-    converted_data = {}
-    for field_name, value in test_data.items():
-        python_to_arrow, arrow_to_python = converters[field_name]
-
-        # Convert to Arrow format
-        arrow_value = python_to_arrow(value)
-        # Convert back to Python
-        recovered_value = arrow_to_python(arrow_value)
-
-        converted_data[field_name] = recovered_value
-
-        print(
-            f"  {field_name}: {type(value).__name__} → Arrow → {type(recovered_value).__name__}"
-        )
-
-    print(f"\n" + "=" * 50)
-    print("Cache Statistics:")
-    stats = converter.get_cache_stats()
-    for stat_name, count in stats.items():
-        print(f"  {stat_name}: {count}")
-
-    print(f"\n" + "=" * 50)
-    print("✅ Universal Type Conversion Engine Benefits:")
-    print("✅ Single self-contained system for all conversions")
-    print("✅ Holds semantic registry internally")
-    print("✅ Caches all conversion functions for performance")
-    print("✅ Handles both Python→Arrow and Arrow→Python")
-    print("✅ Creates TypedDicts preserving struct field info")
-    print("✅ Dramatic reduction in function creation overhead")
-    print("✅ Central caching reduces memory usage")

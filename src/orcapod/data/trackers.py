@@ -1,6 +1,6 @@
+from orcapod import contexts
 from orcapod.data.base import LabeledContentIdentifiableBase
 from orcapod.protocols import data_protocols as dp, hashing_protocols as hp
-from orcapod.data.context import DataContext
 from orcapod.hashing.defaults import get_default_object_hasher
 from collections import defaultdict
 from collections.abc import Generator, Collection
@@ -240,10 +240,10 @@ class GraphTracker(AutoRegisteringContextBasedTracker):
     def __init__(
         self,
         tracker_manager: dp.TrackerManager | None = None,
-        data_context: str | DataContext | None = None,
+        data_context: str | contexts.DataContext | None = None,
     ) -> None:
         super().__init__(tracker_manager=tracker_manager)
-        self._data_context = DataContext.resolve_data_context(data_context)
+        self._data_context = contexts.resolve_context(data_context)
 
         # Dictionary to map kernels to the streams they have invoked
         # This is used to track the computational graph and the invocations of kernels

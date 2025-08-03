@@ -3,7 +3,6 @@ from typing import get_origin, get_args, Any
 import typing
 from collections.abc import Collection, Sequence, Mapping, Iterable, Set
 import sys
-from orcapod.semantic_types.struct_converters import SemanticTypeRegistry
 
 # Basic type mapping for Python -> Arrow conversion
 _PYTHON_TO_ARROW_MAP = {
@@ -84,9 +83,7 @@ except ImportError:
     pass
 
 
-def python_type_to_arrow(
-    type_hint, semantic_registry: SemanticTypeRegistry | None = None
-) -> pa.DataType:
+def python_type_to_arrow(type_hint, semantic_registry=None) -> pa.DataType:
     """
     Convert Python type hints to PyArrow data types.
 
@@ -106,7 +103,9 @@ def python_type_to_arrow(
         return _PYTHON_TO_ARROW_MAP[type_hint]
 
     # Check if this is a registered semantic type
-    if semantic_registry is not None:
+    if semantic_registry and hasattr(
+        semantic_registry, "get_converter_for_python_type"
+    ):
         converter = semantic_registry.get_converter_for_python_type(type_hint)
         if converter:
             return converter.arrow_struct_type
@@ -214,7 +213,8 @@ def python_type_to_arrow(
         raise ValueError(f"Unsupported generic type: {origin}")
 
 
-def arrow_type_to_python(arrow_type: pa.DataType) -> type:
+# TODO: change back the return type to `type`
+def arrow_type_to_python(arrow_type: pa.DataType) -> Any:
     """
     Convert PyArrow data types back to Python type hints.
 
@@ -367,15 +367,12 @@ def parse_type_string(type_string: str):
         raise ValueError(f"Could not parse type string '{type_string}': {e}")
 
 
-def infer_schema_from_data(
-    data: list[dict], semantic_registry: SemanticTypeRegistry | None = None
-) -> dict[str, type]:
+def infer_schema_from_data(data: list[dict]) -> dict[str, type]:
     """
     Infer schema from sample data (best effort).
 
     Args:
         data: List of sample dictionaries
-        semantic_registry: Optional semantic type registry for detecting semantic types
 
     Returns:
         Dictionary mapping field names to inferred Python types
@@ -402,7 +399,7 @@ def infer_schema_from_data(
         ]
 
         if not field_values:
-            schema[field_name] = str  # Default fallback instead of Any
+            schema[field_name] = Any  # No non-null values found
             continue
 
         # Get types of all values
@@ -411,13 +408,6 @@ def infer_schema_from_data(
         if len(value_types) == 1:
             # All values have same type
             value_type = next(iter(value_types))
-
-            # Check if this is a semantic type first
-            if semantic_registry:
-                converter = semantic_registry.get_converter_for_python_type(value_type)
-                if converter:
-                    schema[field_name] = value_type
-                    continue
 
             # For containers, try to infer element types
             if value_type is list and field_values:
@@ -429,11 +419,10 @@ def infer_schema_from_data(
                             element_type = next(iter(element_types))
                             schema[field_name] = list[element_type]
                         else:
-                            # Mixed types - use str as fallback instead of Any
-                            schema[field_name] = list[str]
+                            schema[field_name] = list[Any]  # Mixed types
                         break
                 else:
-                    schema[field_name] = list[str]  # Default fallback instead of Any
+                    schema[field_name] = list[Any]  # All lists empty
 
             elif value_type in {set, frozenset} and field_values:
                 # Infer set element type from first non-empty set
@@ -444,12 +433,10 @@ def infer_schema_from_data(
                             element_type = next(iter(element_types))
                             schema[field_name] = set[element_type]
                         else:
-                            schema[field_name] = set[
-                                str
-                            ]  # Mixed types - fallback to str
+                            schema[field_name] = set[Any]  # Mixed types
                         break
                 else:
-                    schema[field_name] = set[str]  # All sets empty - fallback to str
+                    schema[field_name] = set[Any]  # All sets empty
 
             elif value_type is dict and field_values:
                 # Infer dict types from first non-empty dict
@@ -463,26 +450,17 @@ def infer_schema_from_data(
                             val_type = next(iter(value_types))
                             schema[field_name] = dict[key_type, val_type]
                         else:
-                            # Mixed types - use most common types or fallback to str
-                            key_type = (
-                                str if str in key_types else next(iter(key_types))
-                            )
-                            val_type = (
-                                str if str in value_types else next(iter(value_types))
-                            )
-                            schema[field_name] = dict[key_type, val_type]
+                            schema[field_name] = dict[Any, Any]  # Mixed types
                         break
                 else:
-                    schema[field_name] = dict[
-                        str, str
-                    ]  # Default fallback instead of Any
+                    schema[field_name] = dict[Any, Any]  # All dicts empty
 
             else:
                 schema[field_name] = value_type
 
         else:
-            # Mixed types - use str as fallback instead of Any
-            schema[field_name] = str
+            # Mixed types - use Union or Any
+            schema[field_name] = Any
 
     return schema
 
@@ -503,61 +481,49 @@ def arrow_list_to_dict(lst: list[dict]) -> dict:
 
 
 def python_dicts_to_arrow_table(
-    data: list[dict],
-    schema: dict[str, type] | None = None,
-    semantic_registry: SemanticTypeRegistry | None = None,
+    data: list[dict], schema: dict[str, type] | None = None
 ) -> pa.Table:
     """
     Convert list of Python dictionaries to PyArrow table with proper type conversion.
 
     Args:
         data: List of Python dictionaries
-        schema: Dictionary mapping field names to Python type hints (optional)
-        semantic_registry: Optional semantic type registry for complex Python objects
+        schema: Dictionary mapping field names to Python type hints
 
     Returns:
         PyArrow table with proper types
 
     Examples:
-        # Basic usage
         data = [{"x": 5, "y": [1, 2, 3]}, {"x": 9, "y": [2, 4]}]
         schema = {"x": int, "y": list[int]}
+        -> PyArrow table with x: int64, y: large_list<int64>
 
-        # With semantic types
-        from pathlib import Path
-        data = [{"name": "Alice", "file": Path("/home/alice/data.csv")}]
-        schema = {"name": str, "file": Path}
-        table = python_dicts_to_arrow_table(data, schema, semantic_registry)
+        data = [{"name": "Alice", "scores": {"math": 95, "english": 87}}]
+        schema = {"name": str, "scores": dict[str, int]}
+        -> PyArrow table with name: large_string, scores: large_list<struct<key, value>>
     """
     if not data:
         raise ValueError("Cannot create table from empty data list")
 
-    # Auto-infer schema if not provided
-    if schema is None:
-        schema = infer_schema_from_data(data, semantic_registry)
-        print(f"Auto-inferred schema: {schema}")
-
     if not schema:
-        raise ValueError("Schema cannot be empty (and could not be inferred)")
+        raise ValueError("Schema cannot be empty")
 
-    # Convert schema to Arrow schema (with semantic type support)
+    # Convert schema to Arrow schema
     arrow_fields = []
     for field_name, python_type in schema.items():
-        arrow_type = python_type_to_arrow(python_type, semantic_registry)
+        arrow_type = python_type_to_arrow(python_type)
         arrow_fields.append(pa.field(field_name, arrow_type))
 
     arrow_schema = pa.schema(arrow_fields)
 
-    # Convert data with proper type transformations (with semantic type support)
+    # Convert data with proper type transformations
     converted_data = []
     for record in data:
         converted_record = {}
         for field_name, python_type in schema.items():
             value = record.get(field_name)
             if value is not None:
-                converted_value = _convert_python_value_for_arrow(
-                    value, python_type, semantic_registry
-                )
+                converted_value = _convert_python_value_for_arrow(value, python_type)
                 converted_record[field_name] = converted_value
             else:
                 converted_record[field_name] = None
@@ -584,30 +550,17 @@ def python_dicts_to_arrow_table(
         return pa.table(arrays, schema=arrow_schema)
 
 
-def _convert_python_value_for_arrow(
-    value, python_type, semantic_registry: SemanticTypeRegistry | None = None
-):
+def _convert_python_value_for_arrow(value, python_type):
     """
     Convert a Python value to Arrow-compatible format based on expected type.
 
     Args:
         value: Python value to convert
         python_type: Expected Python type hint
-        semantic_registry: Optional semantic type registry
 
     Returns:
         Value in Arrow-compatible format
     """
-    # First, check if this is a semantic type
-    if semantic_registry and hasattr(
-        semantic_registry, "get_converter_for_python_type"
-    ):
-        converter = semantic_registry.get_converter_for_python_type(python_type)
-        if converter:
-            # Convert using semantic type converter
-            return converter.python_to_struct_dict(value)
-
-    # Fall back to standard type conversion
     origin = get_origin(python_type)
     args = get_args(python_type)
 
@@ -620,17 +573,14 @@ def _convert_python_value_for_arrow(
         if value is None:
             return None
         non_none_type = args[0] if args[1] is type(None) else args[1]
-        return _convert_python_value_for_arrow(value, non_none_type, semantic_registry)
+        return _convert_python_value_for_arrow(value, non_none_type)
 
     # Handle abstract collections
     elif origin is list or origin in {Collection, Sequence, Iterable}:
         if not isinstance(value, (list, tuple)):
             raise TypeError(f"Expected list/tuple for {python_type}, got {type(value)}")
         element_type = args[0] if args else Any
-        return [
-            _convert_python_value_for_arrow(item, element_type, semantic_registry)
-            for item in value
-        ]
+        return [_convert_python_value_for_arrow(item, element_type) for item in value]
 
     # Handle set types
     elif origin is set or origin is Set:
@@ -654,8 +604,7 @@ def _convert_python_value_for_arrow(
             value_list = list(value)
 
         return [
-            _convert_python_value_for_arrow(item, element_type, semantic_registry)
-            for item in value_list
+            _convert_python_value_for_arrow(item, element_type) for item in value_list
         ]
 
     # Handle mapping types
@@ -667,12 +616,8 @@ def _convert_python_value_for_arrow(
         # Convert dict to list of key-value structs
         key_value_list = []
         for k, v in value.items():
-            converted_key = _convert_python_value_for_arrow(
-                k, key_type, semantic_registry
-            )
-            converted_value = _convert_python_value_for_arrow(
-                v, value_type, semantic_registry
-            )
+            converted_key = _convert_python_value_for_arrow(k, key_type)
+            converted_value = _convert_python_value_for_arrow(v, value_type)
             key_value_list.append({"key": converted_key, "value": converted_value})
         return key_value_list
 
@@ -685,8 +630,7 @@ def _convert_python_value_for_arrow(
             # Homogeneous tuple - convert to list
             element_type = args[0]
             return [
-                _convert_python_value_for_arrow(item, element_type, semantic_registry)
-                for item in value
+                _convert_python_value_for_arrow(item, element_type) for item in value
             ]
         else:
             # Heterogeneous tuple - convert to struct dict
@@ -696,9 +640,7 @@ def _convert_python_value_for_arrow(
                 )
             struct_dict = {}
             for i, (item, item_type) in enumerate(zip(value, args)):
-                struct_dict[f"f{i}"] = _convert_python_value_for_arrow(
-                    item, item_type, semantic_registry
-                )
+                struct_dict[f"f{i}"] = _convert_python_value_for_arrow(item, item_type)
             return struct_dict
 
     # Handle dict types
@@ -710,12 +652,8 @@ def _convert_python_value_for_arrow(
         # Convert dict to list of key-value structs
         key_value_list = []
         for k, v in value.items():
-            converted_key = _convert_python_value_for_arrow(
-                k, key_type, semantic_registry
-            )
-            converted_value = _convert_python_value_for_arrow(
-                v, value_type, semantic_registry
-            )
+            converted_key = _convert_python_value_for_arrow(k, key_type)
+            converted_value = _convert_python_value_for_arrow(v, value_type)
             key_value_list.append({"key": converted_key, "value": converted_value})
         return key_value_list
 
@@ -724,15 +662,12 @@ def _convert_python_value_for_arrow(
         return value
 
 
-def arrow_table_to_python_dicts(
-    table: pa.Table, semantic_registry: SemanticTypeRegistry | None = None
-) -> list[dict]:
+def arrow_table_to_python_dicts(table: pa.Table) -> list[dict]:
     """
     Convert PyArrow table back to list of Python dictionaries with proper type conversion.
 
     Args:
         table: PyArrow table to convert
-        semantic_registry: Optional semantic type registry for complex Python objects
 
     Returns:
         List of Python dictionaries with proper Python types
@@ -741,8 +676,8 @@ def arrow_table_to_python_dicts(
         Arrow table with x: int64, y: large_list<int64>
         -> [{"x": 5, "y": [1, 2, 3]}, {"x": 9, "y": [2, 4]}]
 
-        Arrow table with semantic types (Path stored as struct)
-        -> [{"name": "Alice", "file": Path("/home/alice/data.csv")}]
+        Arrow table with scores: large_list<struct<key: large_string, value: int64>>
+        -> [{"name": "Alice", "scores": {"math": 95, "english": 87}}]
     """
     # Convert table to list of raw dictionaries
     raw_dicts = table.to_pylist()
@@ -757,10 +692,8 @@ def arrow_table_to_python_dicts(
                 field = table.schema.field(field_name)
                 arrow_type = field.type
 
-                # Convert based on Arrow type (with semantic type support)
-                converted_value = _convert_arrow_value_to_python(
-                    value, arrow_type, semantic_registry
-                )
+                # Convert based on Arrow type
+                converted_value = _convert_arrow_value_to_python(value, arrow_type)
                 converted_dict[field_name] = converted_value
             else:
                 converted_dict[field_name] = None
@@ -769,28 +702,17 @@ def arrow_table_to_python_dicts(
     return converted_dicts
 
 
-def _convert_arrow_value_to_python(
-    value, arrow_type, semantic_registry: SemanticTypeRegistry | None = None
-):
+def _convert_arrow_value_to_python(value, arrow_type):
     """
     Convert Arrow value back to proper Python type.
 
     Args:
         value: Value from Arrow table (as returned by to_pylist())
         arrow_type: PyArrow type of the field
-        semantic_registry: Optional semantic type registry
 
     Returns:
         Value converted to proper Python type
     """
-    # First, check if this is a semantic struct type
-    if semantic_registry and pa.types.is_struct(arrow_type):
-        converter = semantic_registry.get_converter_for_struct_type(arrow_type)
-        if converter and isinstance(value, dict):
-            # Convert using semantic type converter
-            return converter.struct_dict_to_python(value)
-
-    # Fall back to standard type conversion
     # Handle basic types - no conversion needed
     if (
         pa.types.is_integer(arrow_type)
@@ -826,10 +748,10 @@ def _convert_arrow_value_to_python(
                         value_field = element_type.field("value")
 
                         converted_key = _convert_arrow_value_to_python(
-                            item["key"], key_field.type, semantic_registry
+                            item["key"], key_field.type
                         )
                         converted_value = _convert_arrow_value_to_python(
-                            item["value"], value_field.type, semantic_registry
+                            item["value"], value_field.type
                         )
                         result_dict[converted_key] = converted_value
                 return result_dict
@@ -837,9 +759,7 @@ def _convert_arrow_value_to_python(
         # Regular list - convert each element
         converted_list = []
         for item in value:
-            converted_item = _convert_arrow_value_to_python(
-                item, element_type, semantic_registry
-            )
+            converted_item = _convert_arrow_value_to_python(item, element_type)
             converted_list.append(converted_item)
 
         # For fixed-size lists, convert to tuple if all elements are same type
@@ -863,18 +783,18 @@ def _convert_arrow_value_to_python(
             for field in sorted_fields:
                 field_value = value.get(field.name)
                 converted_value = _convert_arrow_value_to_python(
-                    field_value, field.type, semantic_registry
+                    field_value, field.type
                 )
                 tuple_values.append(converted_value)
             return tuple(tuple_values)
         else:
-            # Regular struct - convert each field (could be semantic type handled above)
+            # Regular struct - convert each field
             converted_struct = {}
             for field in arrow_type:
                 field_name = field.name
                 field_value = value.get(field_name)
                 converted_value = _convert_arrow_value_to_python(
-                    field_value, field.type, semantic_registry
+                    field_value, field.type
                 )
                 converted_struct[field_name] = converted_value
             return converted_struct
@@ -891,11 +811,9 @@ def _convert_arrow_value_to_python(
 
         for item in value:
             if item is not None:
-                converted_key = _convert_arrow_value_to_python(
-                    item["key"], key_type, semantic_registry
-                )
+                converted_key = _convert_arrow_value_to_python(item["key"], key_type)
                 converted_value = _convert_arrow_value_to_python(
-                    item["value"], item_type, semantic_registry
+                    item["value"], item_type
                 )
                 result_dict[converted_key] = converted_value
         return result_dict

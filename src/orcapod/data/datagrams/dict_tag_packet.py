@@ -1,16 +1,14 @@
 import logging
 from collections.abc import Collection, Mapping
 from typing import Self
-from xml.etree.ElementInclude import include
 
 import pyarrow as pa
 
 from orcapod.data.system_constants import orcapod_constants as constants
-from orcapod.data.context import DataContext
+from orcapod import contexts
 from orcapod.data.datagrams.dict_datagram import DictDatagram
-from orcapod.types import TypeSpec, schemas
+from orcapod.types import TypeSpec
 from orcapod.types.core import DataValue
-from orcapod.types.semantic_converter import SemanticConverter
 from orcapod.utils import arrow_utils
 
 logger = logging.getLogger(__name__)
@@ -50,8 +48,7 @@ class DictPacket(DictDatagram):
         meta_info: Mapping[str, DataValue] | None = None,
         source_info: Mapping[str, str | None] | None = None,
         typespec: TypeSpec | None = None,
-        semantic_converter: SemanticConverter | None = None,
-        data_context: str | DataContext | None = None,
+        data_context: str | contexts.DataContext | None = None,
     ) -> None:
         # normalize the data content and remove any source info keys
         data_only = {
@@ -67,7 +64,6 @@ class DictPacket(DictDatagram):
             data_only,
             typespec=typespec,
             meta_info=meta_info,
-            semantic_converter=semantic_converter,
             data_context=data_context,
         )
 
@@ -171,7 +167,7 @@ class DictPacket(DictDatagram):
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
         include_source: bool = False,
-    ) -> schemas.PythonSchema:
+    ) -> dict[str, type]:
         """Return copy of the Python schema."""
         schema = super().types(
             include_all_info=include_all_info,
@@ -238,7 +234,6 @@ class DictPacket(DictDatagram):
         return DictDatagram(
             data,
             typespec=typespec,
-            semantic_converter=self._semantic_converter,
             data_context=self._data_context,
         )
 

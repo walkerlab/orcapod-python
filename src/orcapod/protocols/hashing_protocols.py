@@ -52,9 +52,13 @@ class ObjectHasher(Protocol):
     """Protocol for general object hashing."""
 
     # TODO: consider more explicitly stating types of objects accepted
-    def hash(self, obj: Any) -> bytes:
+    def hash(self, obj: Any, compressed: bool = False) -> bytes:
         """
-        Hash an object to a byte representation.
+        Hash an object to a byte representation. Object hasher must be
+        able to handle ContentIdentifiable objects to hash them based on their
+        identity structure. If compressed=True, the content identifiable object
+        is immediately replaced with its compressed string identity and used in the
+        computation of containing identity structure.
 
         Args:
             obj (Any): The object to hash.
@@ -71,10 +75,16 @@ class ObjectHasher(Protocol):
         ...
 
     def hash_to_hex(
-        self, obj: Any, char_count: int | None = None, prefix_hasher_id: bool = False
+        self,
+        obj: Any,
+        char_count: int | None = None,
+        compressed: bool = False,
+        prefix_hasher_id: bool = True,
     ) -> str: ...
 
-    def hash_to_int(self, obj: Any, hexdigits: int = 16) -> int:
+    def hash_to_int(
+        self, obj: Any, hexdigits: int = 16, compressed: bool = False
+    ) -> int:
         """
         Hash an object to an integer.
 
@@ -88,7 +98,10 @@ class ObjectHasher(Protocol):
         ...
 
     def hash_to_uuid(
-        self, obj: Any, namespace: uuid.UUID = uuid.NAMESPACE_OID
+        self,
+        obj: Any,
+        namespace: uuid.UUID = uuid.NAMESPACE_OID,
+        comrpressed: bool = False,
     ) -> uuid.UUID: ...
 
 

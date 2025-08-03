@@ -6,7 +6,7 @@ in the Arrow schema itself.
 """
 
 from collections.abc import Mapping
-from typing import Any, Self
+from typing import Any, Protocol, Self
 import pyarrow as pa
 
 from orcapod.types import TypeSpec
@@ -125,6 +125,42 @@ class SemanticSchema:
         return regular_fields
 
 
+class SemanticTableConverter(Protocol):
+    """Protocol for semantic table converters.
+
+    This defines the interface for converting between Python dicts and Arrow tables
+    with semantic types.
+    """
+
+    def get_struct_converter(self, field: str) -> StructConverter | None:
+        """Get struct converter for a specific field in table."""
+        ...
+
+    def python_dict_to_struct_dict(
+        self, data_dict: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Convert Python dict to struct dict for semantic fields."""
+        ...
+
+    def struct_dict_to_python_dict(
+        self, struct_dict: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Convert struct dict back to Python dict for semantic fields."""
+        ...
+
+    def python_dict_to_arrow_table(self, data_dict: dict[str, Any]) -> pa.Table:
+        """Convert single Python dict to Arrow table."""
+        ...
+
+    def python_dicts_to_arrow_table(self, data_dicts: list[dict[str, Any]]) -> pa.Table:
+        """Convert list of Python dicts to Arrow table with semantic structs."""
+        ...
+
+    def arrow_table_to_python_dicts(self, table: pa.Table) -> list[dict[str, Any]]:
+        """Convert Arrow table back to list of Python dicts."""
+        ...
+
+
 class SchemaSemanticTableConverter:
     """Schema-specific semantic converter that pre-resolves semantic type converters for efficiency.
 
@@ -154,6 +190,14 @@ class SchemaSemanticTableConverter:
                 self.semantic_fields.add(field_name)
             else:
                 self.regular_fields.add(field_name)
+
+    def get_semantic_fields(self) -> tuple[str, ...]:
+        """Get names of fields that are semantic types."""
+        return tuple(self.field_converters.keys())
+
+    def get_struct_converter_for_field(self, field: str) -> StructConverter | None:
+        """Get struct converter for a specific field."""
+        return self.field_converters.get(field)
 
     @classmethod
     def from_python_schema(
@@ -250,7 +294,7 @@ class SchemaSemanticTableConverter:
         return self.python_dicts_to_arrow_table([data_dict])
 
 
-class SemanticTableConverter:
+class AutoSemanticTableConverter:
     """General-purpose converter for working with semantic types without pre-defined schema."""
 
     def __init__(self, registry: SemanticTypeRegistry):

@@ -322,45 +322,44 @@ class Datagram(Protocol):
         """
         ...
 
-    # TODO: add this back
-    # def as_arrow_compatible_dict(
-    #     self,
-    #     include_all_info: bool = False,
-    #     include_meta_columns: bool | Collection[str] = False,
-    #     include_context: bool = False,
-    # ) -> dict[str, Any]:
-    #     """
-    #     Return dictionary with values optimized for Arrow table conversion.
+    def as_arrow_compatible_dict(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+    ) -> dict[str, Any]:
+        """
+        Return dictionary with values optimized for Arrow table conversion.
 
-    #     This method returns a dictionary where values are in a form that can be
-    #     efficiently converted to Arrow format using pa.Table.from_pylist().
+        This method returns a dictionary where values are in a form that can be
+        efficiently converted to Arrow format using pa.Table.from_pylist().
 
-    #     The key insight is that this avoids the expensive as_table() → concat pattern
-    #     by providing values that are "Arrow-ready" while remaining in dict format
-    #     for efficient batching.
+        The key insight is that this avoids the expensive as_table() → concat pattern
+        by providing values that are "Arrow-ready" while remaining in dict format
+        for efficient batching.
 
-    #     Implementation note: This may involve format conversions (e.g., Path objects
-    #     to strings, datetime objects to ISO strings, etc.) to ensure compatibility
-    #     with Arrow's expected input formats.
+        Implementation note: This may involve format conversions (e.g., Path objects
+        to strings, datetime objects to ISO strings, etc.) to ensure compatibility
+        with Arrow's expected input formats.
 
-    #     Arrow table that results from pa.Table.from_pylist on the output of this should be accompanied
-    #     with arrow_schema(...) with the same argument options to ensure that the schema matches the table.
+        Arrow table that results from pa.Table.from_pylist on the output of this should be accompanied
+        with arrow_schema(...) with the same argument options to ensure that the schema matches the table.
 
-    #     Args:
-    #         include_all_info: Include all available information
-    #         include_meta_columns: Controls meta column inclusion
-    #         include_context: Whether to include context key
+        Args:
+            include_all_info: Include all available information
+            include_meta_columns: Controls meta column inclusion
+            include_context: Whether to include context key
 
-    #     Returns:
-    #         Dictionary with values optimized for Arrow conversion
+        Returns:
+            Dictionary with values optimized for Arrow conversion
 
-    #     Example:
-    #         # Efficient batch conversion pattern
-    #         arrow_dicts = [datagram.as_arrow_compatible_dict() for datagram in datagrams]
-    #         schema = datagrams[0].arrow_schema()
-    #         table = pa.Table.from_pylist(arrow_dicts, schema=schema)
-    #     """
-    #     ...
+        Example:
+            # Efficient batch conversion pattern
+            arrow_dicts = [datagram.as_arrow_compatible_dict() for datagram in datagrams]
+            schema = datagrams[0].arrow_schema()
+            table = pa.Table.from_pylist(arrow_dicts, schema=schema)
+        """
+        ...
 
     # 5. Meta Column Operations
     def get_meta_value(self, key: str, default: DataValue = None) -> DataValue:

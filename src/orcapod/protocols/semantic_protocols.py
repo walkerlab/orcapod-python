@@ -1,38 +1,35 @@
-from typing import Protocol, Any
+from typing import Protocol, Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import pyarrow as pa
 
 
-class TypeHandler(Protocol):
-    """Protocol for handling conversion between Python type and Arrow
-    data types used for storage.
+# Core protocols
+class SemanticStructConverter(Protocol):
+    """Protocol for converting between Python objects and semantic structs."""
 
-    The handler itself IS the definition of a semantic type. The semantic type
-    name/identifier is provided by the registerer when registering the handler.
-
-    TypeHandlers should clearly communicate what Python types they can handle,
-    and focus purely on conversion logic.
-    """
-
+    @property
     def python_type(self) -> type:
-        """Return the Python type(s) this handler can process.
-
-        Returns:
-            Python type the handler supports
-
-        Examples:
-            - PathHandler: return Path
-            - NumericHandler: return (int, float)
-            - CollectionHandler: return (list, tuple, set)
-        """
+        """The Python type this converter can handle."""
         ...
 
-    def storage_type(self) -> type:
-        """Return the Arrow DataType instance for schema definition."""
+    @property
+    def arrow_struct_type(self) -> "pa.StructType":
+        """The Arrow struct type this converter produces."""
         ...
 
-    def python_to_storage(self, value: Any) -> Any:
-        """Convert Python value to Arrow-compatible storage representation."""
+    def python_to_struct_dict(self, value: Any) -> dict[str, Any]:
+        """Convert Python value to struct dictionary."""
         ...
 
-    def storage_to_python(self, value: Any) -> Any:
-        """Convert storage representation back to Python object."""
+    def struct_dict_to_python(self, struct_dict: dict[str, Any]) -> Any:
+        """Convert struct dictionary back to Python value."""
+        ...
+
+    def can_handle_python_type(self, python_type: type) -> bool:
+        """Check if this converter can handle the given Python type."""
+        ...
+
+    def can_handle_struct_type(self, struct_type: "pa.StructType") -> bool:
+        """Check if this converter can handle the given struct type."""
         ...

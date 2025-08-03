@@ -19,13 +19,11 @@ and type conversions between semantic stores, Python stores, and Arrow tables.
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Collection, Iterator, Mapping
-from typing import Any, Self, TypeAlias
+from typing import Self, TypeAlias
+from orcapod import contexts
 
 import pyarrow as pa
 
-from orcapod.data.context import (
-    DataContext,
-)
 from orcapod.types import TypeSpec
 from orcapod.types.core import DataValue
 
@@ -116,7 +114,7 @@ class BaseDatagram(ABC):
     is interpreted and used is left to concrete implementations.
     """
 
-    def __init__(self, data_context: DataContext | str | None = None) -> None:
+    def __init__(self, data_context: contexts.DataContext | str | None = None) -> None:
         """
         Initialize base datagram with data context.
 
@@ -124,7 +122,7 @@ class BaseDatagram(ABC):
             data_context: Context for semantic interpretation. Can be a string key
                 or a DataContext object, or None for default.
         """
-        self._data_context = DataContext.resolve_data_context(data_context)
+        self._data_context = contexts.resolve_context(data_context)
 
     # 1. Core Properties (Identity & Structure)
     @property
@@ -137,6 +135,8 @@ class BaseDatagram(ABC):
     def meta_columns(self) -> tuple[str, ...]:
         """Return tuple of meta column names."""
         ...
+
+    # TODO: add meta info
 
     # 2. Dict-like Interface (Data Access)
     @abstractmethod

@@ -1,6 +1,6 @@
 from orcapod.data.trackers import GraphTracker, Invocation
 from orcapod.pipeline.nodes import KernelNode, PodNode
-from orcapod.data.context import DataContext
+from orcapod import contexts
 from orcapod.protocols import data_protocols as dp
 from orcapod.protocols import store_protocols as sp
 from typing import Any
@@ -24,7 +24,7 @@ class Pipeline(GraphTracker):
         pipeline_store: sp.ArrowDataStore,
         results_store: sp.ArrowDataStore | None = None,
         tracker_manager: dp.TrackerManager | None = None,
-        data_context: str | DataContext | None = None,
+        data_context: str | contexts.DataContext | None = None,
         auto_compile: bool = True,
     ):
         super().__init__(tracker_manager=tracker_manager, data_context=data_context)

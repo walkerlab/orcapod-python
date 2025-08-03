@@ -8,7 +8,6 @@ from deltalake.exceptions import TableNotFoundError
 from pyarrow.lib import Table
 
 from orcapod.data.kernels import TrackedKernelBase
-from orcapod.data.pods import PythonSchema
 from orcapod.data.streams import (
     ImmutableTableStream,
     KernelStream,
@@ -16,7 +15,7 @@ from orcapod.data.streams import (
 )
 from orcapod.errors import DuplicateTagError
 from orcapod.protocols import data_protocols as dp
-from orcapod.types import DataValue, TypeSpec, schemas, typespec_utils
+from orcapod.types import DataValue, TypeSpec, typespec_utils
 from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.data.system_constants import orcapod_constants as constants
@@ -321,10 +320,9 @@ class ManualDeltaTableSource(SourceBase):
                 raise ValueError(
                     "At least one tag column must be provided when creating a new Delta table."
                 )
-            python_schema = schemas.PythonSchema(schema)
-            arrow_schema = python_schema.to_arrow_schema(
-                self.data_context.semantic_type_registry
-            )
+            python_schema = schema
+            arrow_schema = self._data_context.type_converter.python_schema_to_arrow_schema(python_schema)
+            
             fields = []
             for field in arrow_schema:
                 if field.name in tag_columns:
@@ -334,9 +332,8 @@ class ManualDeltaTableSource(SourceBase):
 
         else:
             arrow_schema = pa.schema(self._delta_table.schema().to_arrow())
-            python_schema = schemas.PythonSchema.from_arrow_schema(
-                arrow_schema, self.data_context.semantic_type_registry
-            )
+            python_schema = self._data_context.type_converter.arrow_schema_to_python_schema(arrow_schema)
+          
             inferred_tag_columns = []
             for field in arrow_schema:
                 if (
@@ -663,13 +660,9 @@ class DictSource(SourceBase):
 
         This is called by forward() and creates a fresh snapshot each time.
         """
-        tag_arrow_schema = schemas.PythonSchema(self.tag_typespec).to_arrow_schema(
-            self.data_context.semantic_type_registry
-        )
-        packet_arrow_schema = schemas.PythonSchema(
-            self.packet_typespec
-        ).to_arrow_schema(self.data_context.semantic_type_registry)
-
+        tag_arrow_schema = self._data_context.type_converter.python_schema_to_arrow_schema(self.tag_typespec)
+        packet_arrow_schema = self._data_context.type_converter.python_schema_to_arrow_schema(self.packet_typespec)
+        
         joined_data = [
             {**tag, **packet} for tag, packet in zip(self.tags, self.packets)
         ]

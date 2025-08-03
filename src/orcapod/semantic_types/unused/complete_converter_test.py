@@ -13,6 +13,7 @@ This test suite validates:
 - Error handling and edge cases
 """
 
+from unittest.mock import Mock
 import pyarrow as pa
 import typing
 from typing import Any, Optional, Union
@@ -25,7 +26,8 @@ import json
 
 # Import the converter functions
 # (In real usage, these would be imported from your module)
-from orcapod.semantic_types.complete_converter import (
+from orcapod.semantic_types import SemanticTypeRegistry
+from orcapod.semantic_types.semantic_converters import (
     python_type_to_arrow,
     arrow_type_to_python,
     python_dicts_to_arrow_table,
@@ -98,22 +100,47 @@ class MockPathConverter:
     """Mock converter for pathlib.Path objects."""
 
     @property
+    def semantic_type_name(self) -> str:
+        return "path"
+
+    @property
+    def python_type(self):
+        return Path
+
+    @property
     def arrow_struct_type(self):
         return pa.struct([("semantic_type", pa.string()), ("path", pa.large_string())])
 
     def python_to_struct_dict(self, value):
         if not isinstance(value, Path):
             raise TypeError(f"Expected Path, got {type(value)}")
-        return {"semantic_type": "path", "path": str(value)}
+        return {"semantic_type": self.semantic_type_name, "path": str(value)}
 
     def struct_dict_to_python(self, struct_dict):
-        if struct_dict.get("semantic_type") != "path":
+        if struct_dict.get("semantic_type") != self.semantic_type_name:
             raise ValueError("Not a path semantic type")
         return Path(struct_dict["path"])
+
+    def can_handle_python_type(self, python_type: type) -> bool:
+        return python_type is Path
+
+    def can_handle_struct_type(self, struct_type: pa.StructType) -> bool:
+        return pa.types.is_struct(struct_type) and set(f.name for f in struct_type) == {
+            "semantic_type",
+            "path",
+        }
 
 
 class MockUUIDConverter:
     """Mock converter for UUID objects."""
+
+    @property
+    def semantic_type_name(self) -> str:
+        return "uuid"
+
+    @property
+    def python_type(self) -> type:
+        return uuid.UUID
 
     @property
     def arrow_struct_type(self):
@@ -122,18 +149,27 @@ class MockUUIDConverter:
     def python_to_struct_dict(self, value):
         if not isinstance(value, uuid.UUID):
             raise TypeError(f"Expected UUID, got {type(value)}")
-        return {"semantic_type": "uuid", "uuid_str": str(value)}
+        return {"semantic_type": self.semantic_type_name, "uuid_str": str(value)}
 
     def struct_dict_to_python(self, struct_dict):
-        if struct_dict.get("semantic_type") != "uuid":
+        if struct_dict.get("semantic_type") != self.semantic_type_name:
             raise ValueError("Not a uuid semantic type")
         return uuid.UUID(struct_dict["uuid_str"])
+
+    def can_handle_python_type(self, python_type: type) -> bool:
+        return python_type is uuid.UUID
+
+    def can_handle_struct_type(self, struct_type: pa.StructType) -> bool:
+        return pa.types.is_struct(struct_type) and set(f.name for f in struct_type) == {
+            "semantic_type",
+            "uuid_str",
+        }
 
 
 class CustomData:
     """Custom data class for testing complex semantic types."""
 
-    def __init__(self, data: dict, metadata: dict = None):
+    def __init__(self, data: dict, metadata: dict | None = None):
         self.data = data
         self.metadata = metadata or {}
 
@@ -150,6 +186,14 @@ class MockCustomDataConverter:
     """Mock converter for CustomData objects."""
 
     @property
+    def semantic_type_name(self) -> str:
+        return "custom_data"
+
+    @property
+    def python_type(self) -> type:
+        return CustomData
+
+    @property
     def arrow_struct_type(self):
         return pa.struct(
             [
@@ -163,18 +207,28 @@ class MockCustomDataConverter:
         if not isinstance(value, CustomData):
             raise TypeError(f"Expected CustomData, got {type(value)}")
         return {
-            "semantic_type": "custom_data",
+            "semantic_type": self.semantic_type_name,
             "data": json.dumps(value.data),
             "metadata": json.dumps(value.metadata),
         }
 
     def struct_dict_to_python(self, struct_dict):
-        if struct_dict.get("semantic_type") != "custom_data":
+        if struct_dict.get("semantic_type") != self.semantic_type_name:
             raise ValueError("Not a custom_data semantic type")
 
         data = json.loads(struct_dict["data"])
         metadata = json.loads(struct_dict["metadata"])
         return CustomData(data, metadata)
+
+    def can_handle_python_type(self, python_type: type) -> bool:
+        return python_type is CustomData
+
+    def can_handle_struct_type(self, struct_type: pa.StructType) -> bool:
+        return pa.types.is_struct(struct_type) and set(f.name for f in struct_type) == {
+            "semantic_type",
+            "data",
+            "metadata",
+        }
 
 
 def run_comprehensive_tests():
@@ -184,7 +238,11 @@ def run_comprehensive_tests():
     print("=" * 80)
 
     # Initialize mock semantic registry
-    semantic_registry = MockSemanticRegistry()
+    # semantic_registry = MockSemanticRegistry()
+    semantic_registry = SemanticTypeRegistry()
+    semantic_registry.register_converter(MockPathConverter())
+    semantic_registry.register_converter(MockUUIDConverter())
+    semantic_registry.register_converter(MockCustomDataConverter())
 
     # Test counters
     total_tests = 0

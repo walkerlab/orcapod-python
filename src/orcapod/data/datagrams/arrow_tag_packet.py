@@ -6,12 +6,10 @@ from typing import Self
 import pyarrow as pa
 
 from orcapod.data.system_constants import orcapod_constants as constants
-from orcapod.data.context import (
-    DataContext,
-)
-from orcapod.types import schemas
+from orcapod import contexts
+from orcapod.types import TypeSpec
+
 from orcapod.types.core import DataValue
-from orcapod.types.semantic_converter import SemanticConverter
 from orcapod.utils import arrow_utils
 
 from orcapod.data.datagrams.arrow_datagram import ArrowDatagram
@@ -38,8 +36,7 @@ class ArrowTag(ArrowDatagram):
     def __init__(
         self,
         table: pa.Table,
-        semantic_converter: SemanticConverter | None = None,
-        data_context: str | DataContext | None = None,
+        data_context: str | contexts.DataContext | None = None,
     ) -> None:
         if len(table) != 1:
             raise ValueError(
@@ -48,7 +45,6 @@ class ArrowTag(ArrowDatagram):
             )
         super().__init__(
             table=table,
-            semantic_converter=semantic_converter,
             data_context=data_context,
         )
 
@@ -83,8 +79,7 @@ class ArrowPacket(ArrowDatagram):
         table: pa.Table | pa.RecordBatch,
         meta_info: Mapping[str, DataValue] | None = None,
         source_info: Mapping[str, str | None] | None = None,
-        semantic_converter: SemanticConverter | None = None,
-        data_context: str | DataContext | None = None,
+        data_context: str | contexts.DataContext | None = None,
     ) -> None:
         if len(table) != 1:
             raise ValueError(
@@ -116,13 +111,12 @@ class ArrowPacket(ArrowDatagram):
         super().__init__(
             data_table,
             meta_info=meta_info,
-            semantic_converter=semantic_converter,
             data_context=data_context,
         )
         self._source_info_table = prefixed_tables[constants.SOURCE_PREFIX]
 
         self._cached_source_info: dict[str, str | None] | None = None
-        self._cached_python_schema: schemas.PythonSchema | None = None
+        self._cached_python_schema: TypeSpec | None = None
         self._cached_content_hash: str | None = None
 
     def keys(
@@ -147,7 +141,7 @@ class ArrowPacket(ArrowDatagram):
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
         include_source: bool = False,
-    ) -> schemas.PythonSchema:
+    ) -> dict[str, type]:
         """Return copy of the Python schema."""
         schema = super().types(
             include_all_info=include_all_info,
@@ -247,7 +241,6 @@ class ArrowPacket(ArrowDatagram):
         )
         return ArrowDatagram(
             table,
-            semantic_converter=self._semantic_converter,
             data_context=self._data_context,
         )
 

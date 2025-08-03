@@ -59,3 +59,30 @@ class ArrowDataStore(Protocol):
     def flush(self) -> None:
         """Flush any buffered writes to the underlying storage."""
         ...
+
+
+class MetadataCapable(Protocol):
+    def set_metadata(
+        self,
+        record_path: tuple[str, ...],
+        metadata: Mapping[str, Any],
+        merge: bool = True,
+    ) -> None: ...
+
+    def get_metadata(
+        self,
+        record_path: tuple[str, ...],
+    ) -> Mapping[str, Any]: ...
+
+    def get_supported_metadata_schema(self) -> Mapping[str, type]: ...
+
+    def validate_metadata(
+        self,
+        metadata: Mapping[str, Any],
+    ) -> Collection[str]: ...
+
+
+class ArrowDataStoreWithMetadata(ArrowDataStore, MetadataCapable, Protocol):
+    """A protocol that combines ArrowDataStore with metadata capabilities."""
+
+    pass

@@ -17,5 +17,5 @@ __all__ = [
     "streams",
     "stores",
     "operators",
-    "Pipeline"
+    "Pipeline",
 ]
