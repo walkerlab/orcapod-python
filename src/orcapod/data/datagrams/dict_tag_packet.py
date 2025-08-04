@@ -4,12 +4,12 @@ from typing import Self
 
 import pyarrow as pa
 
-from orcapod.data.system_constants import orcapod_constants as constants
+from orcapod.data.system_constants import constants
 from orcapod import contexts
 from orcapod.data.datagrams.dict_datagram import DictDatagram
-from orcapod.types import TypeSpec
 from orcapod.types.core import DataValue
 from orcapod.utils import arrow_utils
+from orcapod.semantic_types import infer_schema_from_pylist_data
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,223 @@ class DictTag(DictDatagram):
     Represents a tag (metadata) as a dictionary that can be converted
     to different representations like Arrow tables.
     """
+
+    def __init__(
+        self,
+        data: Mapping[str, DataValue],
+        system_tags: Mapping[str, DataValue] | None = None,
+        meta_info: Mapping[str, DataValue] | None = None,
+        python_schema: dict[str, type] | None = None,
+        data_context: str | contexts.DataContext | None = None,
+    ) -> None:
+        """
+        Initialize the tag with data.
+
+        Args:
+            data: Dictionary containing tag data
+        """
+        # normalize the data content and remove any source info keys
+        data_only = {
+            k: v
+            for k, v in data.items()
+            if not k.startswith(constants.SYSTEM_TAG_PREFIX)
+        }
+        extracted_system_tags = {
+            k: v for k, v in data.items() if k.startswith(constants.SYSTEM_TAG_PREFIX)
+        }
+
+        super().__init__(
+            data_only,
+            python_schema=python_schema,
+            meta_info=meta_info,
+            data_context=data_context,
+        )
+
+        self._system_tags = {**extracted_system_tags, **(system_tags or {})}
+        self._system_tags_python_schema: dict[str, type] = (
+            infer_schema_from_pylist_data([self._system_tags])
+        )
+        self._cached_system_tags_table: pa.Table | None = None
+        self._cached_system_tags_schema: pa.Schema | None = None
+
+    def _get_total_dict(self) -> dict[str, DataValue]:
+        """Return the total dictionary representation including system tags."""
+        total_dict = super()._get_total_dict()
+        total_dict.update(self._system_tags)
+        return total_dict
+
+    def as_table(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+        include_system_tags: bool = False,
+    ) -> pa.Table:
+        """Convert the packet to an Arrow table."""
+        table = super().as_table(
+            include_all_info=include_all_info,
+            include_meta_columns=include_meta_columns,
+            include_context=include_context,
+        )
+
+        if include_all_info or include_system_tags:
+            if self._cached_system_tags_table is None:
+                self._cached_system_tags_table = (
+                    self._data_context.type_converter.python_dicts_to_arrow_table(
+                        [self._system_tags],
+                        python_schema=self._system_tags_python_schema,
+                    )
+                )
+            table = arrow_utils.hstack_tables(table, self._cached_system_tags_table)
+        return table
+
+    def as_dict(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+        include_system_tags: bool = False,
+    ) -> dict[str, DataValue]:
+        """
+        Return dictionary representation.
+
+        Args:
+            include_source: Whether to include source info fields
+
+        Returns:
+            Dictionary representation of the packet
+        """
+        dict_copy = super().as_dict(
+            include_all_info=include_all_info,
+            include_meta_columns=include_meta_columns,
+            include_context=include_context,
+        )
+        if include_all_info or include_system_tags:
+            dict_copy.update(self._system_tags)
+        return dict_copy
+
+    def keys(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+        include_system_tags: bool = False,
+    ) -> tuple[str, ...]:
+        """Return keys of the Python schema."""
+        keys = super().keys(
+            include_all_info=include_all_info,
+            include_meta_columns=include_meta_columns,
+            include_context=include_context,
+        )
+        if include_all_info or include_system_tags:
+            keys += tuple(self._system_tags.keys())
+        return keys
+
+    def types(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+        include_system_tags: bool = False,
+    ) -> dict[str, type]:
+        """Return copy of the Python schema."""
+        schema = super().types(
+            include_all_info=include_all_info,
+            include_meta_columns=include_meta_columns,
+            include_context=include_context,
+        )
+        if include_all_info or include_system_tags:
+            schema.update(self._system_tags_python_schema)
+        return schema
+
+    def arrow_schema(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+        include_system_tags: bool = False,
+    ) -> pa.Schema:
+        """
+        Return the PyArrow schema for this datagram.
+
+        Args:
+            include_data_context: Whether to include data context column in the schema
+            include_source: Whether to include source info columns in the schema
+
+        Returns:
+            PyArrow schema representing the datagram's structure
+        """
+        schema = super().arrow_schema(
+            include_all_info=include_all_info,
+            include_meta_columns=include_meta_columns,
+            include_context=include_context,
+        )
+        if include_all_info or include_system_tags:
+            if self._cached_system_tags_schema is None:
+                self._cached_system_tags_schema = (
+                    self._data_context.type_converter.python_schema_to_arrow_schema(
+                        self._system_tags_python_schema
+                    )
+                )
+            return arrow_utils.join_arrow_schemas(
+                schema, self._cached_system_tags_schema
+            )
+        return schema
+
+    def as_datagram(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_system_tags: bool = False,
+    ) -> DictDatagram:
+        """
+        Convert the packet to a DictDatagram.
+
+        Args:
+            include_source: Whether to include source info fields
+
+        Returns:
+            DictDatagram representation of the packet
+        """
+
+        data = self.as_dict(
+            include_all_info=include_all_info,
+            include_meta_columns=include_meta_columns,
+            include_system_tags=include_system_tags,
+        )
+        python_schema = self.types(
+            include_all_info=include_all_info,
+            include_meta_columns=include_meta_columns,
+            include_system_tags=include_system_tags,
+        )
+        return DictDatagram(
+            data,
+            python_schema=python_schema,
+            data_context=self._data_context,
+        )
+
+    def system_tags(self) -> dict[str, DataValue]:
+        """
+        Return source information for all keys.
+
+        Returns:
+            Dictionary mapping field names to their source info
+        """
+        return dict(self._system_tags)
+
+    def copy(self, include_cache: bool = True) -> Self:
+        """Return a shallow copy of the packet."""
+        instance = super().copy(include_cache=include_cache)
+        instance._system_tags = self._system_tags.copy()
+        if include_cache:
+            instance._cached_system_tags_table = self._cached_system_tags_table
+            instance._cached_system_tags_schema = self._cached_system_tags_schema
+
+        else:
+            instance._cached_system_tags_table = None
+            instance._cached_system_tags_schema = None
+
+        return instance
 
 
 class DictPacket(DictDatagram):

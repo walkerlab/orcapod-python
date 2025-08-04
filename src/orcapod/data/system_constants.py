@@ -6,6 +6,7 @@ POD_ID_PREFIX = "pod_id_"
 DATA_CONTEXT_KEY = "context_key"
 INPUT_PACKET_HASH = "input_packet_hash"
 PACKET_RECORD_ID = "packet_id"
+SYSTEM_TAG_PREFIX = "system_tag_"
 
 
 class SystemConstant:
@@ -40,5 +41,9 @@ class SystemConstant:
     def PACKET_RECORD_ID(self) -> str:
         return f"{self._global_prefix}{SYSTEM_COLUMN_PREFIX}{PACKET_RECORD_ID}"
 
+    @property
+    def SYSTEM_TAG_PREFIX(self) -> str:
+        return f"{self._global_prefix}{DATAGRAM_PREFIX}{SYSTEM_TAG_PREFIX}"
 
-orcapod_constants = SystemConstant()
+
+constants = SystemConstant()

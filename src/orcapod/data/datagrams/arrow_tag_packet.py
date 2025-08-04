@@ -5,8 +5,9 @@ from typing import Self
 
 import pyarrow as pa
 
-from orcapod.data.system_constants import orcapod_constants as constants
+from orcapod.data.system_constants import constants
 from orcapod import contexts
+from orcapod.semantic_types import infer_schema_from_pylist_data
 from orcapod.types import TypeSpec
 
 from orcapod.types.core import DataValue
@@ -48,11 +49,166 @@ class ArrowTag(ArrowDatagram):
             table=table,
             data_context=data_context,
         )
-        extracted_system_tags = [
-            c for c in self._data_table.column_names if c.startswith("_tag_")
+        extracted_system_tag_columns = [
+            c
+            for c in self._data_table.column_names
+            if c.startswith(constants.SYSTEM_TAG_PREFIX)
         ]
-        self._system_tag_table = self._data_table.select(extracted_system_tags)
-        self._data_table = self._data_table.drop_columns(extracted_system_tags)
+        self._system_tags_dict = (
+            self._data_context.type_converter.arrow_table_to_python_dicts(
+                self._data_table.select(extracted_system_tag_columns)
+            )[0]
+        )
+        self._system_tags_python_schema = infer_schema_from_pylist_data(
+            [self._system_tags_dict]
+        )
+        self._system_tags_dict.update(system_tags or {})
+        self._system_tags_table = (
+            self._data_context.type_converter.python_dicts_to_arrow_table(
+                [self._system_tags_dict], python_schema=self._system_tags_python_schema
+            )
+        )
+
+        self._data_table = self._data_table.drop_columns(extracted_system_tag_columns)
+
+    def keys(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+        include_system_tags: bool = False,
+    ) -> tuple[str, ...]:
+        keys = super().keys(
+            include_all_info=include_all_info,
+            include_meta_columns=include_meta_columns,
+            include_context=include_context,
+        )
+        if include_all_info or include_system_tags:
+            keys += tuple(self._system_tags_dict.keys())
+        return keys
+
+    def types(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+        include_system_tags: bool = False,
+    ) -> dict[str, type]:
+        """Return copy of the Python schema."""
+        schema = super().types(
+            include_all_info=include_all_info,
+            include_meta_columns=include_meta_columns,
+            include_context=include_context,
+        )
+        if include_all_info or include_system_tags:
+            schema.update(self._system_tags_python_schema)
+        return schema
+
+    def arrow_schema(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+        include_system_tags: bool = False,
+    ) -> pa.Schema:
+        """
+        Return the PyArrow schema for this datagram.
+
+        Args:
+            include_data_context: Whether to include data context column in the schema
+            include_source: Whether to include source info columns in the schema
+
+        Returns:
+            PyArrow schema representing the datagram's structure
+        """
+        schema = super().arrow_schema(
+            include_all_info=include_all_info,
+            include_meta_columns=include_meta_columns,
+            include_context=include_context,
+        )
+        if include_all_info or include_system_tags:
+            return arrow_utils.join_arrow_schemas(
+                schema, self._system_tags_table.schema
+            )
+        return schema
+
+    def as_dict(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+        include_system_tags: bool = False,
+    ) -> dict[str, DataValue]:
+        """
+        Convert to dictionary representation.
+
+        Args:
+            include_source: Whether to include source info fields
+
+        Returns:
+            Dictionary representation of the packet
+        """
+        return_dict = super().as_dict(
+            include_all_info=include_all_info,
+            include_meta_columns=include_meta_columns,
+            include_context=include_context,
+        )
+        if include_all_info or include_system_tags:
+            return_dict.update(self._system_tags_dict)
+        return return_dict
+
+    def as_table(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+        include_system_tags: bool = False,
+    ) -> pa.Table:
+        table = super().as_table(
+            include_all_info=include_all_info,
+            include_meta_columns=include_meta_columns,
+            include_context=include_context,
+        )
+        if include_all_info or include_system_tags:
+            # add system_tags only for existing data columns
+            table = arrow_utils.hstack_tables(table, self._system_tags_table)
+        return table
+
+    def as_datagram(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_system_tags: bool = False,
+    ) -> ArrowDatagram:
+        table = self.as_table(
+            include_all_info=include_all_info,
+            include_meta_columns=include_meta_columns,
+            include_system_tags=include_system_tags,
+        )
+        return ArrowDatagram(
+            table,
+            data_context=self._data_context,
+        )
+
+    def system_tags(self) -> dict[str, str | None]:
+        """
+        Return system tags for all keys.
+
+        Returns:
+            Copy of the dictionary mapping field names to their source info
+        """
+        return self._system_tags_dict.copy()
+
+    # 8. Utility Operations
+    def copy(self, include_cache: bool = True) -> Self:
+        """Return a copy of the datagram."""
+        new_tag = super().copy(include_cache=include_cache)
+
+        new_tag._system_tags_dict = self._system_tags_dict.copy()
+        new_tag._system_tags_python_schema = self._system_tags_python_schema.copy()
+        new_tag._system_tags_table = self._system_tags_table
+
+        return new_tag
 
 
 class ArrowPacket(ArrowDatagram):

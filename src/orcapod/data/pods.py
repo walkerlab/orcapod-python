@@ -14,7 +14,7 @@ from orcapod.data.datagrams import (
 from orcapod.data.kernels import KernelStream, TrackedKernelBase
 from orcapod.data.operators import Join
 from orcapod.data.streams import LazyPodResultStream, EfficientPodResultStream
-from orcapod.data.system_constants import orcapod_constants as constants
+from orcapod.data.system_constants import constants
 from orcapod.protocols import data_protocols as dp
 from orcapod.protocols import hashing_protocols as hp
 from orcapod.protocols.store_protocols import ArrowDataStore

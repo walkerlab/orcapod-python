@@ -13,7 +13,7 @@ from orcapod.data.datagrams import (
     ArrowTag,
     DictTag,
 )
-from orcapod.data.system_constants import orcapod_constants as constants
+from orcapod.data.system_constants import constants
 from orcapod.protocols import data_protocols as dp
 from orcapod.types import TypeSpec
 from orcapod.utils import arrow_utils
@@ -224,6 +224,7 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
         self,
         include_data_context: bool = False,
         include_source: bool = False,
+        include_system_tags: bool = False,
         include_content_hash: bool | str = False,
     ) -> "pa.Table": ...
 
@@ -231,6 +232,7 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
         self,
         include_data_context: bool = False,
         include_source: bool = False,
+        include_system_tags: bool = False,
         include_content_hash: bool | str = False,
     ) -> "pl.DataFrame":
         """
@@ -240,6 +242,7 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
             self.as_table(
                 include_data_context=include_data_context,
                 include_source=include_source,
+                include_system_tags=include_system_tags,
                 include_content_hash=include_content_hash,
             )
         )
@@ -333,16 +336,22 @@ class ImmutableTableStream(ImmutableStream):
 
         # determine tag columns first and then exclude any source info
         self._tag_columns = tuple(c for c in tag_columns if c in table.column_names)
+        self._system_tag_columns = tuple(
+            c for c in table.column_names if c.startswith(constants.SYSTEM_TAG_PREFIX)
+        )
+        self._all_tag_columns = self._tag_columns + self._system_tag_columns
         if delta := set(tag_columns) - set(self._tag_columns):
             raise ValueError(
                 f"Specified tag columns {delta} are not present in the table."
             )
         table, prefix_tables = arrow_utils.prepare_prefixed_columns(
-            table, prefix_info, exclude_columns=self._tag_columns
+            table,
+            prefix_info,
+            exclude_columns=self._all_tag_columns,
         )
         # now table should only contain tag columns and packet columns
         self._packet_columns = tuple(
-            c for c in table.column_names if c not in tag_columns
+            c for c in table.column_names if c not in self._all_tag_columns
         )
         self._table = table
         self._source_info_table = prefix_tables[constants.SOURCE_PREFIX]
@@ -356,11 +365,17 @@ class ImmutableTableStream(ImmutableStream):
         tag_schema = pa.schema(
             f for f in self._table.schema if f.name in self._tag_columns
         )
+        system_tag_schema = pa.schema(
+            f for f in self._table.schema if f.name in self._system_tag_columns
+        )
+        all_tag_schema = arrow_utils.join_arrow_schemas(tag_schema, system_tag_schema)
         packet_schema = pa.schema(
             f for f in self._table.schema if f.name in self._packet_columns
         )
 
         self._tag_schema = tag_schema
+        self._system_tag_schema = system_tag_schema
+        self._all_tag_schema = all_tag_schema
         self._packet_schema = packet_schema
         # self._tag_converter = SemanticConverter.from_semantic_schema(
         #     schemas.SemanticSchema.from_arrow_schema(
@@ -382,7 +397,9 @@ class ImmutableTableStream(ImmutableStream):
         This is used to identify the content of the stream.
         """
         table_hash = self._data_context.arrow_hasher.hash_table(
-            self.as_table(include_data_context=True, include_source=True),
+            self.as_table(
+                include_data_context=True, include_source=True, include_system_tags=True
+            ),
         )
         return (
             self.__class__.__name__,
@@ -413,6 +430,7 @@ class ImmutableTableStream(ImmutableStream):
         self,
         include_data_context: bool = False,
         include_source: bool = False,
+        include_system_tags: bool = False,
         include_content_hash: bool | str = False,
     ) -> "pa.Table":
         """
@@ -432,11 +450,14 @@ class ImmutableTableStream(ImmutableStream):
             output_table = output_table.append_column(
                 hash_column_name, pa.array(content_hashes, type=pa.large_string())
             )
+        if not include_system_tags:
+            output_table = output_table.drop_columns(self._system_tag_columns)
         table_stack = (output_table,)
         if include_data_context:
             table_stack += (self._data_context_table,)
         if include_source:
             table_stack += (self._source_info_table,)
+
         return arrow_utils.hstack_tables(*table_stack)
 
     def clear_cache(self) -> None:
@@ -454,9 +475,9 @@ class ImmutableTableStream(ImmutableStream):
         # TODO: make it work with table batch stream
         if self._cached_elements is None:
             self._cached_elements = []
-            tag_present = len(self._tag_columns) > 0
+            tag_present = len(self._all_tag_columns) > 0
             if tag_present:
-                tags = self._table.select(self._tag_columns)
+                tags = self._table.select(self._all_tag_columns)
                 tag_batches = tags.to_batches()
             else:
                 tag_batches = repeat(DictTag({}))
@@ -600,6 +621,7 @@ class KernelStream(StreamBase):
         self,
         include_data_context: bool = False,
         include_source: bool = False,
+        include_system_tags: bool = False,
         include_content_hash: bool | str = False,
     ) -> "pa.Table":
         self.refresh()
@@ -609,6 +631,7 @@ class KernelStream(StreamBase):
         return self._cached_stream.as_table(
             include_data_context=include_data_context,
             include_source=include_source,
+            include_system_tags=include_system_tags,
             include_content_hash=include_content_hash,
         )
 
@@ -689,6 +712,7 @@ class LazyPodResultStream(StreamBase):
         self,
         include_data_context: bool = False,
         include_source: bool = False,
+        include_system_tags: bool = False,
         include_content_hash: bool | str = False,
     ) -> "pa.Table":
         if self._cached_output_table is None:
@@ -697,13 +721,13 @@ class LazyPodResultStream(StreamBase):
             tag_schema, packet_schema = None, None
             for tag, packet in self.iter_packets():
                 if tag_schema is None:
-                    tag_schema = tag.arrow_schema()
+                    tag_schema = tag.arrow_schema(include_system_tags=True)
                 if packet_schema is None:
                     packet_schema = packet.arrow_schema(
                         include_context=True,
                         include_source=True,
                     )
-                all_tags.append(tag.as_dict())
+                all_tags.append(tag.as_dict(include_system_tags=True))
                 # FIXME: using in the pinch conversion to str from path
                 # replace with an appropriate semantic converter-based approach!
                 dict_patcket = packet.as_dict(include_context=True, include_source=True)
@@ -729,6 +753,15 @@ class LazyPodResultStream(StreamBase):
         )
 
         drop_columns = []
+        if not include_system_tags:
+            # TODO: get system tags more effiicently
+            drop_columns.extend(
+                [
+                    c
+                    for c in self._cached_output_table.column_names
+                    if c.startswith(constants.SYSTEM_TAG_PREFIX)
+                ]
+            )
         if not include_source:
             drop_columns.extend(f"{constants.SOURCE_PREFIX}{c}" for c in self.keys()[1])
         if not include_data_context:
@@ -740,6 +773,7 @@ class LazyPodResultStream(StreamBase):
         if include_content_hash:
             if self._cached_content_hash_column is None:
                 content_hashes = []
+                # TODO: verify that order will be preserved
                 for tag, packet in self.iter_packets():
                     content_hashes.append(packet.content_hash())
                 self._cached_content_hash_column = pa.array(
@@ -903,6 +937,7 @@ class EfficientPodResultStream(StreamBase):
         self,
         include_data_context: bool = False,
         include_source: bool = False,
+        include_system_tags: bool = False,
         include_content_hash: bool | str = False,
     ) -> "pa.Table":
         if self._cached_output_table is None:
@@ -911,13 +946,13 @@ class EfficientPodResultStream(StreamBase):
             tag_schema, packet_schema = None, None
             for tag, packet in self.iter_packets():
                 if tag_schema is None:
-                    tag_schema = tag.arrow_schema()
+                    tag_schema = tag.arrow_schema(include_system_tags=True)
                 if packet_schema is None:
                     packet_schema = packet.arrow_schema(
                         include_context=True,
                         include_source=True,
                     )
-                all_tags.append(tag.as_dict())
+                all_tags.append(tag.as_dict(include_system_tags=True))
                 # FIXME: using in the pinch conversion to str from path
                 # replace with an appropriate semantic converter-based approach!
                 dict_patcket = packet.as_dict(include_context=True, include_source=True)
@@ -947,8 +982,17 @@ class EfficientPodResultStream(StreamBase):
             drop_columns.extend(f"{constants.SOURCE_PREFIX}{c}" for c in self.keys()[1])
         if not include_data_context:
             drop_columns.append(constants.CONTEXT_KEY)
+        if not include_system_tags:
+            # TODO: come up with a more efficient approach
+            drop_columns.extend(
+                [
+                    c
+                    for c in self._cached_output_table.column_names
+                    if c.startswith(constants.SYSTEM_TAG_PREFIX)
+                ]
+            )
 
-        output_table = self._cached_output_table.drop(drop_columns)
+        output_table = self._cached_output_table.drop_columns(drop_columns)
 
         # lazily prepare content hash column if requested
         if include_content_hash:

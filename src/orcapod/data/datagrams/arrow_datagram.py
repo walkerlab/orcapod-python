@@ -6,7 +6,7 @@ import pyarrow as pa
 
 from orcapod import contexts
 from orcapod.data.datagrams.base import BaseDatagram
-from orcapod.data.system_constants import orcapod_constants as constants
+from orcapod.data.system_constants import constants
 from orcapod.types import TypeSpec, typespec_utils
 from orcapod.types.core import DataValue
 from orcapod.utils import arrow_utils

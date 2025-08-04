@@ -5,7 +5,7 @@ from typing import Any, TYPE_CHECKING
 from orcapod.utils.lazy_module import LazyModule
 from collections.abc import Mapping
 from orcapod.errors import InputValidationError
-from orcapod.data.system_constants import orcapod_constants as constants
+from orcapod.data.system_constants import constants
 from orcapod.data.operators.base import UnaryOperator
 
 if TYPE_CHECKING:

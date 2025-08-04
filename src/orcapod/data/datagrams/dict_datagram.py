@@ -4,7 +4,7 @@ from typing import Self, cast
 
 import pyarrow as pa
 
-from orcapod.data.system_constants import orcapod_constants as constants
+from orcapod.data.system_constants import constants
 from orcapod import contexts
 from orcapod.data.datagrams.base import BaseDatagram
 from orcapod.semantic_types import infer_schema_from_pylist_data
@@ -125,6 +125,17 @@ class DictDatagram(BaseDatagram):
         self._cached_content_hash: str | None = None
         self._cached_data_arrow_schema: pa.Schema | None = None
         self._cached_meta_arrow_schema: pa.Schema | None = None
+
+    def _get_total_dict(self) -> dict[str, DataValue]:
+        """
+        Return the total dictionary representation including meta and context.
+
+        This is used for content hashing and exporting to Arrow.
+        """
+        total_dict = dict(self._data)
+        total_dict.update(self._meta_data)
+        total_dict[constants.CONTEXT_KEY] = self._data_context
+        return total_dict
 
     # 1. Core Properties (Identity & Structure)
     @property

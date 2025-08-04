@@ -18,7 +18,7 @@ from orcapod.protocols import data_protocols as dp
 from orcapod.types import DataValue, TypeSpec, typespec_utils
 from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule
-from orcapod.data.system_constants import orcapod_constants as constants
+from orcapod.data.system_constants import constants
 
 if TYPE_CHECKING:
     import pandas as pd
