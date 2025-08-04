@@ -87,6 +87,63 @@ def join_arrow_schemas(*schemas: pa.Schema) -> pa.Schema:
     return pa.schema(merged_fields)
 
 
+def select_table_columns_with_prefixes(
+    table: pa.Table, prefix: str | Collection[str]
+) -> pa.Table:
+    """
+    Select columns from a PyArrow table that start with a specific prefix.
+
+    Args:
+        table (pa.Table): The original table.
+        prefix (str): The prefix to filter column names.
+
+    Returns:
+        pa.Table: New table containing only the columns with the specified prefix.
+    """
+    if isinstance(prefix, str):
+        prefix = [prefix]
+    selected_columns = [
+        col for col in table.column_names if any(col.startswith(p) for p in prefix)
+    ]
+    return table.select(selected_columns)
+
+
+def select_schema_columns_with_prefixes(
+    schema: pa.Schema, prefix: str | Collection[str]
+) -> pa.Schema:
+    """
+    Select columns from an Arrow schema that start with a specific prefix.
+
+    Args:
+        schema (pa.Schema): The original schema.
+        prefix (str): The prefix to filter column names.
+
+    Returns:
+        pa.Schema: New schema containing only the columns with the specified prefix.
+    """
+    if isinstance(prefix, str):
+        prefix = [prefix]
+    selected_fields = [
+        field for field in schema if any(field.name.startswith(p) for p in prefix)
+    ]
+    return pa.schema(selected_fields)
+
+
+def select_arrow_schema(schema: pa.Schema, columns: Collection[str]) -> pa.Schema:
+    """
+    Select specific columns from an Arrow schema.
+
+    Args:
+        schema (pa.Schema): The original schema.
+        columns (Collection[str]): List of column names to select.
+
+    Returns:
+        pa.Schema: New schema containing only the specified columns.
+    """
+    selected_fields = [field for field in schema if field.name in columns]
+    return pa.schema(selected_fields)
+
+
 def hstack_tables(*tables: pa.Table) -> pa.Table:
     """
     Horizontally stack multiple PyArrow tables by concatenating their columns.

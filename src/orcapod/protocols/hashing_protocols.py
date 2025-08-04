@@ -25,6 +25,16 @@ class ContentIdentifiable(Protocol):
         """
         ...
 
+    def content_hash(self) -> bytes:
+        """
+        Compute a hash based on the content of this object.
+
+        Returns:
+            bytes: A byte representation of the hash based on the content.
+                   If no identity structure is provided, return None.
+        """
+        ...
+
     def __eq__(self, other: object) -> bool:
         """
         Equality check that compares the identity structures of two objects.
@@ -52,7 +62,7 @@ class ObjectHasher(Protocol):
     """Protocol for general object hashing."""
 
     # TODO: consider more explicitly stating types of objects accepted
-    def hash(self, obj: Any, compressed: bool = False) -> bytes:
+    def hash(self, obj: Any) -> bytes:
         """
         Hash an object to a byte representation. Object hasher must be
         able to handle ContentIdentifiable objects to hash them based on their
@@ -68,7 +78,8 @@ class ObjectHasher(Protocol):
         """
         ...
 
-    def get_hasher_id(self) -> str:
+    @property
+    def hasher_id(self) -> str:
         """
         Returns a unique identifier/name assigned to the hasher
         """
@@ -78,13 +89,10 @@ class ObjectHasher(Protocol):
         self,
         obj: Any,
         char_count: int | None = None,
-        compressed: bool = False,
         prefix_hasher_id: bool = True,
     ) -> str: ...
 
-    def hash_to_int(
-        self, obj: Any, hexdigits: int = 16, compressed: bool = False
-    ) -> int:
+    def hash_to_int(self, obj: Any, hexdigits: int = 16) -> int:
         """
         Hash an object to an integer.
 
@@ -101,7 +109,6 @@ class ObjectHasher(Protocol):
         self,
         obj: Any,
         namespace: uuid.UUID = uuid.NAMESPACE_OID,
-        comrpressed: bool = False,
     ) -> uuid.UUID: ...
 
 

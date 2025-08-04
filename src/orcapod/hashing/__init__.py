@@ -1,7 +1,7 @@
-from .defaults import (
-    get_default_object_hasher,
-    get_default_arrow_hasher,
-)
+# from .defaults import (
+#     get_default_object_hasher,
+#     get_default_arrow_hasher,
+# )
 
 
 __all__ = [

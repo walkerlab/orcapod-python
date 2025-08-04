@@ -123,6 +123,7 @@ class BaseDatagram(ABC):
                 or a DataContext object, or None for default.
         """
         self._data_context = contexts.resolve_context(data_context)
+        self._converter = self._data_context.type_converter
 
     # 1. Core Properties (Identity & Structure)
     @property
@@ -263,13 +264,14 @@ class BaseDatagram(ABC):
         ...
 
     # 7. Context Operations
-    @abstractmethod
     def with_context_key(self, new_context_key: str) -> Self:
         """Create new datagram with different data context."""
-        ...
+        new_datagram = self.copy(include_cache=False)
+        new_datagram._data_context = contexts.resolve_context(new_context_key)
+        return new_datagram
 
     # 8. Utility Operations
-    def copy(self) -> Self:
+    def copy(self, include_cache: bool = True) -> Self:
         """Create a shallow copy of the datagram."""
         new_datagram = object.__new__(self.__class__)
         new_datagram._data_context = self._data_context

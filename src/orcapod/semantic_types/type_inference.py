@@ -2,7 +2,8 @@ from typing import Any, Union, Optional, get_origin, get_args
 
 
 def infer_schema_from_pylist_data(
-    data: list[dict], default_type=str
+    data: list[dict],
+    default_type: type = str,
 ) -> dict[str, type]:
     """
     Infer schema from sample data (best effort).
@@ -146,10 +147,10 @@ def _infer_set_type(sets: list, set_type: type) -> type:
         all_elements.extend(s)
 
     if not all_elements:
-        return set_type[Any]
+        return set_type[Any]  # type: ignore[return-value]
 
     element_type = _infer_type_from_values(all_elements)
-    return set_type[element_type]
+    return set_type[element_type]  # type: ignore[return-value]
 
 
 def _infer_dict_type(dicts: list[dict]) -> type:

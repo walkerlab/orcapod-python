@@ -1,9 +1,11 @@
 import logging
 import sys
 from abc import abstractmethod
-from collections.abc import Callable, Collection, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
+
+from numpy import record
 from orcapod import contexts
 from orcapod.data.datagrams import (
     ArrowPacket,
@@ -20,6 +22,25 @@ from orcapod.types import TypeSpec
 from orcapod.types import typespec_utils as tsutils
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.hashing.hash_utils import get_function_signature, get_function_components
+import hashlib
+
+
+def combine_hashes(
+    *hashes: str, order: bool = False, prefix_hasher_id: bool = False
+) -> str:
+    """Combine hashes into a single hash string."""
+
+    # Sort for deterministic order regardless of input order
+    if order:
+        prepared_hashes = sorted(hashes)
+    else:
+        prepared_hashes = list(hashes)
+    combined = "".join(prepared_hashes)
+    combined_hash = hashlib.sha256(combined.encode()).hexdigest()
+    if prefix_hasher_id:
+        return "sha256@" + combined_hash
+    return combined_hash
+
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -217,8 +238,8 @@ class FunctionPod(ActivatablePodBase):
         output_keys: str | Collection[str] | None = None,
         function_name=None,
         version: str = "v0.0",
-        input_typespec: TypeSpec | None = None,
-        output_typespec: TypeSpec | Sequence[type] | None = None,
+        input_python_schema: Mapping[str, type] | None = None,
+        output_python_schema: Mapping[str, type] | Sequence[type] | None = None,
         label: str | None = None,
         function_info_extractor: hp.FunctionInfoExtractor | None = None,
         **kwargs,
@@ -238,20 +259,36 @@ class FunctionPod(ActivatablePodBase):
                     "function_name must be provided if function has no __name__ attribute"
                 )
         self.function_name = function_name
+        # extract the first full index (potentially with leading 0) in the version string
+        if not isinstance(version, str):
+            raise TypeError(f"Version must be a string, got {type(version)}")
+        import re
+
+        match = re.match(r"\D.*(\d+)", version)
+        major_version = 0
+        if match:
+            major_version = int(match.group(1))
+        else:
+            raise ValueError(
+                f"Version string {version} does not contain a valid version number"
+            )
+
         self.version = version
+        self.major_version = major_version
+
         super().__init__(label=label or self.function_name, **kwargs)
 
         # extract input and output types from the function signature
         input_packet_types, output_packet_types = tsutils.extract_function_typespecs(
             self.function,
             self.output_keys,
-            input_typespec=input_typespec,
-            output_typespec=output_typespec,
+            input_typespec=input_python_schema,
+            output_typespec=output_python_schema,
         )
-        self._input_packet_schema = input_packet_types
-        self._output_packet_schema = output_packet_types
+        self._input_packet_schema = dict(input_packet_types)
+        self._output_packet_schema = dict(output_packet_types)
         # TODO: add output packet converter for speed up
-        
+
         self._function_info_extractor = function_info_extractor
         object_hasher = self.data_context.object_hasher
         self._function_signature_hash = object_hasher.hash_to_hex(
@@ -261,21 +298,35 @@ class FunctionPod(ActivatablePodBase):
             get_function_components(self.function), prefix_hasher_id=True
         )
 
+        self._output_packet_type_hash = object_hasher.hash_to_hex(
+            self.output_packet_types(), prefix_hasher_id=True
+        )
+
+        self._total_pod_id_hash = object_hasher.hash_to_hex(
+            self.tiered_pod_id, prefix_hasher_id=True
+        )
+
     @property
     def tiered_pod_id(self) -> dict[str, str]:
         return {
+            "version": self.version,
             "signature": self._function_signature_hash,
             "content": self._function_content_hash,
         }
 
     @property
     def kernel_id(self) -> tuple[str, ...]:
-        return (self.function_name, self.version)
+        return (
+            self.function_name,
+            self._output_packet_type_hash,
+            "v" + str(self.major_version),
+        )
 
     def get_record_id(self, packet: dp.Packet) -> str:
-        content = (packet.content_hash(), self.tiered_pod_id)
-        return self.data_context.object_hasher.hash_to_hex(
-            content, prefix_hasher_id=True
+        return combine_hashes(
+            packet.content_hash(),
+            self._total_pod_id_hash,
+            prefix_hasher_id=True,
         )
 
     def input_packet_types(self) -> dict[str, type]:
@@ -304,7 +355,9 @@ class FunctionPod(ActivatablePodBase):
         )
         return f"FunctionPod:{func_sig}"
 
-    def call(self, tag: dp.Tag, packet: dp.Packet) -> tuple[dp.Tag, DictPacket | None]:
+    def call(
+        self, tag: dp.Tag, packet: dp.Packet, record_id: str | None = None
+    ) -> tuple[dp.Tag, DictPacket | None]:
         if not self.is_active():
             logger.info(
                 f"Pod is not active: skipping computation on input packet {packet}"
@@ -333,7 +386,9 @@ class FunctionPod(ActivatablePodBase):
             )
 
         output_data = {k: v for k, v in zip(self.output_keys, output_values)}
-        record_id = self.get_record_id(packet)
+        if record_id is None:
+            # if record_id is not provided, generate it from the packet
+            record_id = self.get_record_id(packet)
         source_info = {
             k: ":".join(self.kernel_id + (record_id, k)) for k in output_data
         }
@@ -341,7 +396,7 @@ class FunctionPod(ActivatablePodBase):
         output_packet = DictPacket(
             {k: v for k, v in zip(self.output_keys, output_values)},
             source_info=source_info,
-            typespec=self.output_packet_types(),
+            python_schema=self.output_packet_types(),
             data_context=self._data_context,
         )
         return tag, output_packet
@@ -349,28 +404,7 @@ class FunctionPod(ActivatablePodBase):
     def kernel_identity_structure(
         self, streams: Collection[dp.Stream] | None = None
     ) -> Any:
-        # construct identity structure for the function
-
-        # if function_info_extractor is available, use that but substitute the function_name
-        if self._function_info_extractor is not None:
-            function_info = self._function_info_extractor.extract_function_info(
-                self.function,
-                function_name=self.function_name,
-                input_typespec=self.input_packet_types(),
-                output_typespec=self.output_packet_types(),
-            )
-        else:
-            # use basic information only
-            function_info = {
-                "name": self.function_name,
-                "input_packet_types": self.input_packet_types(),
-                "output_packet_types": self.output_packet_types(),
-            }
-
-        id_struct = (
-            self.__class__.__name__,
-            function_info,
-        )
+        id_struct = (self.__class__.__name__,) + self.kernel_id
         # if streams are provided, perform pre-processing step, validate, and add the
         # resulting single stream to the identity structure
         if streams is not None and len(streams) != 0:
@@ -440,8 +474,10 @@ class WrappedPod(ActivatablePodBase):
     def validate_inputs(self, *streams: dp.Stream) -> None:
         self.pod.validate_inputs(*streams)
 
-    def call(self, tag: dp.Tag, packet: dp.Packet) -> tuple[dp.Tag, dp.Packet | None]:
-        return self.pod.call(tag, packet)
+    def call(
+        self, tag: dp.Tag, packet: dp.Packet, record_id: str | None = None
+    ) -> tuple[dp.Tag, dp.Packet | None]:
+        return self.pod.call(tag, packet, record_id=record_id)
 
     def kernel_identity_structure(
         self, streams: Collection[dp.Stream] | None = None
@@ -492,17 +528,20 @@ class CachedPod(WrappedPod):
         self,
         tag: dp.Tag,
         packet: dp.Packet,
+        record_id: str | None = None,
         skip_cache_lookup: bool = False,
         skip_cache_insert: bool = False,
     ) -> tuple[dp.Tag, dp.Packet | None]:
         # TODO: consider logic for overwriting existing records
+        if record_id is None:
+            record_id = self.get_record_id(packet)
         output_packet = None
         if not skip_cache_lookup:
             output_packet = self.get_recorded_output_packet(packet)
         if output_packet is None:
-            tag, output_packet = super().call(tag, packet)
+            tag, output_packet = super().call(tag, packet, record_id=record_id)
             if output_packet is not None and not skip_cache_insert:
-                self.record_packet(packet, output_packet)
+                self.record_packet(packet, output_packet, record_id=record_id)
 
         return tag, output_packet
 
@@ -514,6 +553,7 @@ class CachedPod(WrappedPod):
         self,
         input_packet: dp.Packet,
         output_packet: dp.Packet,
+        record_id: str | None = None,
         skip_duplicates: bool = False,
     ) -> dp.Packet:
         """
@@ -535,10 +575,12 @@ class CachedPod(WrappedPod):
             constants.INPUT_PACKET_HASH,
             pa.array([input_packet.content_hash()], type=pa.large_string()),
         )
+        if record_id is None:
+            record_id = self.get_record_id(input_packet)
 
         self.result_store.add_record(
             self.record_path,
-            self.pod.get_record_id(input_packet),
+            record_id,
             data_table,
             skip_duplicates=skip_duplicates,
         )

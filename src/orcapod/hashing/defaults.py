@@ -3,7 +3,8 @@
 from orcapod.protocols import hashing_protocols as hp
 
 from orcapod.hashing.string_cachers import InMemoryCacher
-from orcapod.hashing.object_hashers import LegacyObjectHasher
+
+# from orcapod.hashing.object_hashers import LegacyObjectHasher
 from orcapod.hashing.function_info_extractors import FunctionInfoExtractorFactory
 from orcapod.hashing.versioned_hashers import (
     get_versioned_semantic_arrow_hasher,
@@ -36,13 +37,13 @@ def get_default_object_hasher() -> hp.ObjectHasher:
     return object_hasher
 
 
-def get_legacy_object_hasher() -> hp.ObjectHasher:
-    function_info_extractor = (
-        FunctionInfoExtractorFactory.create_function_info_extractor(
-            strategy="signature"
-        )
-    )
-    return LegacyObjectHasher(function_info_extractor=function_info_extractor)
+# def get_legacy_object_hasher() -> hp.ObjectHasher:
+#     function_info_extractor = (
+#         FunctionInfoExtractorFactory.create_function_info_extractor(
+#             strategy="signature"
+#         )
+#     )
+#     return LegacyObjectHasher(function_info_extractor=function_info_extractor)
 
 
 # def get_default_composite_file_hasher(with_cache=True) -> LegacyCompositeFileHasher:

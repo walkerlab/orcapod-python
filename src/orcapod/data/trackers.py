@@ -1,7 +1,6 @@
 from orcapod import contexts
 from orcapod.data.base import LabeledContentIdentifiableBase
 from orcapod.protocols import data_protocols as dp, hashing_protocols as hp
-from orcapod.hashing.defaults import get_default_object_hasher
 from collections import defaultdict
 from collections.abc import Generator, Collection
 from abc import ABC, abstractmethod
@@ -137,6 +136,7 @@ class AutoRegisteringContextBasedTracker(ABC):
         self.set_active(False)
 
 
+# TODO: rename this to stub source or simply use StreamSource
 class StubKernel:
     def __init__(self, stream: dp.Stream, label: str | None = None) -> None:
         """
@@ -169,8 +169,13 @@ class StubKernel:
         return self.forward(*args, **kwargs)
 
     def identity_structure(self, streams: Collection[dp.Stream] | None = None) -> Any:
-        # FIXME: using label as a stop-gap for identity structure
-        return self.label
+        if streams is not None:
+            # when checked for invocation id, act as a source
+            # and just return the output packet types
+            _, packet_types = self.stream.types()
+            return packet_types
+        # otherwise, return the identity structure of the stream
+        return self.stream.identity_structure()
 
     def __hash__(self) -> int:
         # TODO: resolve the logic around identity structure on a stream / stub kernel

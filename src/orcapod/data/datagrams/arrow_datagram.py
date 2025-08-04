@@ -12,6 +12,7 @@ from orcapod.types.core import DataValue
 from orcapod.utils import arrow_utils
 
 logger = logging.getLogger(__name__)
+DEBUG = False
 
 
 class ArrowDatagram(BaseDatagram):
@@ -810,14 +811,17 @@ class ArrowDatagram(BaseDatagram):
             >>> repr(datagram)
             "ArrowDatagram(data={'user_id': 123, 'name': 'Alice'}, meta_columns=2, context='std:v1.0.0:abc123')"
         """
-        data_dict = self.as_dict()
-        meta_count = len(self.meta_columns)
-        context_key = self.data_context_key
+        if DEBUG:
+            data_dict = self.as_dict()
+            meta_count = len(self.meta_columns)
+            context_key = self.data_context_key
 
-        return (
-            f"{self.__class__.__name__}("
-            f"data={data_dict}, "
-            f"meta_columns={meta_count}, "
-            f"context='{context_key}'"
-            f")"
-        )
+            return (
+                f"{self.__class__.__name__}("
+                f"data={data_dict}, "
+                f"meta_columns={meta_count}, "
+                f"context='{context_key}'"
+                f")"
+            )
+        else:
+            return str(self.as_dict())

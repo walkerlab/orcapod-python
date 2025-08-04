@@ -1,6 +1,9 @@
 from typing import Any
-from .function_info_extractors import FunctionInfoExtractor
-from orcapod.protocols.hashing_protocols import ContentIdentifiable
+from orcapod.protocols.hashing_protocols import (
+    ContentIdentifiable,
+    ObjectHasher,
+    FunctionInfoExtractor,
+)
 import logging
 import json
 from uuid import UUID
@@ -33,8 +36,10 @@ def serialize_through_json(processed_obj) -> bytes:
 def process_structure(
     obj: Any,
     visited: set[int] | None = None,
+    object_hasher: ObjectHasher | None = None,
     function_info_extractor: FunctionInfoExtractor | None = None,
-    force_hash: bool = False,
+    compressed: bool = False,
+    force_hash: bool = True,
 ) -> Any:
     """
     Recursively process a structure to prepare it for hashing.
@@ -79,10 +84,22 @@ def process_structure(
         logger.debug(
             f"Processing ContentHashableBase instance of type {type(obj).__name__}"
         )
-        # replace the object with expanded identity structure and re-process
-        return process_structure(
-            obj.identity_structure(), visited, function_info_extractor
-        )
+        if compressed:
+            # if compressed, the content identifiable object is immediately replaced with
+            # its hashed string identity
+            if object_hasher is None:
+                raise ValueError(
+                    "ObjectHasher must be provided to hash ContentIdentifiable objects with compressed=True"
+                )
+            return object_hasher.hash_to_hex(obj.identity_structure(), compressed=True)
+        else:
+            # if not compressed, replace the object with expanded identity structure and re-process
+            return process_structure(
+                obj.identity_structure(),
+                visited,
+                object_hasher=object_hasher,
+                function_info_extractor=function_info_extractor,
+            )
 
     # Handle basic types
     if isinstance(obj, (str, int, float, bool)):
@@ -110,15 +127,33 @@ def process_structure(
         logger.debug(f"Processing named tuple of type {type(obj).__name__}")
         # For namedtuples, convert to dict and then process
         d = {field: getattr(obj, field) for field in obj._fields}  # type: ignore
-        return process_structure(d, visited, function_info_extractor)
+        return process_structure(
+            d,
+            visited,
+            object_hasher=object_hasher,
+            function_info_extractor=function_info_extractor,
+            compressed=compressed,
+        )
 
     # Handle mappings (dict-like objects)
     if isinstance(obj, Mapping):
         # Process both keys and values
         processed_items = [
             (
-                process_structure(k, visited, function_info_extractor),
-                process_structure(v, visited, function_info_extractor),
+                process_structure(
+                    k,
+                    visited,
+                    object_hasher=object_hasher,
+                    function_info_extractor=function_info_extractor,
+                    compressed=compressed,
+                ),
+                process_structure(
+                    v,
+                    visited,
+                    object_hasher=object_hasher,
+                    function_info_extractor=function_info_extractor,
+                    compressed=compressed,
+                ),
             )
             for k, v in obj.items()
         ]
@@ -141,7 +176,14 @@ def process_structure(
         )
         # Process each item first, then sort the processed results
         processed_items = [
-            process_structure(item, visited, function_info_extractor) for item in obj
+            process_structure(
+                item,
+                visited,
+                object_hasher=object_hasher,
+                function_info_extractor=function_info_extractor,
+                compressed=compressed,
+            )
+            for item in obj
         ]
         return sorted(processed_items, key=str)
 
@@ -151,7 +193,14 @@ def process_structure(
             f"Processing collection of type {type(obj).__name__} with {len(obj)} items"
         )
         return [
-            process_structure(item, visited, function_info_extractor) for item in obj
+            process_structure(
+                item,
+                visited,
+                object_hasher=object_hasher,
+                function_info_extractor=function_info_extractor,
+                compressed=compressed,
+            )
+            for item in obj
         ]
 
     # For functions, use the function_content_hash
@@ -231,9 +280,12 @@ def process_structure(
 def hash_object(
     obj: Any,
     function_info_extractor: FunctionInfoExtractor | None = None,
+    compressed: bool = False,
 ) -> bytes:
     # Process the object to handle nested structures and HashableMixin instances
-    processed = process_structure(obj, function_info_extractor=function_info_extractor)
+    processed = process_structure(
+        obj, function_info_extractor=function_info_extractor, compressed=compressed
+    )
 
     # Serialize the processed structure
     json_str = json.dumps(processed, sort_keys=True, separators=(",", ":")).encode(

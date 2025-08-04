@@ -1575,7 +1575,9 @@ class Pod(Kernel, Protocol):
         """
         ...
 
-    def call(self, tag: Tag, packet: Packet) -> tuple[Tag, Packet | None]:
+    def call(
+        self, tag: Tag, packet: Packet, record_id: str | None = None
+    ) -> tuple[Tag, Packet | None]:
         """
         Process a single packet with its associated tag.
 
@@ -1613,6 +1615,7 @@ class CachedPod(Pod, Protocol):
         self,
         tag: Tag,
         packet: Packet,
+        record_id: str | None = None,
         skip_cache_lookup: bool = False,
         skip_cache_insert: bool = False,
     ) -> tuple[Tag, Packet | None]:

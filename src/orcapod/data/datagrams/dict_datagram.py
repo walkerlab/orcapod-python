@@ -7,12 +7,14 @@ import pyarrow as pa
 from orcapod.data.system_constants import orcapod_constants as constants
 from orcapod import contexts
 from orcapod.data.datagrams.base import BaseDatagram
-from orcapod.types import TypeSpec
-from orcapod.types import typespec_utils as tsutils
+from orcapod.semantic_types import infer_schema_from_pylist_data
 from orcapod.types.core import DataValue
 from orcapod.utils import arrow_utils
 
 logger = logging.getLogger(__name__)
+
+# FIXME: make this configurable!
+DEBUG = False
 
 
 class DictDatagram(BaseDatagram):
@@ -50,7 +52,7 @@ class DictDatagram(BaseDatagram):
     def __init__(
         self,
         data: Mapping[str, DataValue],
-        typespec: TypeSpec | None = None,
+        python_schema: dict[str, type] | None = None,
         meta_info: Mapping[str, DataValue] | None = None,
         data_context: str | contexts.DataContext | None = None,
     ) -> None:
@@ -99,17 +101,23 @@ class DictDatagram(BaseDatagram):
 
         # Combine provided typespec info with inferred typespec from content
         # If the column value is None and no type spec is provided, defaults to str.
-        self._data_python_schema = tsutils.get_typespec_from_dict(
-            self._data,
-            typespec,
+        inferred_schema = infer_schema_from_pylist_data([self._data], default_type=str)
+
+        self._data_python_schema = (
+            {k: python_schema.get(k, v) for k, v in inferred_schema.items()}
+            if python_schema
+            else inferred_schema
         )
 
         # Create schema for meta data
-        self._meta_python_schema = tsutils.get_typespec_from_dict(
-            self._meta_data,
-            typespec=typespec,
+        inferred_meta_schema = infer_schema_from_pylist_data(
+            [self._meta_data], default_type=str
         )
-        
+        self._meta_python_schema = (
+            {k: python_schema.get(k, v) for k, v in inferred_meta_schema.items()}
+            if python_schema
+            else inferred_meta_schema
+        )
 
         # Initialize caches
         self._cached_data_table: pa.Table | None = None
@@ -123,6 +131,15 @@ class DictDatagram(BaseDatagram):
     def meta_columns(self) -> tuple[str, ...]:
         """Return tuple of meta column names."""
         return tuple(self._meta_data.keys())
+
+    def get_meta_info(self) -> dict[str, DataValue]:
+        """
+        Get meta column information.
+
+        Returns:
+            Dictionary of meta column names and their values.
+        """
+        return dict(self._meta_data)
 
     # 2. Dict-like Interface (Data Access)
     def __getitem__(self, key: str) -> DataValue:
@@ -180,7 +197,7 @@ class DictDatagram(BaseDatagram):
         include_all_info: bool = False,
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
-    ) -> TypeSpec:
+    ) -> dict[str, type]:
         """
         Return Python schema for the datagram.
 
@@ -242,36 +259,34 @@ class DictDatagram(BaseDatagram):
 
         # Build data schema (cached)
         if self._cached_data_arrow_schema is None:
-            self._cached_data_arrow_schema = self._data_context.type_converter.python_schema_to_arrow_schema(
-                self._data_python_schema
+            self._cached_data_arrow_schema = (
+                self._data_context.type_converter.python_schema_to_arrow_schema(
+                    self._data_python_schema
+                )
             )
-             
 
         all_schemas = [self._cached_data_arrow_schema]
 
         # Add context schema if requested
         if include_context:
-            context_schema = pa.schema([pa.field(constants.CONTEXT_KEY, pa.string())])
+            context_schema = self._converter.python_schema_to_arrow_schema(
+                {constants.CONTEXT_KEY: str}
+            )
             all_schemas.append(context_schema)
 
         # Add meta schema if requested
         if include_meta_columns and self._meta_data:
-
             if include_meta_columns is True:
                 meta_schema = self._get_meta_arrow_schema()
             elif isinstance(include_meta_columns, Collection):
                 # Filter meta schema by prefix matching
-                matched_fields = [
-                    field
-                    for field in self._get_meta_arrow_schema()
-                    if any(
-                        field.name.startswith(prefix) for prefix in include_meta_columns
+                meta_schema = (
+                    arrow_utils.select_schema_columns_with_prefixes(
+                        self._get_meta_arrow_schema(),
+                        include_meta_columns,
                     )
-                ]
-                if matched_fields:
-                    meta_schema = pa.schema(matched_fields)
-                else:
-                    meta_schema = None
+                    or None
+                )
             else:
                 meta_schema = None
 
@@ -340,6 +355,41 @@ class DictDatagram(BaseDatagram):
 
         return result_dict
 
+    def as_arrow_compatible_dict(
+        self,
+        include_all_info: bool = False,
+        include_meta_columns: bool | Collection[str] = False,
+        include_context: bool = False,
+    ) -> dict[str, DataValue]:
+        """
+        Return dictionary representation compatible with Arrow.
+
+        Args:
+            include_meta_columns: Whether to include meta columns.
+                - True: include all meta columns
+                - Collection[str]: include meta columns matching these prefixes
+                - False: exclude meta columns
+            include_context: Whether to include context key
+
+        Returns:
+            Dictionary representation compatible with Arrow
+        """
+        # FIXME: this is a super inefficient implementation!
+        python_dict = self.as_dict(
+            include_all_info=include_all_info,
+            include_meta_columns=include_meta_columns,
+            include_context=include_context,
+        )
+        python_schema = self.types(
+            include_all_info=include_all_info,
+            include_meta_columns=include_meta_columns,
+            include_context=include_context,
+        )
+
+        return self._data_context.type_converter.python_dict_to_struct_dict(
+            [python_dict], python_schema=python_schema
+        )[0]
+
     def _get_meta_arrow_table(self) -> pa.Table:
         if self._cached_meta_table is None:
             arrow_schema = self._get_meta_arrow_schema()
@@ -354,10 +404,12 @@ class DictDatagram(BaseDatagram):
 
     def _get_meta_arrow_schema(self) -> pa.Schema:
         if self._cached_meta_arrow_schema is None:
-            self._cached_meta_arrow_schema = self._data_context.type_converter.python_schema_to_arrow_schema(
-                self._meta_python_schema
+            self._cached_meta_arrow_schema = (
+                self._data_context.type_converter.python_schema_to_arrow_schema(
+                    self._meta_python_schema
+                )
             )
-           
+
         assert self._cached_meta_arrow_schema is not None, (
             "Meta Arrow schema should be initialized by now"
         )
@@ -387,9 +439,11 @@ class DictDatagram(BaseDatagram):
 
         # Build data table (cached)
         if self._cached_data_table is None:
-            self._cached_data_table = self._data_context.type_converter.python_dicts_to_arrow_table(
-                [self._data],
-                self._data_python_schema,
+            self._cached_data_table = (
+                self._data_context.type_converter.python_dicts_to_arrow_table(
+                    [self._data],
+                    self._data_python_schema,
+                )
             )
         assert self._cached_data_table is not None, (
             "Data Arrow table should be initialized by now"
@@ -397,6 +451,7 @@ class DictDatagram(BaseDatagram):
         result_table = self._cached_data_table
 
         # Add context if requested
+        # TODO: consider using type converter for consistency
         if include_context:
             result_table = result_table.append_column(
                 constants.CONTEXT_KEY,
@@ -410,18 +465,12 @@ class DictDatagram(BaseDatagram):
             # Select appropriate meta columns
             if isinstance(include_meta_columns, Collection):
                 # Filter meta columns by prefix matching
-                matched_cols = [
-                    col
-                    for col in self._meta_data.keys()
-                    if any(col.startswith(prefix) for prefix in include_meta_columns)
-                ]
-                if matched_cols:
-                    meta_table = meta_table.select(matched_cols)
-                else:
-                    meta_table = None
+                meta_table = arrow_utils.select_table_columns_with_prefixes(
+                    meta_table, include_meta_columns
+                )
 
             # Combine tables if we have meta columns to add
-            if meta_table is not None:
+            if meta_table:
                 result_table = arrow_utils.hstack_tables(result_table, meta_table)
 
         return result_table
@@ -595,18 +644,18 @@ class DictDatagram(BaseDatagram):
             new_name = column_mapping.get(old_name, old_name)
             new_data[new_name] = value
 
-        # Handle typespec updates for renamed columns
-        new_typespec = None
+        # Handle python_schema updates for renamed columns
+        new_python_schema = None
         if self._data_python_schema:
-            existing_typespec = dict(self._data_python_schema)
+            existing_python_schema = dict(self._data_python_schema)
 
             # Rename types according to column mapping
-            renamed_typespec = {}
-            for old_name, old_type in existing_typespec.items():
+            renamed_python_schema = {}
+            for old_name, old_type in existing_python_schema.items():
                 new_name = column_mapping.get(old_name, old_name)
-                renamed_typespec[new_name] = old_type
+                renamed_python_schema[new_name] = old_type
 
-            new_typespec = renamed_typespec
+            new_python_schema = renamed_python_schema
 
         # Reconstruct full data dict for new instance
         full_data = new_data  # Renamed user data
@@ -614,7 +663,7 @@ class DictDatagram(BaseDatagram):
 
         return self.__class__(
             data=full_data,
-            typespec=new_typespec,
+            python_schema=new_python_schema,
             data_context=self._data_context,
         )
 
@@ -651,6 +700,7 @@ class DictDatagram(BaseDatagram):
         full_data = new_data  # Updated user data
         full_data.update(self._meta_data)  # Keep existing meta data
 
+        # TODO: transfer over python schema
         return self.__class__(
             data=full_data,
             data_context=self._data_context,
@@ -693,48 +743,21 @@ class DictDatagram(BaseDatagram):
         new_data = dict(self._data)
         new_data.update(updates)
 
-        # Create updated typespec - handle None values by defaulting to str
-        typespec = self.types()
+        # Create updated python schema - handle None values by defaulting to str
+        python_schema = self.types()
         if column_types is not None:
-            typespec.update(column_types)
+            python_schema.update(column_types)
 
-        new_typespec = tsutils.get_typespec_from_dict(
-            new_data,
-            typespec=typespec,
-        )
+        new_python_schema = infer_schema_from_pylist_data([new_data])
+        new_python_schema = {
+            k: python_schema.get(k, v) for k, v in new_python_schema.items()
+        }
 
-        # Reconstruct full data dict for new instance
-        full_data = new_data  # Updated user data
-        full_data.update(self._meta_data)  # Keep existing meta data
+        new_datagram = self.copy(include_cache=False)
+        new_datagram._data = new_data
+        new_datagram._data_python_schema = new_python_schema
 
-        return self.__class__(
-            data=full_data,
-            typespec=new_typespec,
-            # semantic converter needs to be rebuilt for new columns
-            data_context=self._data_context,
-        )
-
-    # 7. Context Operations
-    def with_context_key(self, new_context_key: str) -> Self:
-        """
-        Create a new DictDatagram with a different data context key.
-        Maintains immutability by returning a new instance.
-
-        Args:
-            new_context_key: New data context key string
-
-        Returns:
-            New DictDatagram instance with new context
-        """
-        # Reconstruct full data dict for new instance
-        full_data = dict(self._data)  # User data
-        full_data.update(self._meta_data)  # Meta data
-
-        return self.__class__(
-            data=full_data,
-            data_context=new_context_key,  # New context
-            # Note: semantic_converter will be rebuilt for new context
-        )
+        return new_datagram
 
     # 8. Utility Operations
     def copy(self, include_cache: bool = True) -> Self:
@@ -792,13 +815,16 @@ class DictDatagram(BaseDatagram):
         Returns:
             Detailed representation with type and metadata information.
         """
-        meta_count = len(self.meta_columns)
-        context_key = self.data_context_key
+        if DEBUG:
+            meta_count = len(self.meta_columns)
+            context_key = self.data_context_key
 
-        return (
-            f"{self.__class__.__name__}("
-            f"data={self._data}, "
-            f"meta_columns={meta_count}, "
-            f"context='{context_key}'"
-            f")"
-        )
+            return (
+                f"{self.__class__.__name__}("
+                f"data={self._data}, "
+                f"meta_columns={meta_count}, "
+                f"context='{context_key}'"
+                f")"
+            )
+        else:
+            return str(self._data)

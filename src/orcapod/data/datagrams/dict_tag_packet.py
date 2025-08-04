@@ -47,7 +47,7 @@ class DictPacket(DictDatagram):
         data: Mapping[str, DataValue],
         meta_info: Mapping[str, DataValue] | None = None,
         source_info: Mapping[str, str | None] | None = None,
-        typespec: TypeSpec | None = None,
+        python_schema: dict[str, type] | None = None,
         data_context: str | contexts.DataContext | None = None,
     ) -> None:
         # normalize the data content and remove any source info keys
@@ -62,7 +62,7 @@ class DictPacket(DictDatagram):
 
         super().__init__(
             data_only,
-            typespec=typespec,
+            python_schema=python_schema,
             meta_info=meta_info,
             data_context=data_context,
         )
@@ -72,15 +72,20 @@ class DictPacket(DictDatagram):
         self._cached_source_info_schema: pa.Schema | None = None
 
     @property
-    def _source_info_schema(self) -> pa.Schema:
+    def _source_info_arrow_schema(self) -> pa.Schema:
         if self._cached_source_info_schema is None:
-            self._cached_source_info_schema = pa.schema(
-                {
-                    f"{constants.SOURCE_PREFIX}{k}": pa.large_string()
-                    for k in self.keys()
-                }
+            self._cached_source_info_schema = (
+                self._converter.python_schema_to_arrow_schema(
+                    self._source_info_python_schema
+                )
             )
+
         return self._cached_source_info_schema
+
+    @property
+    def _source_info_python_schema(self) -> dict[str, type]:
+        """Return the Python schema for source info."""
+        return {f"{constants.SOURCE_PREFIX}{k}": str for k in self.keys()}
 
     def as_table(
         self,
@@ -102,7 +107,7 @@ class DictPacket(DictDatagram):
                     for k, v in self.source_info().items()
                 }
                 self._cached_source_info_table = pa.Table.from_pylist(
-                    [source_info_data], schema=self._source_info_schema
+                    [source_info_data], schema=self._source_info_arrow_schema
                 )
             assert self._cached_source_info_table is not None, (
                 "Cached source info table should not be None"
@@ -202,7 +207,9 @@ class DictPacket(DictDatagram):
             include_context=include_context,
         )
         if include_all_info or include_source:
-            return arrow_utils.join_arrow_schemas(schema, self._source_info_schema)
+            return arrow_utils.join_arrow_schemas(
+                schema, self._source_info_arrow_schema
+            )
         return schema
 
     def as_datagram(
@@ -226,14 +233,14 @@ class DictPacket(DictDatagram):
             include_meta_columns=include_meta_columns,
             include_source=include_source,
         )
-        typespec = self.types(
+        python_schema = self.types(
             include_all_info=include_all_info,
             include_meta_columns=include_meta_columns,
             include_source=include_source,
         )
         return DictDatagram(
             data,
-            typespec=typespec,
+            python_schema=python_schema,
             data_context=self._data_context,
         )
 

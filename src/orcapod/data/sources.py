@@ -297,7 +297,7 @@ class ManualDeltaTableSource(SourceBase):
     def __init__(
         self,
         table_path: str | Path,
-        schema: TypeSpec | None = None,
+        python_schema: dict[str, type] | None = None,
         tag_columns: Collection[str] | None = None,
         **kwargs,
     ) -> None:
@@ -311,7 +311,7 @@ class ManualDeltaTableSource(SourceBase):
         self.load_delta_table()
 
         if self._delta_table is None:
-            if schema is None:
+            if python_schema is None:
                 raise ValueError(
                     "Delta table not found and no schema provided. "
                     "Please provide a valid Delta table path or a schema to create a new table."
@@ -320,9 +320,12 @@ class ManualDeltaTableSource(SourceBase):
                 raise ValueError(
                     "At least one tag column must be provided when creating a new Delta table."
                 )
-            python_schema = schema
-            arrow_schema = self._data_context.type_converter.python_schema_to_arrow_schema(python_schema)
-            
+            arrow_schema = (
+                self._data_context.type_converter.python_schema_to_arrow_schema(
+                    python_schema
+                )
+            )
+
             fields = []
             for field in arrow_schema:
                 if field.name in tag_columns:
@@ -332,8 +335,12 @@ class ManualDeltaTableSource(SourceBase):
 
         else:
             arrow_schema = pa.schema(self._delta_table.schema().to_arrow())
-            python_schema = self._data_context.type_converter.arrow_schema_to_python_schema(arrow_schema)
-          
+            python_schema = (
+                self._data_context.type_converter.arrow_schema_to_python_schema(
+                    arrow_schema
+                )
+            )
+
             inferred_tag_columns = []
             for field in arrow_schema:
                 if (
@@ -660,9 +667,17 @@ class DictSource(SourceBase):
 
         This is called by forward() and creates a fresh snapshot each time.
         """
-        tag_arrow_schema = self._data_context.type_converter.python_schema_to_arrow_schema(self.tag_typespec)
-        packet_arrow_schema = self._data_context.type_converter.python_schema_to_arrow_schema(self.packet_typespec)
-        
+        tag_arrow_schema = (
+            self._data_context.type_converter.python_schema_to_arrow_schema(
+                self.tag_typespec
+            )
+        )
+        packet_arrow_schema = (
+            self._data_context.type_converter.python_schema_to_arrow_schema(
+                self.packet_typespec
+            )
+        )
+
         joined_data = [
             {**tag, **packet} for tag, packet in zip(self.tags, self.packets)
         ]

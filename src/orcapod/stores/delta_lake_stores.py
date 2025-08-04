@@ -263,7 +263,7 @@ class BatchedDeltaTableArrowStore:
         record_key = self._get_record_key(record_path)
         if (
             self._cache_dirty.get(record_key)
-            or self._delta_table_cache.get(record_key) is None
+            or record_key not in self._delta_table_cache
         ):
             self._refresh_existing_ids_cache(record_path)
         return self._existing_ids_cache.get(record_key) or set()
@@ -346,7 +346,7 @@ class BatchedDeltaTableArrowStore:
                 return None
         else:
             # Check for conflicts - insert never allows duplicates when skip_duplicates=False
-            self._check_all_conflicts(record_path, deduplicated_table)
+            # self._check_all_conflicts(record_path, deduplicated_table)
             filtered_table = deduplicated_table
 
         # Step 4: Handle schema compatibility

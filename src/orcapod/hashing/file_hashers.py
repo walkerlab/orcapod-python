@@ -1,10 +1,9 @@
-from orcapod.hashing import legacy_core
 from orcapod.hashing.hash_utils import hash_file
 from orcapod.protocols.hashing_protocols import (
     FileContentHasher,
     StringCacher,
 )
-from orcapod.types import PathLike, PathSet, PacketLike
+from orcapod.types import PathLike
 
 
 class BasicFileHasher:

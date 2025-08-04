@@ -36,6 +36,7 @@ class ArrowTag(ArrowDatagram):
     def __init__(
         self,
         table: pa.Table,
+        system_tags: Mapping[str, DataValue] | None = None,
         data_context: str | contexts.DataContext | None = None,
     ) -> None:
         if len(table) != 1:
@@ -47,6 +48,11 @@ class ArrowTag(ArrowDatagram):
             table=table,
             data_context=data_context,
         )
+        extracted_system_tags = [
+            c for c in self._data_table.column_names if c.startswith("_tag_")
+        ]
+        self._system_tag_table = self._data_table.select(extracted_system_tags)
+        self._data_table = self._data_table.drop_columns(extracted_system_tags)
 
 
 class ArrowPacket(ArrowDatagram):

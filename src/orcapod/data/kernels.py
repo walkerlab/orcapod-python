@@ -50,13 +50,7 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         Returns a unique identifier for the kernel.
         This is used to identify the kernel in the computational graph.
         """
-        if self._kernel_hash is None:
-            # If the kernel hash is not set, compute it based on the class name and label.
-            # This is a simple way to ensure that each kernel has a unique identifier.
-            self._kernel_hash = self.data_context.object_hasher.hash_to_hex(
-                self.identity_structure(), prefix_hasher_id=True
-            )
-        return (f"{self.__class__.__name__}", self._kernel_hash)
+        return (f"{self.__class__.__name__}", self.content_hash())
 
     @property
     def data_context(self) -> contexts.DataContext:
@@ -125,6 +119,11 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         # equivalence of the two by returning the same identity structure for both invocations.
         # This can be achieved, for example, by returning a set over the streams instead of a tuple.
         if streams is not None:
+            if len(streams) == 0:
+                # If no streams are provided, then this is a source kernel
+                # and we simply return None as the identity structure.
+                print(f"Kernel {self} is acting as a source!")
+                return None
             streams = self.pre_kernel_processing(*streams)
             self.validate_inputs(*streams)
         return self.kernel_identity_structure(streams)

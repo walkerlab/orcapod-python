@@ -271,12 +271,17 @@ class PodNode(Node, CachedPod):
         self,
         tag: dp.Tag,
         packet: dp.Packet,
+        record_id: str | None = None,
         skip_cache_lookup: bool = False,
         skip_cache_insert: bool = False,
     ) -> tuple[dp.Tag, dp.Packet | None]:
+        if record_id is None:
+            record_id = self.get_record_id(packet)
+
         tag, output_packet = super().call(
             tag,
             packet,
+            record_id=record_id,
             skip_cache_lookup=skip_cache_lookup,
             skip_cache_insert=skip_cache_insert,
         )
@@ -286,11 +291,23 @@ class PodNode(Node, CachedPod):
                 output_packet.get_meta_value(self.DATA_RETRIEVED_FLAG) is not None
             )
             # add pipeline record if the output packet is not None
-            self.add_pipeline_record(tag, packet, retrieved=retrieved)
+            # TODO: verify cache lookup logic
+            self.add_pipeline_record(
+                tag,
+                packet,
+                record_id,
+                retrieved=retrieved,
+                skip_cache_lookup=skip_cache_lookup,
+            )
         return tag, output_packet
 
     def add_pipeline_record(
-        self, tag: dp.Tag, input_packet: dp.Packet, retrieved: bool | None = None
+        self,
+        tag: dp.Tag,
+        input_packet: dp.Packet,
+        packet_record_id: str,
+        retrieved: bool | None = None,
+        skip_cache_lookup: bool = False,
     ) -> None:
         # combine dp.Tag with packet content hash to compute entry hash
         tag_with_hash = tag.as_table().append_column(
@@ -302,10 +319,12 @@ class PodNode(Node, CachedPod):
             tag_with_hash, prefix_hasher_id=True
         )
 
-        existing_record = self.pipeline_store.get_record_by_id(
-            self.pipeline_path,
-            entry_id,
-        )
+        existing_record = None
+        if not skip_cache_lookup:
+            existing_record = self.pipeline_store.get_record_by_id(
+                self.pipeline_path,
+                entry_id,
+            )
 
         if existing_record is not None:
             # if the record already exists, then skip
@@ -317,9 +336,7 @@ class PodNode(Node, CachedPod):
             )
             .append_column(
                 constants.PACKET_RECORD_ID,
-                pa.array(
-                    [self.pod.get_record_id(input_packet)], type=pa.large_string()
-                ),
+                pa.array([packet_record_id], type=pa.large_string()),
             )
             .append_column(
                 f"{constants.META_PREFIX}input_packet{constants.CONTEXT_KEY}",
@@ -362,7 +379,11 @@ class PodNode(Node, CachedPod):
         # hack - use polars for join as it can deal with complex data type
         # TODO: convert the entire load logic to use polars with lazy evaluation
 
-        joined_info = pl.DataFrame(taginfo).join(pl.DataFrame(results), on=constants.PACKET_RECORD_ID, how="inner").to_arrow()
+        joined_info = (
+            pl.DataFrame(taginfo)
+            .join(pl.DataFrame(results), on=constants.PACKET_RECORD_ID, how="inner")
+            .to_arrow()
+        )
 
         # joined_info = taginfo.join(
         #     results,

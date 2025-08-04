@@ -141,21 +141,6 @@ class UniversalTypeConverter:
 
         return pa.schema(fields)
 
-    def infer_python_schema_from_data(self, python_data: Any) -> type:
-        """
-        Infer Python schema from data, returning a TypedDict type.
-
-        This is useful for dynamic data structures where the schema is not known in advance.
-        """
-        if not isinstance(python_data, dict):
-            raise ValueError("Expected a dictionary to infer schema")
-
-        field_specs = {}
-        for key, value in python_data.items():
-            field_specs[key] = type(value)
-
-        return TypedDict("DynamicSchema", field_specs)  # type: ignore[call-arg]
-
     def arrow_type_to_python_type(self, arrow_type: pa.DataType) -> type:
         """
         Convert Arrow type to Python type hint with caching.
@@ -186,11 +171,11 @@ class UniversalTypeConverter:
 
         return python_schema
 
-    def python_dicts_to_arrow_table(
+    def python_dict_to_struct_dict(
         self,
         python_dicts: list[dict[str, Any]],
         python_schema: dict[str, type] | None = None,
-    ) -> pa.Table:
+    ) -> list[dict[str, Any]]:
         """
         Convert a list of Python dictionaries to an Arrow table.
 
@@ -214,10 +199,57 @@ class UniversalTypeConverter:
                     converted_record[field_name] = None
             converted_data.append(converted_record)
 
+        return converted_data
+
+    def struct_dict_to_python_dict(
+        self,
+        struct_dict: list[dict[str, Any]],
+        arrow_schema: pa.Schema,
+    ) -> list[dict[str, Any]]:
+        """
+        Convert a list of Arrow structs to Python dictionaries.
+
+        This uses the main conversion logic and caches results for performance.
+        """
+
+        converters = {
+            field.name: self.get_arrow_to_python_converter(field.type)
+            for field in arrow_schema
+        }
+
+        converted_data = []
+        for record in struct_dict:
+            converted_record = {}
+            for field_name, converter in converters.items():
+                if field_name in record:
+                    converted_record[field_name] = converter(record[field_name])
+                else:
+                    converted_record[field_name] = None
+            converted_data.append(converted_record)
+
+        return converted_data
+
+    def python_dicts_to_arrow_table(
+        self,
+        python_dicts: list[dict[str, Any]],
+        python_schema: dict[str, type] | None = None,
+    ) -> pa.Table:
+        """
+        Convert a list of Python dictionaries to an Arrow table.
+
+        This uses the main conversion logic and caches results for performance.
+        """
+        if python_schema is None:
+            python_schema = infer_schema_from_pylist_data(python_dicts)
+
+        struct_dict = self.python_dict_to_struct_dict(
+            python_dicts, python_schema=python_schema
+        )
+
         # Convert to Arrow schema
         arrow_schema = self.python_schema_to_arrow_schema(python_schema)
 
-        return pa.Table.from_pylist(converted_data, schema=arrow_schema)
+        return pa.Table.from_pylist(struct_dict, schema=arrow_schema)
 
     def arrow_table_to_python_dicts(
         self, arrow_table: pa.Table
