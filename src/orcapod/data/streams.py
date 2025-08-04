@@ -22,9 +22,12 @@ from orcapod.utils.lazy_module import LazyModule
 if TYPE_CHECKING:
     import pyarrow as pa
     import pyarrow.compute as pc
+    import polars as pl
 else:
     pa = LazyModule("pyarrow")
     pc = LazyModule("pyarrow.compute")
+    pl = LazyModule("polars")
+
 
 # TODO: consider using this instead of making copy of dicts
 # from types import MappingProxyType
@@ -222,7 +225,24 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
         include_data_context: bool = False,
         include_source: bool = False,
         include_content_hash: bool | str = False,
-    ) -> pa.Table: ...
+    ) -> "pa.Table": ...
+
+    def as_df(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_content_hash: bool | str = False,
+    ) -> "pl.DataFrame":
+        """
+        Convert the entire stream to a Polars DataFrame.
+        """
+        return pl.DataFrame(
+            self.as_table(
+                include_data_context=include_data_context,
+                include_source=include_source,
+                include_content_hash=include_content_hash,
+            )
+        )
 
     def flow(self) -> Collection[tuple[dp.Tag, dp.Packet]]:
         """
@@ -286,7 +306,7 @@ class ImmutableTableStream(ImmutableStream):
 
     def __init__(
         self,
-        table: pa.Table,
+        table: "pa.Table",
         tag_columns: Collection[str] = (),
         source_info: dict[str, str | None] | None = None,
         source: dp.Kernel | None = None,
@@ -394,7 +414,7 @@ class ImmutableTableStream(ImmutableStream):
         include_data_context: bool = False,
         include_source: bool = False,
         include_content_hash: bool | str = False,
-    ) -> pa.Table:
+    ) -> "pa.Table":
         """
         Returns the underlying table representation of the stream.
         This is useful for converting the stream to a table format.
@@ -581,7 +601,7 @@ class KernelStream(StreamBase):
         include_data_context: bool = False,
         include_source: bool = False,
         include_content_hash: bool | str = False,
-    ) -> pa.Table:
+    ) -> "pa.Table":
         self.refresh()
         assert self._cached_stream is not None, (
             "Stream has not been updated or is empty."
@@ -670,7 +690,7 @@ class LazyPodResultStream(StreamBase):
         include_data_context: bool = False,
         include_source: bool = False,
         include_content_hash: bool | str = False,
-    ) -> pa.Table:
+    ) -> "pa.Table":
         if self._cached_output_table is None:
             all_tags = []
             all_packets = []
@@ -884,7 +904,7 @@ class EfficientPodResultStream(StreamBase):
         include_data_context: bool = False,
         include_source: bool = False,
         include_content_hash: bool | str = False,
-    ) -> pa.Table:
+    ) -> "pa.Table":
         if self._cached_output_table is None:
             all_tags = []
             all_packets = []
@@ -984,7 +1004,7 @@ class WrappedStream(StreamBase):
         include_data_context: bool = False,
         include_source: bool = False,
         include_content_hash: bool | str = False,
-    ) -> pa.Table:
+    ) -> "pa.Table":
         """
         Returns the underlying table representation of the stream.
         This is useful for converting the stream to a table format.

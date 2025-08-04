@@ -1153,6 +1153,17 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
+    def as_df(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_content_hash: bool | str = False,
+    ) -> "pl.DataFrame":
+        """
+        Convert the entire stream to a Polars DataFrame.
+        """
+        ...
+
     def as_table(
         self,
         include_data_context: bool = False,
