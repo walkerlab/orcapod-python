@@ -17,7 +17,7 @@ from orcapod.data.system_constants import constants
 from orcapod.protocols import data_protocols as dp
 from orcapod.protocols import hashing_protocols as hp
 from orcapod.protocols.store_protocols import ArrowDataStore
-from orcapod.types import TypeSpec
+from orcapod.types import DataValue, TypeSpec
 from orcapod.types import typespec_utils as tsutils
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.hashing.hash_utils import get_function_signature, get_function_components
@@ -170,7 +170,20 @@ class ActivatablePodBase(TrackedKernelBase):
 
     @abstractmethod
     def call(
-        self, tag: dp.Tag, packet: dp.Packet
+        self,
+        tag: dp.Tag,
+        packet: dp.Packet,
+        record_id: str | None = None,
+        execution_engine: dp.ExecutionEngine | None = None,
+    ) -> tuple[dp.Tag, dp.Packet | None]: ...
+
+    @abstractmethod
+    async def async_call(
+        self,
+        tag: dp.Tag,
+        packet: dp.Packet,
+        record_id: str | None = None,
+        execution_engine: dp.ExecutionEngine | None = None,
     ) -> tuple[dp.Tag, dp.Packet | None]: ...
 
     def track_invocation(self, *streams: dp.Stream, label: str | None = None) -> None:
@@ -355,8 +368,59 @@ class FunctionPod(ActivatablePodBase):
         return f"FunctionPod:{func_sig}"
 
     def call(
-        self, tag: dp.Tag, packet: dp.Packet, record_id: str | None = None
+        self,
+        tag: dp.Tag,
+        packet: dp.Packet,
+        record_id: str | None = None,
+        execution_engine: dp.ExecutionEngine | None = None,
     ) -> tuple[dp.Tag, DictPacket | None]:
+        if not self.is_active():
+            logger.info(
+                f"Pod is not active: skipping computation on input packet {packet}"
+            )
+            return tag, None
+
+        # any kernel/pod invocation happening inside the function will NOT be tracked
+        if not isinstance(packet, dict):
+            input_dict = packet.as_dict(include_source=False)
+        else:
+            input_dict = packet
+
+        with self._tracker_manager.no_tracking():
+            if execution_engine is not None:
+                # use the provided execution engine to run the function
+                values = execution_engine.submit_sync(self.function, **input_dict)
+            else:
+                values = self.function(**input_dict)
+
+        output_data = self.process_function_output(values)
+
+        if record_id is None:
+            # if record_id is not provided, generate it from the packet
+            record_id = self.get_record_id(packet)
+        source_info = {
+            k: ":".join(self.kernel_id + (record_id, k)) for k in output_data
+        }
+
+        output_packet = DictPacket(
+            output_data,
+            source_info=source_info,
+            python_schema=self.output_packet_types(),
+            data_context=self._data_context,
+        )
+        return tag, output_packet
+
+    async def async_call(
+        self,
+        tag: dp.Tag,
+        packet: dp.Packet,
+        record_id: str | None = None,
+        execution_engine: dp.ExecutionEngine | None = None,
+    ) -> tuple[dp.Tag, dp.Packet | None]:
+        """
+        Asynchronous call to the function pod. This is a placeholder for future implementation.
+        Currently, it behaves like the synchronous call.
+        """
         if not self.is_active():
             logger.info(
                 f"Pod is not active: skipping computation on input packet {packet}"
@@ -366,8 +430,38 @@ class FunctionPod(ActivatablePodBase):
 
         # any kernel/pod invocation happening inside the function will NOT be tracked
         with self._tracker_manager.no_tracking():
-            values = self.function(**packet.as_dict(include_source=False))
+            # any kernel/pod invocation happening inside the function will NOT be tracked
+            if not isinstance(packet, dict):
+                input_dict = packet.as_dict(include_source=False)
+            else:
+                input_dict = packet
+            if execution_engine is not None:
+                # use the provided execution engine to run the function
+                values = await execution_engine.submit_async(
+                    self.function, **input_dict
+                )
+            else:
+                values = self.function(**input_dict)
 
+        output_data = self.process_function_output(values)
+
+        if record_id is None:
+            # if record_id is not provided, generate it from the packet
+            record_id = self.get_record_id(packet)
+        source_info = {
+            k: ":".join(self.kernel_id + (record_id, k)) for k in output_data
+        }
+
+        output_packet = DictPacket(
+            output_data,
+            source_info=source_info,
+            python_schema=self.output_packet_types(),
+            data_context=self._data_context,
+        )
+        return tag, output_packet
+
+    def process_function_output(self, values: Any) -> dict[str, DataValue]:
+        output_values = []
         if len(self.output_keys) == 0:
             output_values = []
         elif len(self.output_keys) == 1:
@@ -384,21 +478,7 @@ class FunctionPod(ActivatablePodBase):
                 f"Number of output keys {len(self.output_keys)}:{self.output_keys} does not match number of values returned by function {len(output_values)}"
             )
 
-        output_data = {k: v for k, v in zip(self.output_keys, output_values)}
-        if record_id is None:
-            # if record_id is not provided, generate it from the packet
-            record_id = self.get_record_id(packet)
-        source_info = {
-            k: ":".join(self.kernel_id + (record_id, k)) for k in output_data
-        }
-
-        output_packet = DictPacket(
-            {k: v for k, v in zip(self.output_keys, output_values)},
-            source_info=source_info,
-            python_schema=self.output_packet_types(),
-            data_context=self._data_context,
-        )
-        return tag, output_packet
+        return {k: v for k, v in zip(self.output_keys, output_values)}
 
     def kernel_identity_structure(
         self, streams: Collection[dp.Stream] | None = None
@@ -474,9 +554,26 @@ class WrappedPod(ActivatablePodBase):
         self.pod.validate_inputs(*streams)
 
     def call(
-        self, tag: dp.Tag, packet: dp.Packet, record_id: str | None = None
+        self,
+        tag: dp.Tag,
+        packet: dp.Packet,
+        record_id: str | None = None,
+        execution_engine: dp.ExecutionEngine | None = None,
     ) -> tuple[dp.Tag, dp.Packet | None]:
-        return self.pod.call(tag, packet, record_id=record_id)
+        return self.pod.call(
+            tag, packet, record_id=record_id, execution_engine=execution_engine
+        )
+
+    async def async_call(
+        self,
+        tag: dp.Tag,
+        packet: dp.Packet,
+        record_id: str | None = None,
+        execution_engine: dp.ExecutionEngine | None = None,
+    ) -> tuple[dp.Tag, dp.Packet | None]:
+        return await self.pod.async_call(
+            tag, packet, record_id=record_id, execution_engine=execution_engine
+        )
 
     def kernel_identity_structure(
         self, streams: Collection[dp.Stream] | None = None
@@ -528,6 +625,7 @@ class CachedPod(WrappedPod):
         tag: dp.Tag,
         packet: dp.Packet,
         record_id: str | None = None,
+        execution_engine: dp.ExecutionEngine | None = None,
         skip_cache_lookup: bool = False,
         skip_cache_insert: bool = False,
     ) -> tuple[dp.Tag, dp.Packet | None]:
@@ -538,7 +636,33 @@ class CachedPod(WrappedPod):
         if not skip_cache_lookup:
             output_packet = self.get_recorded_output_packet(packet)
         if output_packet is None:
-            tag, output_packet = super().call(tag, packet, record_id=record_id)
+            tag, output_packet = super().call(
+                tag, packet, record_id=record_id, execution_engine=execution_engine
+            )
+            if output_packet is not None and not skip_cache_insert:
+                self.record_packet(packet, output_packet, record_id=record_id)
+
+        return tag, output_packet
+
+    async def async_call(
+        self,
+        tag: dp.Tag,
+        packet: dp.Packet,
+        record_id: str | None = None,
+        execution_engine: dp.ExecutionEngine | None = None,
+        skip_cache_lookup: bool = False,
+        skip_cache_insert: bool = False,
+    ) -> tuple[dp.Tag, dp.Packet | None]:
+        # TODO: consider logic for overwriting existing records
+        if record_id is None:
+            record_id = self.get_record_id(packet)
+        output_packet = None
+        if not skip_cache_lookup:
+            output_packet = self.get_recorded_output_packet(packet)
+        if output_packet is None:
+            tag, output_packet = await super().async_call(
+                tag, packet, record_id=record_id, execution_engine=execution_engine
+            )
             if output_packet is not None and not skip_cache_insert:
                 self.record_packet(packet, output_packet, record_id=record_id)
 

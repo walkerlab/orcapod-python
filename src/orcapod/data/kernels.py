@@ -50,7 +50,7 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         Returns a unique identifier for the kernel.
         This is used to identify the kernel in the computational graph.
         """
-        return (f"{self.__class__.__name__}", self.content_hash())
+        return (f"{self.__class__.__name__}", self.content_hash().hex())
 
     @property
     def data_context(self) -> contexts.DataContext:

@@ -54,7 +54,7 @@ class ArrowTag(ArrowDatagram):
             for c in self._data_table.column_names
             if c.startswith(constants.SYSTEM_TAG_PREFIX)
         ]
-        self._system_tags_dict = (
+        self._system_tags_dict: dict[str, DataValue] = (
             self._data_context.type_converter.arrow_table_to_python_dicts(
                 self._data_table.select(extracted_system_tag_columns)
             )[0]
@@ -190,7 +190,7 @@ class ArrowTag(ArrowDatagram):
             data_context=self._data_context,
         )
 
-    def system_tags(self) -> dict[str, str | None]:
+    def system_tags(self) -> dict[str, DataValue | None]:
         """
         Return system tags for all keys.
 

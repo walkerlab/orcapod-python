@@ -1,13 +1,30 @@
-from collections.abc import Collection, Iterator, Mapping
+from collections.abc import Collection, Iterator, Mapping, Callable
 from datetime import datetime
 from typing import Any, ContextManager, Protocol, Self, TYPE_CHECKING
 from orcapod.protocols.hashing_protocols import ContentIdentifiable
 from orcapod.types import DataValue, TypeSpec
 
+
 if TYPE_CHECKING:
     import pyarrow as pa
     import polars as pl
     import pandas as pd
+
+
+class ExecutionEngine(Protocol):
+    def submit_sync(self, function: Callable, *args, **kwargs) -> Any:
+        """
+        Run the given function with the provided arguments.
+        This method should be implemented by the execution engine.
+        """
+        ...
+
+    async def submit_async(self, function: Callable, *args, **kwargs) -> Any:
+        """
+        Asynchronously run the given function with the provided arguments.
+        This method should be implemented by the execution engine.
+        """
+        ...
 
 
 class Datagram(Protocol):
@@ -1229,6 +1246,29 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
+    @property
+    def execution_engine(self) -> ExecutionEngine | None:
+        """
+        The execution engine attached to this stream. By default, the stream
+        will use this execution engine whenever it needs to perform computation.
+        None means the stream is not attached to any execution engine and will default
+        to running natively.
+        """
+
+    @execution_engine.setter
+    def execution_engine(self, engine: ExecutionEngine | None) -> None:
+        """
+        Set the execution engine for this stream.
+
+        This allows the stream to use a specific execution engine for
+        computation, enabling optimized execution strategies and resource
+        management.
+
+        Args:
+            engine: The execution engine to attach to this stream
+        """
+        ...
+
     def get_substream(self, substream_id: str) -> "Stream":
         """
         Retrieve a specific sub-stream by its identifier.
@@ -1354,7 +1394,9 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
-    def iter_packets(self) -> Iterator[tuple[Tag, Packet]]:
+    def iter_packets(
+        self, execution_engine: ExecutionEngine | None = None
+    ) -> Iterator[tuple[Tag, Packet]]:
         """
         Alias for __iter__ for explicit packet iteration.
 
@@ -1375,12 +1417,41 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
+    def run(self, execution_engine: ExecutionEngine | None = None) -> None:
+        """
+        Execute the stream using the provided execution engine.
+
+        This method triggers computation of the stream content based on its
+        source kernel and upstream streams. It returns a new stream instance
+        containing the computed (tag, packet) pairs.
+
+        Args:
+            execution_engine: The execution engine to use for computation
+
+        """
+        ...
+
+    async def run_async(self, execution_engine: ExecutionEngine | None = None) -> None:
+        """
+        Asynchronously execute the stream using the provided execution engine.
+
+        This method triggers computation of the stream content based on its
+        source kernel and upstream streams. It returns a new stream instance
+        containing the computed (tag, packet) pairs.
+
+        Args:
+            execution_engine: The execution engine to use for computation
+
+        """
+        ...
+
     def as_df(
         self,
         include_data_context: bool = False,
         include_source: bool = False,
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
+        execution_engine: ExecutionEngine | None = None,
     ) -> "pl.DataFrame | None":
         """
         Convert the entire stream to a Polars DataFrame.
@@ -1393,6 +1464,7 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         include_source: bool = False,
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
+        execution_engine: ExecutionEngine | None = None,
     ) -> "pa.Table":
         """
         Convert the entire stream to a PyArrow Table.
@@ -1410,7 +1482,9 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
-    def flow(self) -> Collection[tuple[Tag, Packet]]:
+    def flow(
+        self, execution_engine: ExecutionEngine | None = None
+    ) -> Collection[tuple[Tag, Packet]]:
         """
         Return the entire stream as a collection of (tag, packet) pairs.
 
@@ -1418,8 +1492,9 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         collection type. It is useful for small streams or when you need
         to process all data at once.
 
-        Returns:
-            Collection[tuple[Tag, Packet]]: All (tag, packet) pairs in the stream
+        Args:
+            execution_engine: Optional execution engine to use for computation.
+                If None, the stream will use its default execution engine.
         """
         ...
 
@@ -1810,8 +1885,20 @@ class Pod(Kernel, Protocol):
         """
         ...
 
+    async def async_call(
+        self,
+        tag: Tag,
+        packet: Packet,
+        record_id: str | None = None,
+        execution_engine: ExecutionEngine | None = None,
+    ) -> tuple[Tag, Packet | None]: ...
+
     def call(
-        self, tag: Tag, packet: Packet, record_id: str | None = None
+        self,
+        tag: Tag,
+        packet: Packet,
+        record_id: str | None = None,
+        execution_engine: ExecutionEngine | None = None,
     ) -> tuple[Tag, Packet | None]:
         """
         Process a single packet with its associated tag.
@@ -1846,11 +1933,22 @@ class Pod(Kernel, Protocol):
 
 
 class CachedPod(Pod, Protocol):
+    async def async_call(
+        self,
+        tag: Tag,
+        packet: Packet,
+        record_id: str | None = None,
+        execution_engine: ExecutionEngine | None = None,
+        skip_cache_lookup: bool = False,
+        skip_cache_insert: bool = False,
+    ) -> tuple[Tag, Packet | None]: ...
+
     def call(
         self,
         tag: Tag,
         packet: Packet,
         record_id: str | None = None,
+        execution_engine: ExecutionEngine | None = None,
         skip_cache_lookup: bool = False,
         skip_cache_insert: bool = False,
     ) -> tuple[Tag, Packet | None]:

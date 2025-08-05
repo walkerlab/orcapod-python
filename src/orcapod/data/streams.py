@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Collection, Iterator, Mapping
+from collections.abc import AsyncIterator, Collection, Iterator, Mapping
 from datetime import datetime, timezone
 from itertools import repeat
 from pathlib import Path
@@ -19,20 +19,47 @@ from orcapod.types import TypeSpec
 from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule
 
+
 if TYPE_CHECKING:
     import pyarrow as pa
     import pyarrow.compute as pc
     import polars as pl
+    import asyncio
 else:
     pa = LazyModule("pyarrow")
     pc = LazyModule("pyarrow.compute")
     pl = LazyModule("polars")
+    asyncio = LazyModule("asyncio")
 
 
 # TODO: consider using this instead of making copy of dicts
 # from types import MappingProxyType
 
 logger = logging.getLogger(__name__)
+
+
+def synchronous_run(async_func, *args, **kwargs):
+    """
+    Use existing event loop if available.
+
+    Pros: Reuses existing loop, more efficient
+    Cons: More complex, need to handle loop detection
+    """
+    try:
+        # Check if we're already in an event loop
+        loop = asyncio.get_running_loop()
+
+        def run_in_thread():
+            return asyncio.run(async_func(*args, **kwargs))
+
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(run_in_thread)
+            return future.result()
+    except RuntimeError:
+        # No event loop running, safe to use asyncio.run()
+        return asyncio.run(async_func(*args, **kwargs))
 
 
 class OperatorStreamBaseMixin:
@@ -91,6 +118,7 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
         source: dp.Kernel | None = None,
         upstreams: tuple[dp.Stream, ...] = (),
         data_context: str | contexts.DataContext | None = None,
+        execution_engine: dp.ExecutionEngine | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -104,6 +132,7 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
             # if source is provided, use its data context
             data_context = source.data_context_key
         self._data_context = contexts.resolve_context(data_context)
+        self._execution_engine = execution_engine
 
     @property
     def substream_identities(self) -> tuple[str, ...]:
@@ -112,6 +141,22 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
         This is used to identify the substreams in the computational graph.
         """
         return (self.content_hash().hex(),)
+
+    @property
+    def execution_engine(self):
+        """
+        Returns the execution engine that is used to execute this stream.
+        This is typically used to track the execution context of the stream.
+        """
+        return self._execution_engine
+
+    @execution_engine.setter
+    def execution_engine(self, engine: dp.ExecutionEngine | None) -> None:
+        """
+        Sets the execution engine for the stream.
+        This is typically used to track the execution context of the stream.
+        """
+        self._execution_engine = engine
 
     def get_substream(self, substream_id: str) -> dp.Stream:
         """
@@ -217,7 +262,20 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
     @abstractmethod
     def iter_packets(
         self,
+        execution_engine: dp.ExecutionEngine | None = None,
     ) -> Iterator[tuple[dp.Tag, dp.Packet]]: ...
+
+    @abstractmethod
+    def run(
+        self,
+        execution_engine: dp.ExecutionEngine | None = None,
+    ) -> None: ...
+
+    @abstractmethod
+    async def run_async(
+        self,
+        execution_engine: dp.ExecutionEngine | None = None,
+    ) -> None: ...
 
     @abstractmethod
     def as_table(
@@ -226,6 +284,7 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
         include_source: bool = False,
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
+        execution_engine: dp.ExecutionEngine | None = None,
     ) -> "pa.Table": ...
 
     def as_df(
@@ -234,6 +293,7 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
         include_source: bool = False,
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
+        execution_engine: dp.ExecutionEngine | None = None,
     ) -> "pl.DataFrame | None":
         """
         Convert the entire stream to a Polars DataFrame.
@@ -244,15 +304,18 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
                 include_source=include_source,
                 include_system_tags=include_system_tags,
                 include_content_hash=include_content_hash,
+                execution_engine=execution_engine,
             )
         )
 
-    def flow(self) -> Collection[tuple[dp.Tag, dp.Packet]]:
+    def flow(
+        self, execution_engine: dp.ExecutionEngine | None = None
+    ) -> Collection[tuple[dp.Tag, dp.Packet]]:
         """
         Flow everything through the stream, returning the entire collection of
         (Tag, Packet) as a collection. This will tigger any upstream computation of the stream.
         """
-        return [e for e in self]
+        return [e for e in self.iter_packets(execution_engine=execution_engine)]
 
     def identity_structure(self) -> Any:
         """
@@ -432,6 +495,7 @@ class ImmutableTableStream(ImmutableStream):
         include_source: bool = False,
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
+        execution_engine: dp.ExecutionEngine | None = None,
     ) -> "pa.Table":
         """
         Returns the underlying table representation of the stream.
@@ -451,7 +515,8 @@ class ImmutableTableStream(ImmutableStream):
                 hash_column_name, pa.array(content_hashes, type=pa.large_string())
             )
         if not include_system_tags:
-            output_table = output_table.drop_columns(self._system_tag_columns)
+            # Check in original implementation
+            output_table = output_table.drop_columns(list(self._system_tag_columns))
         table_stack = (output_table,)
         if include_data_context:
             table_stack += (self._data_context_table,)
@@ -467,7 +532,9 @@ class ImmutableTableStream(ImmutableStream):
         """
         self._cached_elements = None
 
-    def iter_packets(self) -> Iterator[tuple[dp.Tag, ArrowPacket]]:
+    def iter_packets(
+        self, execution_engine: dp.ExecutionEngine | None = None
+    ) -> Iterator[tuple[dp.Tag, ArrowPacket]]:
         """
         Iterates over the packets in the stream.
         Each packet is represented as a tuple of (Tag, Packet).
@@ -509,6 +576,24 @@ class ImmutableTableStream(ImmutableStream):
                         )
                     )
         yield from self._cached_elements
+
+    def run(self, execution_engine: dp.ExecutionEngine | None = None) -> None:
+        """
+        Runs the stream, which in this case is a no-op since the stream is immutable.
+        This is typically used to trigger any upstream computation of the stream.
+        """
+        # No-op for immutable streams
+        pass
+
+    async def run_async(
+        self, execution_engine: dp.ExecutionEngine | None = None
+    ) -> None:
+        """
+        Runs the stream asynchronously, which in this case is a no-op since the stream is immutable.
+        This is typically used to trigger any upstream computation of the stream.
+        """
+        # No-op for immutable streams
+        pass
 
     def __repr__(self) -> str:
         return (
@@ -617,12 +702,29 @@ class KernelStream(StreamBase):
             return None
         return self._cached_stream.last_modified
 
+    def run(self, execution_engine: dp.ExecutionEngine | None = None) -> None:
+        self.refresh()
+        assert self._cached_stream is not None, (
+            "Stream has not been updated or is empty."
+        )
+        self._cached_stream.run(execution_engine=execution_engine)
+
+    async def run_async(
+        self, execution_engine: dp.ExecutionEngine | None = None
+    ) -> None:
+        self.refresh()
+        assert self._cached_stream is not None, (
+            "Stream has not been updated or is empty."
+        )
+        await self._cached_stream.run_async(execution_engine=execution_engine)
+
     def as_table(
         self,
         include_data_context: bool = False,
         include_source: bool = False,
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
+        execution_engine: dp.ExecutionEngine | None = None,
     ) -> "pa.Table":
         self.refresh()
         assert self._cached_stream is not None, (
@@ -633,14 +735,18 @@ class KernelStream(StreamBase):
             include_source=include_source,
             include_system_tags=include_system_tags,
             include_content_hash=include_content_hash,
+            execution_engine=execution_engine,
         )
 
-    def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+    def iter_packets(
+        self,
+        execution_engine: dp.ExecutionEngine | None = None,
+    ) -> Iterator[tuple[dp.Tag, dp.Packet]]:
         self.refresh()
         assert self._cached_stream is not None, (
             "Stream has not been updated or is empty."
         )
-        return self._cached_stream.iter_packets()
+        return self._cached_stream.iter_packets(execution_engine=execution_engine)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(kernel={self.source}, upstreams={self.upstreams})"
@@ -665,7 +771,9 @@ class LazyPodResultStream(StreamBase):
         self._cached_output_table: pa.Table | None = None
         self._cached_content_hash_column: pa.Array | None = None
 
-    def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+    def iter_packets(
+        self, execution_engine: dp.ExecutionEngine | None = None
+    ) -> Iterator[tuple[dp.Tag, dp.Packet]]:
         if self._prepared_stream_iterator is not None:
             for i, (tag, packet) in enumerate(self._prepared_stream_iterator):
                 if i in self._cached_output_packets:
@@ -675,7 +783,9 @@ class LazyPodResultStream(StreamBase):
                         yield tag, packet
                 else:
                     # Process packet
-                    processed = self.pod.call(tag, packet)
+                    processed = self.pod.call(
+                        tag, packet, execution_engine=execution_engine
+                    )
                     if processed is not None:
                         # Update shared cache for future iterators (optimization)
                         self._cached_output_packets[i] = processed
@@ -691,6 +801,47 @@ class LazyPodResultStream(StreamBase):
                 tag, packet = self._cached_output_packets[i]
                 if packet is not None:
                     yield tag, packet
+
+    async def run_async(
+        self, execution_engine: dp.ExecutionEngine | None = None
+    ) -> None:
+        if self._prepared_stream_iterator is not None:
+            pending_call_lut = {}
+            for i, (tag, packet) in enumerate(self._prepared_stream_iterator):
+                if i not in self._cached_output_packets:
+                    # Process packet
+                    pending_call_lut[i] = self.pod.async_call(
+                        tag, packet, execution_engine=execution_engine
+                    )
+
+            indices = list(pending_call_lut.keys())
+            pending_calls = [pending_call_lut[i] for i in indices]
+
+            results = await asyncio.gather(*pending_calls)
+            for i, result in zip(indices, results):
+                self._cached_output_packets[i] = result
+
+            # Mark completion by releasing the iterator
+            self._prepared_stream_iterator = None
+
+    def run(
+        self,
+        execution_engine: dp.ExecutionEngine | None = None,
+        try_async_backend: bool = True,
+    ) -> None:
+        if try_async_backend:
+            # Use async run if requested
+            try:
+                return synchronous_run(
+                    self.run_async, execution_engine=execution_engine
+                )
+            except RuntimeError as e:
+                logger.warning(
+                    "Failed to run async stream synchronously, falling back to sync run: %s",
+                    e,
+                )
+                # Fallback to synchronous run
+        self.flow(execution_engine=execution_engine)
 
     def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """
@@ -714,12 +865,13 @@ class LazyPodResultStream(StreamBase):
         include_source: bool = False,
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
+        execution_engine: dp.ExecutionEngine | None = None,
     ) -> "pa.Table":
         if self._cached_output_table is None:
             all_tags = []
             all_packets = []
             tag_schema, packet_schema = None, None
-            for tag, packet in self.iter_packets():
+            for tag, packet in self.iter_packets(execution_engine=execution_engine):
                 if tag_schema is None:
                     tag_schema = tag.arrow_schema(include_system_tags=True)
                 if packet_schema is None:
@@ -814,9 +966,11 @@ class EfficientPodResultStream(StreamBase):
         self._cached_output_table: pa.Table | None = None
         self._cached_content_hash_column: pa.Array | None = None
 
-    def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+    async def run_async(
+        self, execution_engine: dp.ExecutionEngine | None = None
+    ) -> None:
         """
-        Processes the input stream and prepares the output stream.
+        Runs the stream, processing the input stream and preparing the output stream.
         This is typically called before iterating over the packets.
         """
         if self._cached_output_packets is None:
@@ -874,12 +1028,121 @@ class EfficientPodResultStream(StreamBase):
                 existing_stream = ImmutableTableStream(existing, tag_columns=tag_keys)
                 for tag, packet in existing_stream.iter_packets():
                     cached_results.append((tag, packet))
+
+            pending_calls = []
+            if missing is not None and missing.num_rows > 0:
+                for tag, packet in ImmutableTableStream(missing, tag_columns=tag_keys):
+                    # Since these packets are known to be missing, skip the cache lookup
+                    pending = self.pod.async_call(
+                        tag,
+                        packet,
+                        skip_cache_lookup=True,
+                        execution_engine=execution_engine,
+                    )
+                    pending_calls.append(pending)
+            import asyncio
+
+            completed_calls = await asyncio.gather(*pending_calls)
+            for results in completed_calls:
+                for tag, packet in results:
+                    cached_results.append((tag, packet))
+
+            self._cached_output_packets = cached_results
+            self._set_modified_time()
+
+    def run(
+        self,
+        execution_engine: dp.ExecutionEngine | None = None,
+        try_async_backend: bool = True,
+    ) -> None:
+        if try_async_backend:
+            # Use async run if requested
+            try:
+                return synchronous_run(
+                    self.run_async, execution_engine=execution_engine
+                )
+            except RuntimeError as e:
+                logger.warning(
+                    "Failed to run async stream synchronously, falling back to sync run: %s",
+                    e,
+                )
+                # Fallback to synchronous run
+        self.flow(execution_engine=execution_engine)
+
+    def iter_packets(
+        self, execution_engine: dp.ExecutionEngine | None = None
+    ) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+        """
+        Processes the input stream and prepares the output stream.
+        This is typically called before iterating over the packets.
+        """
+        if self._cached_output_packets is None:
+            cached_results = []
+
+            # identify all entries in the input stream for which we still have not computed packets
+            target_entries = self.input_stream.as_table(
+                include_content_hash=constants.INPUT_PACKET_HASH,
+                execution_engine=execution_engine,
+            )
+            existing_entries = self.pod.get_all_records(include_system_columns=True)
+            if existing_entries is None or existing_entries.num_rows == 0:
+                missing = target_entries.drop_columns([constants.INPUT_PACKET_HASH])
+                existing = None
+            else:
+                # missing = target_entries.join(
+                #     existing_entries,
+                #     keys=[constants.INPUT_PACKET_HASH],
+                #     join_type="left anti",
+                # )
+                # Single join that gives you both missing and existing
+                # More efficient - only bring the key column from existing_entries
+                # .select([constants.INPUT_PACKET_HASH]).append_column(
+                #     "_exists", pa.array([True] * len(existing_entries))
+                # ),
+                all_results = target_entries.join(
+                    existing_entries.append_column(
+                        "_exists", pa.array([True] * len(existing_entries))
+                    ),
+                    keys=[constants.INPUT_PACKET_HASH],
+                    join_type="left outer",
+                    right_suffix="_right",
+                )
+                # grab all columns from target_entries first
+                missing = (
+                    all_results.filter(pc.is_null(pc.field("_exists")))
+                    .select(target_entries.column_names)
+                    .drop_columns([constants.INPUT_PACKET_HASH])
+                )
+
+                existing = (
+                    all_results.filter(pc.is_valid(pc.field("_exists")))
+                    .drop_columns(target_entries.column_names)
+                    .drop_columns(["_exists"])
+                )
+                renamed = [
+                    c.removesuffix("_right") if c.endswith("_right") else c
+                    for c in existing.column_names
+                ]
+                existing = existing.rename_columns(renamed)
+
+            tag_keys = self.input_stream.keys()[0]
+
+            if existing is not None and existing.num_rows > 0:
+                # If there are existing entries, we can cache them
+                existing_stream = ImmutableTableStream(existing, tag_columns=tag_keys)
+                for tag, packet in existing_stream.iter_packets():
+                    cached_results.append((tag, packet))
                     yield tag, packet
 
             if missing is not None and missing.num_rows > 0:
                 for tag, packet in ImmutableTableStream(missing, tag_columns=tag_keys):
                     # Since these packets are known to be missing, skip the cache lookup
-                    tag, packet = self.pod.call(tag, packet, skip_cache_lookup=True)
+                    tag, packet = self.pod.call(
+                        tag,
+                        packet,
+                        skip_cache_lookup=True,
+                        execution_engine=execution_engine,
+                    )
                     cached_results.append((tag, packet))
                     if packet is not None:
                         yield tag, packet
@@ -940,12 +1203,13 @@ class EfficientPodResultStream(StreamBase):
         include_source: bool = False,
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
+        execution_engine: dp.ExecutionEngine | None = None,
     ) -> "pa.Table":
         if self._cached_output_table is None:
             all_tags = []
             all_packets = []
             tag_schema, packet_schema = None, None
-            for tag, packet in self.iter_packets():
+            for tag, packet in self.iter_packets(execution_engine=execution_engine):
                 if tag_schema is None:
                     tag_schema = tag.arrow_schema(include_system_tags=True)
                 if packet_schema is None:
@@ -999,7 +1263,7 @@ class EfficientPodResultStream(StreamBase):
         if include_content_hash:
             if self._cached_content_hash_column is None:
                 content_hashes = []
-                for tag, packet in self.iter_packets():
+                for tag, packet in self.iter_packets(execution_engine=execution_engine):
                     content_hashes.append(packet.content_hash())
                 self._cached_content_hash_column = pa.array(
                     content_hashes, type=pa.large_string()
@@ -1048,7 +1312,9 @@ class WrappedStream(StreamBase):
         self,
         include_data_context: bool = False,
         include_source: bool = False,
+        include_system_tags: bool = False,
         include_content_hash: bool | str = False,
+        execution_engine: dp.ExecutionEngine | None = None,
     ) -> "pa.Table":
         """
         Returns the underlying table representation of the stream.
@@ -1057,15 +1323,20 @@ class WrappedStream(StreamBase):
         return self._stream.as_table(
             include_data_context=include_data_context,
             include_source=include_source,
+            include_system_tags=include_system_tags,
             include_content_hash=include_content_hash,
+            execution_engine=execution_engine,
         )
 
-    def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+    def iter_packets(
+        self,
+        execution_engine: dp.ExecutionEngine | None = None,
+    ) -> Iterator[tuple[dp.Tag, dp.Packet]]:
         """
         Iterates over the packets in the stream.
         Each packet is represented as a tuple of (Tag, Packet).
         """
-        return self._stream.iter_packets()
+        return self._stream.iter_packets(execution_engine=execution_engine)
 
     def identity_structure(self) -> Any:
         return self._stream.identity_structure()

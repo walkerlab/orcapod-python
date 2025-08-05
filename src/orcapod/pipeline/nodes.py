@@ -272,6 +272,7 @@ class PodNode(Node, CachedPod):
         tag: dp.Tag,
         packet: dp.Packet,
         record_id: str | None = None,
+        execution_engine: dp.ExecutionEngine | None = None,
         skip_cache_lookup: bool = False,
         skip_cache_insert: bool = False,
     ) -> tuple[dp.Tag, dp.Packet | None]:
@@ -284,6 +285,43 @@ class PodNode(Node, CachedPod):
             record_id=record_id,
             skip_cache_lookup=skip_cache_lookup,
             skip_cache_insert=skip_cache_insert,
+            execution_engine=execution_engine,
+        )
+
+        if output_packet is not None:
+            retrieved = (
+                output_packet.get_meta_value(self.DATA_RETRIEVED_FLAG) is not None
+            )
+            # add pipeline record if the output packet is not None
+            # TODO: verify cache lookup logic
+            self.add_pipeline_record(
+                tag,
+                packet,
+                record_id,
+                retrieved=retrieved,
+                skip_cache_lookup=skip_cache_lookup,
+            )
+        return tag, output_packet
+
+    async def async_call(
+        self,
+        tag: dp.Tag,
+        packet: dp.Packet,
+        record_id: str | None = None,
+        execution_engine: dp.ExecutionEngine | None = None,
+        skip_cache_lookup: bool = False,
+        skip_cache_insert: bool = False,
+    ) -> tuple[dp.Tag, dp.Packet | None]:
+        if record_id is None:
+            record_id = self.get_record_id(packet)
+
+        tag, output_packet = await super().async_call(
+            tag,
+            packet,
+            record_id=record_id,
+            skip_cache_lookup=skip_cache_lookup,
+            skip_cache_insert=skip_cache_insert,
+            execution_engine=execution_engine,
         )
 
         if output_packet is not None:
