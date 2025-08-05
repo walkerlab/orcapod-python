@@ -888,13 +888,15 @@ class LazyPodResultStream(StreamBase):
                         dict_patcket[k] = str(v)
                 all_packets.append(dict_patcket)
 
-            # FIXME: this skips the semantic version conversion and thus is not
-            # fully correct!
+            # TODO: re-verify the implemetation of this conversion
+            converter = self._data_context.type_converter
+
+            struct_packets = converter.python_dicts_to_struct_dicts(all_packets)
             all_tags_as_tables: pa.Table = pa.Table.from_pylist(
                 all_tags, schema=tag_schema
             )
             all_packets_as_tables: pa.Table = pa.Table.from_pylist(
-                all_packets, schema=packet_schema
+                struct_packets, schema=packet_schema
             )
 
             self._cached_output_table = arrow_utils.hstack_tables(
@@ -1226,13 +1228,14 @@ class EfficientPodResultStream(StreamBase):
                         dict_patcket[k] = str(v)
                 all_packets.append(dict_patcket)
 
-            # FIXME: this skips the semantic version conversion and thus is not
-            # fully correct!
+            converter = self._data_context.type_converter
+
+            struct_packets = converter.python_dicts_to_struct_dicts(all_packets)
             all_tags_as_tables: pa.Table = pa.Table.from_pylist(
                 all_tags, schema=tag_schema
             )
             all_packets_as_tables: pa.Table = pa.Table.from_pylist(
-                all_packets, schema=packet_schema
+                struct_packets, schema=packet_schema
             )
 
             self._cached_output_table = arrow_utils.hstack_tables(

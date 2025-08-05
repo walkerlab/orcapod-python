@@ -171,7 +171,7 @@ class UniversalTypeConverter:
 
         return python_schema
 
-    def python_dict_to_struct_dict(
+    def python_dicts_to_struct_dicts(
         self,
         python_dicts: list[dict[str, Any]],
         python_schema: dict[str, type] | None = None,
@@ -242,14 +242,14 @@ class UniversalTypeConverter:
         if python_schema is None:
             python_schema = infer_schema_from_pylist_data(python_dicts)
 
-        struct_dict = self.python_dict_to_struct_dict(
+        struct_dicts = self.python_dicts_to_struct_dicts(
             python_dicts, python_schema=python_schema
         )
 
         # Convert to Arrow schema
         arrow_schema = self.python_schema_to_arrow_schema(python_schema)
 
-        return pa.Table.from_pylist(struct_dict, schema=arrow_schema)
+        return pa.Table.from_pylist(struct_dicts, schema=arrow_schema)
 
     def arrow_table_to_python_dicts(
         self, arrow_table: pa.Table

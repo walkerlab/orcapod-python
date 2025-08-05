@@ -122,7 +122,7 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
             if len(streams) == 0:
                 # If no streams are provided, then this is a source kernel
                 # and we simply return None as the identity structure.
-                print(f"Kernel {self} is acting as a source!")
+                logger.debug(f"Kernel {self} is acting as a source!")
                 return None
             streams = self.pre_kernel_processing(*streams)
             self.validate_inputs(*streams)
