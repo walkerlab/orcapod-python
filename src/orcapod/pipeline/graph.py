@@ -45,7 +45,7 @@ class Pipeline(GraphTracker):
         self.nodes = {}
         self.auto_compile = auto_compile
         self._dirty = False
-        self._ordered_nodes = []  # Track order of invocations
+        self._topological_order = []  # Track order of invocations
 
     def __exit__(self, exc_type=None, exc_value=None, traceback=None):
         """
@@ -82,20 +82,22 @@ class Pipeline(GraphTracker):
 
         invocation_to_stream_lut = {}
         G = self.generate_graph()
+        topological_order = []
         for invocation in nx.topological_sort(G):
             input_streams = [
                 invocation_to_stream_lut[parent] for parent in invocation.parents()
             ]
             node = self.wrap_invocation(invocation, new_input_streams=input_streams)
+            topological_order.append(node)
             invocation_to_stream_lut[invocation] = node()
             self.nodes[node.label] = node
+        self._topolical_order = topological_order
 
-    def run(self) -> None:
-        # FIXME: perform more efficient traversal through the graph!
-        for node in self.nodes.values():
-            node.flow()
-
-        self.flush()
+    def run(self, execution_engine: dp.ExecutionEngine | None = None) -> None:
+        # TODO: perform more efficient traversal through the graph!
+        for node in self._topological_order:
+            node().run(execution_engine=execution_engine)
+            self.flush()
 
     def wrap_invocation(
         self,
