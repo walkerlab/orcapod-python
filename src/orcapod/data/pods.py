@@ -429,19 +429,18 @@ class FunctionPod(ActivatablePodBase):
         output_values = []
 
         # any kernel/pod invocation happening inside the function will NOT be tracked
-        with self._tracker_manager.no_tracking():
-            # any kernel/pod invocation happening inside the function will NOT be tracked
-            if not isinstance(packet, dict):
-                input_dict = packet.as_dict(include_source=False)
-            else:
-                input_dict = packet
-            if execution_engine is not None:
-                # use the provided execution engine to run the function
-                values = await execution_engine.submit_async(
-                    self.function, **input_dict
-                )
-            else:
-                values = self.function(**input_dict)
+        # with self._tracker_manager.no_tracking():
+        # FIXME: figure out how to properly make context manager work with async/await
+        # any kernel/pod invocation happening inside the function will NOT be tracked
+        if not isinstance(packet, dict):
+            input_dict = packet.as_dict(include_source=False)
+        else:
+            input_dict = packet
+        if execution_engine is not None:
+            # use the provided execution engine to run the function
+            values = await execution_engine.submit_async(self.function, **input_dict)
+        else:
+            values = self.function(**input_dict)
 
         output_data = self.process_function_output(values)
 

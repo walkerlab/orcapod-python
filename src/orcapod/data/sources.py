@@ -148,9 +148,29 @@ class SourceBase(TrackedKernelBase, OperatorStreamBaseMixin):
             include_content_hash=include_content_hash,
         )
 
-    def flow(self) -> Collection[tuple[dp.Tag, dp.Packet]]:
+    def flow(
+        self, execution_engine: dp.ExecutionEngine | None = None
+    ) -> Collection[tuple[dp.Tag, dp.Packet]]:
         """Delegate to the cached KernelStream."""
-        return self().flow()
+        return self().flow(execution_engine=execution_engine)
+
+    def run(self, execution_engine: dp.ExecutionEngine | None = None) -> None:
+        """
+        Run the source node, executing the contained source.
+
+        This is a no-op for sources since they are not executed like pods.
+        """
+        self().run(execution_engine=execution_engine)
+
+    async def run_async(
+        self, execution_engine: dp.ExecutionEngine | None = None
+    ) -> None:
+        """
+        Run the source node asynchronously, executing the contained source.
+
+        This is a no-op for sources since they are not executed like pods.
+        """
+        await self().run_async(execution_engine=execution_engine)
 
     # ==================== LiveStream Protocol (Delegation) ====================
 
@@ -195,38 +215,37 @@ class SourceBase(TrackedKernelBase, OperatorStreamBaseMixin):
         """
         ...
 
-    @property
-    def lazy(self) -> "pl.LazyFrame | None":
+    def as_lazy_frame(self, sort_by_tags: bool = False) -> "pl.LazyFrame | None":
         records = self.get_all_records(include_system_columns=False)
         if records is not None:
-            return pl.LazyFrame(records)
+            result = pl.LazyFrame(records)
+            if sort_by_tags:
+                result = result.sort(self.tag_keys)
+            return result
         return None
 
-    @property
-    def df(self) -> "pl.DataFrame | None":
+    def as_df(self, sort_by_tags: bool = True) -> "pl.DataFrame | None":
         """
         Return the DataFrame representation of the pod's records.
         """
-        lazy_df = self.lazy
+        lazy_df = self.as_lazy_frame(sort_by_tags=sort_by_tags)
         if lazy_df is not None:
             return lazy_df.collect()
         return None
 
-    @property
-    def polars_df(self) -> "pl.DataFrame | None":
+    def as_polars_df(self, sort_by_tags: bool = True) -> "pl.DataFrame | None":
         """
         Return the DataFrame representation of the pod's records.
         """
-        return self.df
+        return self.as_df(sort_by_tags=sort_by_tags)
 
-    @property
-    def pandas_df(self) -> "pd.DataFrame | None":
+    def as_pandas_df(self, sort_by_tags: bool = True) -> "pd.DataFrame | None":
         """
         Return the pandas DataFrame representation of the pod's records.
         """
-        records = self.get_all_records(include_system_columns=False)
-        if records is not None:
-            return records.to_pandas()
+        df = self.as_polars_df(sort_by_tags=sort_by_tags)
+        if df is not None:
+            return df.to_pandas()
         return None
 
     def reset_cache(self) -> None:

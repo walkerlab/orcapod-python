@@ -1045,9 +1045,8 @@ class EfficientPodResultStream(StreamBase):
             import asyncio
 
             completed_calls = await asyncio.gather(*pending_calls)
-            for results in completed_calls:
-                for tag, packet in results:
-                    cached_results.append((tag, packet))
+            for result in completed_calls:
+                cached_results.append(result)
 
             self._cached_output_packets = cached_results
             self._set_modified_time()

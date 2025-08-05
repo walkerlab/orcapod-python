@@ -16,7 +16,6 @@ dependencies = [
     "pyarrow>=20.0.0",
     "polars>=1.31.0",
     "beartype>=0.21.0",
-
 ]
 readme = "README.md"
 requires-python = ">=3.12.0"
@@ -32,7 +31,7 @@ Homepage = "https://github.com/walkerlab/orcapod-python"
 
 [project.optional-dependencies]
 redis = ["redis>=6.2.0"]
-ray = ["ray[default]>=2.48.0", "ipywidgets>=8.1.7"]
+ray = ["ray[default]==2.48.0", "ipywidgets>=8.1.7"]
 all = ["orcapod[redis]", "orcapod[ray]"]
 
 
@@ -53,7 +52,7 @@ dev = [
     "pyiceberg>=0.9.1",
     "pytest>=8.3.5",
     "pytest-cov>=6.1.1",
-    "ray>=2.48.0",
+    "ray[default]==2.48.0",
     "redis>=6.2.0",
     "ruff>=0.11.11",
     "tqdm>=4.67.1",

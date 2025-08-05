@@ -187,54 +187,6 @@ class KernelNode(Node, WrappedKernel):
         return results
 
 
-def add_pipeline_record(
-    self, tag: dp.Tag, input_packet: dp.Packet, retrieved: bool | None = None
-) -> None:
-    # combine dp.Tag with packet content hash to compute entry hash
-    tag_with_hash = tag.as_table().append_column(
-        self.PACKET_HASH_COLUMN,
-        pa.array([input_packet.content_hash()], type=pa.large_string()),
-    )
-    entry_id = self.data_context.arrow_hasher.hash_table(
-        tag_with_hash, prefix_hasher_id=True
-    )
-
-    existing_record = self.pipeline_store.get_record_by_id(
-        self.pipeline_path,
-        entry_id,
-    )
-
-    if existing_record is not None:
-        # if the record already exists, return it
-        return
-
-    # no record matching, so construct the full record
-
-    input_packet_info = (
-        input_packet.as_table(
-            include_source=True,
-        )
-        .append_column(
-            f"{constants.META_PREFIX}input_packet{constants.CONTEXT_KEY}",
-            pa.array([input_packet.data_context_key], type=pa.large_string()),
-        )
-        .append_column(
-            self.DATA_RETRIEVED_FLAG,
-            pa.array([retrieved], type=pa.bool_()),
-        )
-        .drop(input_packet.keys())
-    )
-
-    combined_record = arrow_utils.hstack_tables(tag_with_hash, input_packet_info)
-
-    self.pipeline_store.add_record(
-        self.pipeline_path,
-        entry_id,
-        combined_record,
-        skip_duplicates=False,
-    )
-
-
 class PodNode(Node, CachedPod):
     def __init__(
         self,
