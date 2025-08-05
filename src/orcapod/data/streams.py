@@ -111,7 +111,7 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
         Returns the identities of the substreams that this stream is composed of.
         This is used to identify the substreams in the computational graph.
         """
-        return (self.content_hash(),)
+        return (self.content_hash().hex(),)
 
     def get_substream(self, substream_id: str) -> dp.Stream:
         """
@@ -234,7 +234,7 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
         include_source: bool = False,
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
-    ) -> "pl.DataFrame":
+    ) -> "pl.DataFrame | None":
         """
         Convert the entire stream to a Polars DataFrame.
         """
@@ -812,6 +812,7 @@ class EfficientPodResultStream(StreamBase):
         # Packet-level caching (from your PodStream)
         self._cached_output_packets: list[tuple[dp.Tag, dp.Packet | None]] | None = None
         self._cached_output_table: pa.Table | None = None
+        self._cached_content_hash_column: pa.Array | None = None
 
     def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
         """

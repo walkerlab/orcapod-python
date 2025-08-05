@@ -5,7 +5,6 @@ from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
 
-from numpy import record
 from orcapod import contexts
 from orcapod.data.datagrams import (
     ArrowPacket,

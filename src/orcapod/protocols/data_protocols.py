@@ -1379,9 +1379,9 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         self,
         include_data_context: bool = False,
         include_source: bool = False,
-        include_content_hash: bool | str = False,
         include_system_tags: bool = False,
-    ) -> "pl.DataFrame":
+        include_content_hash: bool | str = False,
+    ) -> "pl.DataFrame | None":
         """
         Convert the entire stream to a Polars DataFrame.
         """
@@ -1391,8 +1391,8 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         self,
         include_data_context: bool = False,
         include_source: bool = False,
-        include_content_hash: bool | str = False,
         include_system_tags: bool = False,
+        include_content_hash: bool | str = False,
     ) -> "pa.Table":
         """
         Convert the entire stream to a PyArrow Table.

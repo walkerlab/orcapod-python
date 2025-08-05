@@ -35,7 +35,7 @@ class LabeledContentIdentifiableBase:
         """
         self._label = label
         self._data_context = contexts.resolve_context(data_context)
-        self._content_hash: str | None = None
+        self._content_hash: bytes | None = None
         self._int_hash: int | None = None
 
     @property
@@ -89,7 +89,7 @@ class LabeledContentIdentifiableBase:
         # TODO: come up with a way to signify non-determinate identity structure
         return None
 
-    def content_hash(self) -> str:
+    def content_hash(self) -> bytes:
         """
         Compute a hash based on the content of this object.
 
@@ -100,8 +100,8 @@ class LabeledContentIdentifiableBase:
         if self._content_hash is None:
             structure = self.identity_structure()
             processed_structure = process_structure(structure)
-            self._content_hash = self._data_context.object_hasher.hash_to_hex(
-                processed_structure, prefix_hasher_id=True
+            self._content_hash = self._data_context.object_hasher.hash(
+                processed_structure
             )
         return self._content_hash
 
