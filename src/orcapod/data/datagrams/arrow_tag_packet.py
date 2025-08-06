@@ -445,10 +445,42 @@ class ArrowPacket(ArrowDatagram):
         )
         return new_packet
 
+    def rename(self, column_mapping: Mapping[str, str]) -> Self:
+        """
+        Create a new ArrowDatagram with data columns renamed.
+        Maintains immutability by returning a new instance.
+
+        Args:
+            column_mapping: Mapping from old column names to new column names
+
+        Returns:
+            New ArrowDatagram instance with renamed data columns
+        """
+        # Create new schema with renamed fields, preserving original types
+
+        if not column_mapping:
+            return self
+
+        new_names = [column_mapping.get(k, k) for k in self._data_table.column_names]
+
+        new_source_info_names = [
+            f"{constants.SOURCE_PREFIX}{column_mapping.get(k.removeprefix(constants.SOURCE_PREFIX), k)}"
+            for k in self._source_info_table.column_names
+        ]
+
+        new_datagram = self.copy(include_cache=False)
+        new_datagram._data_table = new_datagram._data_table.rename_columns(new_names)
+        new_datagram._source_info_table = (
+            new_datagram._source_info_table.rename_columns(new_source_info_names)
+        )
+
+        return new_datagram
+
     # 8. Utility Operations
     def copy(self, include_cache: bool = True) -> Self:
         """Return a copy of the datagram."""
         new_packet = super().copy(include_cache=include_cache)
+        new_packet._source_info_table = self._source_info_table
 
         if include_cache:
             new_packet._cached_source_info = self._cached_source_info

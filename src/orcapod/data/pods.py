@@ -426,7 +426,6 @@ class FunctionPod(ActivatablePodBase):
                 f"Pod is not active: skipping computation on input packet {packet}"
             )
             return tag, None
-        output_values = []
 
         # any kernel/pod invocation happening inside the function will NOT be tracked
         # with self._tracker_manager.no_tracking():

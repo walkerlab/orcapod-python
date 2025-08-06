@@ -309,6 +309,7 @@ class PodNode(Node, CachedPod):
             tag_with_hash, prefix_hasher_id=True
         )
 
+        # FIXME: consider and implement more robust cache lookup logic
         existing_record = None
         if not skip_cache_lookup:
             existing_record = self.pipeline_store.get_record_by_id(
@@ -320,10 +321,12 @@ class PodNode(Node, CachedPod):
             # if the record already exists, then skip
             return
 
+        # rename all keys to avoid potential collision with result columns
+        renamed_input_packet = input_packet.rename(
+            {k: f"_input_{k}" for k in input_packet.keys()}
+        )
         input_packet_info = (
-            input_packet.as_table(
-                include_source=True,
-            )
+            renamed_input_packet.as_table(include_source=True)
             .append_column(
                 constants.PACKET_RECORD_ID,
                 pa.array([packet_record_id], type=pa.large_string()),
@@ -336,7 +339,7 @@ class PodNode(Node, CachedPod):
                 self.DATA_RETRIEVED_FLAG,
                 pa.array([retrieved], type=pa.bool_()),
             )
-            .drop(input_packet.keys())
+            .drop_columns(list(renamed_input_packet.keys()))
         )
 
         combined_record = arrow_utils.hstack_tables(tag.as_table(), input_packet_info)

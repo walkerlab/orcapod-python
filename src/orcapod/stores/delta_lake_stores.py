@@ -992,7 +992,7 @@ class BasicDeltaTableArrowStore:
                     record_ids = combined_table.column(
                         self.RECORD_ID_COLUMN
                     ).to_pylist()
-                    unique_record_ids = list(set(record_ids))
+                    unique_record_ids = cast(list[str], list(set(record_ids)))
 
                     # Delete existing records with these IDs
                     if unique_record_ids:
@@ -1458,7 +1458,7 @@ class BasicDeltaTableArrowStore:
                                     records_renamed[self.RECORD_ID_COLUMN], existing_ids
                                 )
                             )
-                            records_renamed = pc.filter(records_renamed, mask)
+                            records_renamed = pc.filter(records_renamed, mask)  # type: ignore
 
                             # Update the list of record IDs that will actually be added
                             if len(records_renamed) > 0:
@@ -1492,8 +1492,8 @@ class BasicDeltaTableArrowStore:
             # Group records by record_id for individual batch entries
             for record_id in unique_record_ids:
                 # Filter records for this specific record_id
-                mask = pc.equal(records_renamed[self.RECORD_ID_COLUMN], record_id)
-                single_record = pc.filter(records_renamed, mask)
+                mask = pc.equal(records_renamed[self.RECORD_ID_COLUMN], record_id)  # type: ignore
+                single_record = pc.filter(records_renamed, mask)  # type: ignore
 
                 # Add to pending batch (will overwrite if duplicate_entry_behavior allows)
                 if (
@@ -1671,7 +1671,9 @@ class BasicDeltaTableArrowStore:
 
         try:
             # Use schema-preserving read with filters
-            filter_expr = self._create_record_ids_filter(record_ids_list)
+            filter_expr = self._create_record_ids_filter(
+                cast(list[str], record_ids_list)
+            )
             result = self._read_table_with_filter(delta_table, filters=filter_expr)
 
             if len(result) == 0:

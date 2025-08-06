@@ -56,4 +56,5 @@ dev = [
     "redis>=6.2.0",
     "ruff>=0.11.11",
     "tqdm>=4.67.1",
+    "unitycatalog-client>=0.3.0",
 ]

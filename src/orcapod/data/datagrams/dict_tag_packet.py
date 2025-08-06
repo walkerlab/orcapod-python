@@ -401,6 +401,38 @@ class DictPacket(DictDatagram):
                 schema[f"{constants.SOURCE_PREFIX}{key}"] = str
         return schema
 
+    def rename(self, column_mapping: Mapping[str, str]) -> Self:
+        """
+        Create a new DictDatagram with data columns renamed.
+        Maintains immutability by returning a new instance.
+
+        Args:
+            column_mapping: Mapping from old column names to new column names
+
+        Returns:
+            New DictDatagram instance with renamed data columns
+        """
+        # Rename data columns according to mapping, preserving original types
+
+        new_data = {column_mapping.get(k, k): v for k, v in self._data.items()}
+
+        new_source_info = {
+            column_mapping.get(k, k): v for k, v in self._source_info.items()
+        }
+
+        # Handle python_schema updates for renamed columns
+        new_python_schema = {
+            column_mapping.get(k, k): v for k, v in self._data_python_schema.items()
+        }
+
+        return self.__class__(
+            data=new_data,
+            meta_info=self._meta_data,
+            source_info=new_source_info,
+            python_schema=new_python_schema,
+            data_context=self._data_context,
+        )
+
     def arrow_schema(
         self,
         include_all_info: bool = False,

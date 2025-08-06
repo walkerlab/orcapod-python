@@ -397,7 +397,7 @@ class DictDatagram(BaseDatagram):
             include_context=include_context,
         )
 
-        return self._data_context.type_converter.python_dict_to_struct_dict(
+        return self._data_context.type_converter.python_dicts_to_struct_dicts(
             [python_dict], python_schema=python_schema
         )[0]
 
