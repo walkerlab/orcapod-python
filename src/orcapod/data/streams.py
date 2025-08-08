@@ -1,6 +1,6 @@
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterator, Collection, Iterator, Mapping
+from collections.abc import Collection, Iterator, Mapping
 from datetime import datetime, timezone
 from itertools import repeat
 from pathlib import Path

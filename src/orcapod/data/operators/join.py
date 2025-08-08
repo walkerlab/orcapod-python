@@ -10,8 +10,10 @@ from orcapod.data.operators.base import NonZeroInputOperator
 
 if TYPE_CHECKING:
     import pyarrow as pa
+    import polars as pl
 else:
     pa = LazyModule("pyarrow")
+    pl = LazyModule("polars")
 
 
 class Join(NonZeroInputOperator):
@@ -78,9 +80,12 @@ class Join(NonZeroInputOperator):
             common_tag_keys = tag_keys.intersection(next_tag_keys)
             common_tag_keys.add(COMMON_JOIN_KEY)
 
-            table = table.join(
-                next_table, keys=list(common_tag_keys), join_type="inner"
+            table = (
+                pl.DataFrame(table)
+                .join(pl.DataFrame(next_table), on=list(common_tag_keys), how="inner")
+                .to_arrow()
             )
+
             tag_keys.update(next_tag_keys)
 
         # reorder columns to bring tag columns to the front
