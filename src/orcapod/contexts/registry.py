@@ -264,23 +264,36 @@ class JSONDataContextRegistry:
             context_key = spec["context_key"]
             version = spec["version"]
             description = spec.get("description", "")
+            ref_lut = {}
 
             logger.debug(f"Creating type converter for {version}")
-            type_converter = parse_objectspec(spec["type_converter"])
+            ref_lut["semantic_registry"] = parse_objectspec(
+                spec["semantic_registry"],
+                ref_lut=ref_lut,
+            )
+
+            logger.debug(f"Creating type converter for {version}")
+            ref_lut["type_converter"] = parse_objectspec(
+                spec["type_converter"], ref_lut=ref_lut
+            )
 
             logger.debug(f"Creating arrow hasher for {version}")
-            arrow_hasher = parse_objectspec(spec["arrow_hasher"])
+            ref_lut["arrow_hasher"] = parse_objectspec(
+                spec["arrow_hasher"], ref_lut=ref_lut
+            )
 
             logger.debug(f"Creating object hasher for {version}")
-            object_hasher = parse_objectspec(spec["object_hasher"])
+            ref_lut["object_hasher"] = parse_objectspec(
+                spec["object_hasher"], ref_lut=ref_lut
+            )
 
             return DataContext(
                 context_key=context_key,
                 version=version,
                 description=description,
-                type_converter=type_converter,
-                arrow_hasher=arrow_hasher,
-                object_hasher=object_hasher,
+                type_converter=ref_lut["type_converter"],
+                arrow_hasher=ref_lut["arrow_hasher"],
+                object_hasher=ref_lut["object_hasher"],
             )
 
         except Exception as e:

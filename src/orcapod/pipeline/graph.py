@@ -5,7 +5,6 @@ from orcapod.protocols import data_protocols as dp
 from orcapod.protocols import store_protocols as sp
 from typing import Any
 from collections.abc import Collection
-from orcapod.data.streams import WrappedStream
 import logging
 
 

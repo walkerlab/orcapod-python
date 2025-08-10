@@ -33,3 +33,26 @@ class SemanticStructConverter(Protocol):
     def can_handle_struct_type(self, struct_type: "pa.StructType") -> bool:
         """Check if this converter can handle the given struct type."""
         ...
+
+    def hash_struct_dict(
+        self, struct_dict: dict[str, Any], add_prefix: bool = False
+    ) -> str:
+        """
+        Compute hash of the semantic type from its struct dictionary representation.
+
+        Args:
+            struct_dict: Arrow struct dictionary representation
+            add_prefix: If True, prefix with semantic type and algorithm info
+
+        Returns:
+            Hash string, optionally prefixed like "path:sha256:abc123..."
+
+        Raises:
+            Exception: If hashing fails (e.g., file not found for path types)
+        """
+        ...
+
+    @property
+    def hasher_id(self) -> str:
+        """Identifier for this hasher (for debugging/versioning)"""
+        ...

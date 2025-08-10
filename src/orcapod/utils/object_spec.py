@@ -1,26 +1,43 @@
 import importlib
 from typing import Any
+from weakref import ref
 
 
-def parse_objectspec(obj_spec: Any, validate: bool = True) -> Any:
+def parse_objectspec(
+    obj_spec: Any,
+    ref_lut: dict[str, Any] | None = None,
+    validate: bool = True,
+) -> Any:
     """Enhanced ObjectSpec with better error handling and validation."""
+    if ref_lut is None:
+        ref_lut = {}
 
     if isinstance(obj_spec, dict):
         if "_class" in obj_spec:
-            return _create_instance_from_spec(obj_spec, validate)
+            return _create_instance_from_spec(obj_spec, ref_lut, validate)
+        elif "_ref" in obj_spec:
+            ref_key = obj_spec["_ref"]
+            if ref_key in ref_lut:
+                return ref_lut[ref_key]
+            else:
+                raise ValueError(f"Unknown reference: {ref_key}")
         else:
             # Recursively process dict
-            return {k: parse_objectspec(v, validate) for k, v in obj_spec.items()}
+            return {
+                k: parse_objectspec(v, ref_lut, validate) for k, v in obj_spec.items()
+            }
 
     elif isinstance(obj_spec, (list, tuple)):
-        processed = [parse_objectspec(item, validate) for item in obj_spec]
+        processed = [parse_objectspec(item, ref_lut, validate) for item in obj_spec]
         return tuple(processed) if isinstance(obj_spec, tuple) else processed
 
     else:
         return obj_spec
 
 
-def _create_instance_from_spec(spec: dict[str, Any], validate: bool) -> Any:
+def _create_instance_from_spec(
+    spec: dict[str, Any], ref_lut: dict[str, Any], validate: bool
+) -> Any:
     """Create instance with better error handling."""
     try:
         class_path = spec["_class"]
@@ -32,7 +49,7 @@ def _create_instance_from_spec(spec: dict[str, Any], validate: bool) -> Any:
         cls = getattr(module, class_name)
 
         # Process config recursively
-        processed_config = parse_objectspec(config, validate)
+        processed_config = parse_objectspec(config, ref_lut, validate)
 
         # Optional: validate config matches class signature
         if validate:

@@ -8,6 +8,7 @@
     "required": [
         "context_key",
         "version",
+        "semantic_registry",
         "type_converter",
         "arrow_hasher",
         "object_hasher"
@@ -40,6 +41,10 @@
                 "Initial stable release with basic Path semantic type support",
                 "Enhanced version with timestamp support and improved hashing"
             ]
+        },
+        "semantic_registry": {
+            "$ref": "#/$defs/objectspec",
+            "description": "ObjectSpec for the semantic registry"
         },
         "type_converter": {
             "$ref": "#/$defs/objectspec",

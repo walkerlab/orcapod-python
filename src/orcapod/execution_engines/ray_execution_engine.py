@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-class NativeRayAsyncEngine:
+class RayEngine:
     """
     Ray execution engine using native asyncio support.
 

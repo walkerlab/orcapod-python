@@ -2,20 +2,15 @@
     "context_key": "std:v0.1:default",
     "version": "v0.1",
     "description": "Initial stable release with basic Path semantic type support",
-    "type_converter": {
-        "_class": "orcapod.semantic_types.universal_converter.UniversalTypeConverter",
+    "semantic_registry": {
+        "_class": "orcapod.semantic_types.semantic_registry.SemanticTypeRegistry",
         "_config": {
-            "semantic_registry": {
-                "_class": "orcapod.semantic_types.semantic_registry.SemanticTypeRegistry",
-                "_config": {
-                    "converters": [
-                        {
-                            "_class": "orcapod.semantic_types.semantic_struct_converters.PathStructConverter",
-                            "_config": {}
-                        }
-                    ]
+            "converters": [
+                {
+                    "_class": "orcapod.semantic_types.semantic_struct_converters.PathStructConverter",
+                    "_config": {}
                 }
-            }
+            ]
         }
     },
     "arrow_hasher": {
@@ -25,18 +20,16 @@
             "hash_algorithm": "sha256",
             "chunk_size": 8192,
             "serialization_method": "logical",
-            "semantic_type_hashers": {
-                "path": {
-                    "_class": "orcapod.hashing.semantic_type_hashers.PathHasher",
-                    "_config": {
-                        "file_hasher": {
-                            "_class": "orcapod.hashing.file_hashers.BasicFileHasher",
-                            "_config": {
-                                "algorithm": "sha256"
-                            }
-                        }
-                    }
-                }
+            "semantic_registry": {
+                "_ref": "semantic_registry"
+            }
+        }
+    },
+    "type_converter": {
+        "_class": "orcapod.semantic_types.universal_converter.UniversalTypeConverter",
+        "_config": {
+            "semantic_registry": {
+                "_ref": "semantic_registry"
             }
         }
     },

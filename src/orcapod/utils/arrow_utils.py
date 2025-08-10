@@ -6,6 +6,188 @@ from collections.abc import Mapping, Collection
 from typing import Any
 
 
+from typing import TYPE_CHECKING
+from orcapod.utils.lazy_module import LazyModule
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+else:
+    pa = LazyModule("pyarrow")
+
+
+def normalize_to_large_types(arrow_type: "pa.DataType") -> "pa.DataType":
+    """
+    Recursively convert Arrow types to their large variants where available.
+
+    This ensures consistent schema representation regardless of the original
+    type choices (e.g., string vs large_string, binary vs large_binary).
+
+    Args:
+        arrow_type: Arrow data type to normalize
+
+    Returns:
+        Arrow data type with large variants substituted
+
+    Examples:
+        >>> normalize_to_large_types(pa.string())
+        large_string
+
+        >>> normalize_to_large_types(pa.list_(pa.string()))
+        large_list<large_string>
+
+        >>> normalize_to_large_types(pa.struct([pa.field("name", pa.string())]))
+        struct<name: large_string>
+    """
+    # Handle primitive types that have large variants
+    if pa.types.is_string(arrow_type):
+        return pa.large_string()
+    elif pa.types.is_binary(arrow_type):
+        return pa.large_binary()
+    elif pa.types.is_list(arrow_type):
+        # Regular list -> large_list with normalized element type
+        element_type = normalize_to_large_types(arrow_type.value_type)
+        return pa.large_list(element_type)
+
+    # Large variants and fixed-size lists stay as-is (already normalized or no large variant)
+    elif pa.types.is_large_string(arrow_type) or pa.types.is_large_binary(arrow_type):
+        return arrow_type
+    elif pa.types.is_large_list(arrow_type):
+        # Still need to normalize the element type
+        element_type = normalize_to_large_types(arrow_type.value_type)
+        return pa.large_list(element_type)
+    elif pa.types.is_fixed_size_list(arrow_type):
+        # Fixed-size lists don't have large variants, but normalize element type
+        element_type = normalize_to_large_types(arrow_type.value_type)
+        return pa.list_(element_type, arrow_type.list_size)
+
+    # Handle struct types recursively
+    elif pa.types.is_struct(arrow_type):
+        normalized_fields = []
+        for field in arrow_type:
+            normalized_field_type = normalize_to_large_types(field.type)
+            normalized_fields.append(
+                pa.field(
+                    field.name,
+                    normalized_field_type,
+                    nullable=field.nullable,
+                    metadata=field.metadata,
+                )
+            )
+        return pa.struct(normalized_fields)
+
+    # Handle map types (key and value types)
+    elif pa.types.is_map(arrow_type):
+        normalized_key_type = normalize_to_large_types(arrow_type.key_type)
+        normalized_value_type = normalize_to_large_types(arrow_type.item_type)
+        return pa.map_(normalized_key_type, normalized_value_type)
+
+    # Handle union types
+    elif pa.types.is_union(arrow_type):
+        # Union types contain multiple child types
+        normalized_child_types = []
+        for i in range(arrow_type.num_fields):
+            child_field = arrow_type[i]
+            normalized_child_type = normalize_to_large_types(child_field.type)
+            normalized_child_types.append(
+                pa.field(child_field.name, normalized_child_type)
+            )
+
+        # Reconstruct union with normalized child types
+        if isinstance(arrow_type, pa.SparseUnionType):
+            return pa.sparse_union(normalized_child_types)
+        else:  # dense union
+            return pa.dense_union(normalized_child_types)
+
+    # Handle dictionary types
+    elif pa.types.is_dictionary(arrow_type):
+        # Normalize the value type (dictionary values), keep index type as-is
+        normalized_value_type = normalize_to_large_types(arrow_type.value_type)
+        return pa.dictionary(arrow_type.index_type, normalized_value_type)  # type: ignore
+
+    # All other types (int, float, bool, date, timestamp, etc.) don't have large variants
+    else:
+        return arrow_type
+
+
+def normalize_schema_to_large_types(schema: "pa.Schema") -> "pa.Schema":
+    """
+    Convert a schema to use large variants of data types.
+
+    This normalizes schemas so that string -> large_string, binary -> large_binary,
+    list -> large_list, etc., handling nested structures recursively.
+
+    Args:
+        schema: Arrow schema to normalize
+
+    Returns:
+        New schema with large type variants, or same schema if no changes needed
+
+    Examples:
+        >>> schema = pa.schema([
+        ...     pa.field("name", pa.string()),
+        ...     pa.field("files", pa.list_(pa.string())),
+        ... ])
+        >>> normalize_schema_to_large_types(schema)
+        name: large_string
+        files: large_list<large_string>
+    """
+    normalized_fields = []
+    schema_changed = False
+
+    for field in schema:
+        normalized_type = normalize_to_large_types(field.type)
+
+        # Check if the type actually changed
+        if normalized_type != field.type:
+            schema_changed = True
+
+        normalized_field = pa.field(
+            field.name,
+            normalized_type,
+            nullable=field.nullable,
+            metadata=field.metadata,
+        )
+        normalized_fields.append(normalized_field)
+
+    # Only create new schema if something actually changed
+    if schema_changed:
+        return pa.schema(normalized_fields, metadata=schema.metadata)  # type: ignore
+    else:
+        return schema
+
+
+def normalize_table_to_large_types(table: "pa.Table") -> "pa.Table":
+    """
+    Normalize table schema to use large type variants.
+
+    Uses cast() which should be zero-copy for large variant conversions
+    since they have identical binary representations, but ensures proper
+    type validation and handles any edge cases safely.
+
+    Args:
+        table: Arrow table to normalize
+
+    Returns:
+        Table with normalized schema, or same table if no changes needed
+
+    Examples:
+        >>> table = pa.table({"name": ["Alice", "Bob"], "age": [25, 30]})
+        >>> normalized = normalize_table_to_large_types(table)
+        >>> normalized.schema
+        name: large_string
+        age: int64
+    """
+    normalized_schema = normalize_schema_to_large_types(table.schema)
+
+    # If schema didn't change, return original table
+    if normalized_schema is table.schema:
+        return table
+
+    # Use cast() for safety - should be zero-copy for large variant conversions
+    # but handles Arrow's internal type validation and any edge cases properly
+    return table.cast(normalized_schema)
+
+
 def pylist_to_pydict(pylist: list[dict]) -> dict:
     """
     Convert a list of dictionaries to a dictionary of lists (columnar format).
@@ -404,3 +586,87 @@ def drop_schema_columns(schema: pa.Schema, columns: Collection[str]) -> pa.Schem
         pa.Schema: New schema with specified columns removed.
     """
     return pa.schema([field for field in schema if field.name not in columns])
+
+
+# Test function to demonstrate usage
+def test_schema_normalization():
+    """Test the schema normalization functions."""
+    print("=== Testing Arrow Schema Normalization ===\n")
+
+    # Test basic types
+    print("1. Basic type normalization:")
+    basic_types = [
+        pa.string(),
+        pa.binary(),
+        pa.list_(pa.string()),
+        pa.large_string(),  # Should stay the same
+        pa.int64(),  # Should stay the same
+    ]
+
+    for arrow_type in basic_types:
+        normalized = normalize_to_large_types(arrow_type)
+        print(f"  {arrow_type} -> {normalized}")
+
+    print("\n2. Complex nested type normalization:")
+    complex_types = [
+        pa.struct(
+            [pa.field("name", pa.string()), pa.field("files", pa.list_(pa.binary()))]
+        ),
+        pa.map_(pa.string(), pa.list_(pa.string())),
+        pa.large_list(
+            pa.struct([pa.field("id", pa.int64()), pa.field("path", pa.string())])
+        ),
+    ]
+
+    for arrow_type in complex_types:
+        normalized = normalize_to_large_types(arrow_type)
+        print(f"  {arrow_type}")
+        print(f"  -> {normalized}")
+        print()
+
+    print("3. Schema normalization:")
+    schema = pa.schema(
+        [
+            pa.field("id", pa.int64()),
+            pa.field("name", pa.string()),
+            pa.field("files", pa.list_(pa.string())),
+            pa.field(
+                "metadata",
+                pa.struct(
+                    [pa.field("created", pa.string()), pa.field("size", pa.int64())]
+                ),
+            ),
+        ]
+    )
+
+    print("Original schema:")
+    print(schema)
+
+    normalized_schema = normalize_schema_to_large_types(schema)
+    print("\nNormalized schema:")
+    print(normalized_schema)
+
+    print("\n4. Table normalization:")
+    table_data = {
+        "name": ["Alice", "Bob", "Charlie"],
+        "files": [
+            ["file1.txt", "file2.txt"],
+            ["data.csv"],
+            ["config.json", "output.log"],
+        ],
+    }
+
+    table = pa.table(table_data)
+    print("Original table schema:")
+    print(table.schema)
+
+    normalized_table = normalize_table_to_large_types(table)
+    print("\nNormalized table schema:")
+    print(normalized_table.schema)
+
+    # Verify data is preserved
+    print(f"\nData preserved: {table.to_pydict() == normalized_table.to_pydict()}")
+
+
+if __name__ == "__main__":
+    test_schema_normalization()
