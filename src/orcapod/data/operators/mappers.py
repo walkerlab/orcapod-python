@@ -1,5 +1,5 @@
 from orcapod.protocols import data_protocols as dp
-from orcapod.data.streams import ImmutableTableStream
+from orcapod.data.streams import TableStream
 from orcapod.types import TypeSpec
 from typing import Any, TYPE_CHECKING
 from orcapod.utils.lazy_module import LazyModule
@@ -48,7 +48,7 @@ class MapPackets(UnaryOperator):
                 name_map[c] = c
 
         renamed_table = table.rename_columns(name_map)
-        return ImmutableTableStream(
+        return TableStream(
             renamed_table, tag_columns=tag_columns, source=self, upstreams=(stream,)
         )
 
@@ -128,7 +128,7 @@ class MapTags(UnaryOperator):
             name_map[c] = c  # no renaming on packet columns
 
         renamed_table = table.rename_columns(name_map)
-        return ImmutableTableStream(
+        return TableStream(
             renamed_table, tag_columns=new_tag_columns, source=self, upstreams=(stream,)
         )
 

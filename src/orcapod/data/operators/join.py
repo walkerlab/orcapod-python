@@ -1,5 +1,5 @@
 from orcapod.protocols import data_protocols as dp
-from orcapod.data.streams import ImmutableTableStream
+from orcapod.data.streams import TableStream
 from orcapod.types import TypeSpec
 from orcapod.types.typespec_utils import union_typespecs, intersection_typespecs
 from typing import Any, TYPE_CHECKING
@@ -94,7 +94,7 @@ class Join(NonZeroInputOperator):
         reordered_columns = [col for col in table.column_names if col in tag_keys]
         reordered_columns += [col for col in table.column_names if col not in tag_keys]
 
-        return ImmutableTableStream(
+        return TableStream(
             table.select(reordered_columns),
             tag_columns=tuple(tag_keys),
             source=self,

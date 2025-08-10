@@ -1,5 +1,5 @@
 from orcapod.protocols import data_protocols as dp
-from orcapod.data.streams import ImmutableTableStream
+from orcapod.data.streams import TableStream
 from orcapod.types import TypeSpec
 from orcapod.types.typespec_utils import union_typespecs, intersection_typespecs
 from typing import Any, TYPE_CHECKING
@@ -83,7 +83,7 @@ class SemiJoin(BinaryOperator):
             join_type="left semi",
         )
 
-        return ImmutableTableStream(
+        return TableStream(
             semi_joined_table,
             tag_columns=tuple(left_tag_typespec.keys()),
             source=self,

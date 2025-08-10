@@ -9,7 +9,7 @@ from pyarrow.lib import Table
 
 from orcapod.data.kernels import TrackedKernelBase
 from orcapod.data.streams import (
-    ImmutableTableStream,
+    TableStream,
     KernelStream,
     OperatorStreamBaseMixin,
 )
@@ -284,12 +284,12 @@ class CSVSource(SourceBase):
         """
         import pyarrow.csv as csv
 
-        from orcapod.data.streams import ImmutableTableStream
+        from orcapod.data.streams import TableStream
 
         # Load current state of the file
         table = csv.read_csv(self.file_path)
 
-        return ImmutableTableStream(
+        return TableStream(
             table=table,
             tag_columns=self.tag_columns,
             source=self,
@@ -399,7 +399,7 @@ class ManualDeltaTableSource(SourceBase):
                 as_large_types=True
             ).to_table()
 
-        return ImmutableTableStream(
+        return TableStream(
             arrow_data, tag_columns=self.tag_columns, source=self, upstreams=()
         )
 
@@ -708,7 +708,7 @@ class DictSource(SourceBase):
             ),
         )
 
-        return ImmutableTableStream(
+        return TableStream(
             table=table,
             tag_columns=self.tag_keys,
             source=self,

@@ -358,7 +358,7 @@ class ImmutableStream(StreamBase):
         return self._data_content_identity
 
 
-class ImmutableTableStream(ImmutableStream):
+class TableStream(ImmutableStream):
     """
     An immutable stream based on a PyArrow Table.
     This stream is designed to be used with data that is already in a tabular format,
@@ -1027,13 +1027,13 @@ class EfficientPodResultStream(StreamBase):
 
             if existing is not None and existing.num_rows > 0:
                 # If there are existing entries, we can cache them
-                existing_stream = ImmutableTableStream(existing, tag_columns=tag_keys)
+                existing_stream = TableStream(existing, tag_columns=tag_keys)
                 for tag, packet in existing_stream.iter_packets():
                     cached_results.append((tag, packet))
 
             pending_calls = []
             if missing is not None and missing.num_rows > 0:
-                for tag, packet in ImmutableTableStream(missing, tag_columns=tag_keys):
+                for tag, packet in TableStream(missing, tag_columns=tag_keys):
                     # Since these packets are known to be missing, skip the cache lookup
                     pending = self.pod.async_call(
                         tag,
@@ -1130,13 +1130,13 @@ class EfficientPodResultStream(StreamBase):
 
             if existing is not None and existing.num_rows > 0:
                 # If there are existing entries, we can cache them
-                existing_stream = ImmutableTableStream(existing, tag_columns=tag_keys)
+                existing_stream = TableStream(existing, tag_columns=tag_keys)
                 for tag, packet in existing_stream.iter_packets():
                     cached_results.append((tag, packet))
                     yield tag, packet
 
             if missing is not None and missing.num_rows > 0:
-                for tag, packet in ImmutableTableStream(missing, tag_columns=tag_keys):
+                for tag, packet in TableStream(missing, tag_columns=tag_keys):
                     # Since these packets are known to be missing, skip the cache lookup
                     tag, packet = self.pod.call(
                         tag,
