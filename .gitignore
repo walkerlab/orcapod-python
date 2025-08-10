@@ -5,6 +5,18 @@ notebooks/**/*.parquet
 notebooks/**/*.pkl
 notebooks/**/*.db
 
+# Ignore npy and npz data files by default
+*.np[yz]
+
+# Ignore common data types by default
+*.csv
+*.parquet
+*.xls
+*.xlsx
+*.txt
+
+# Ignore profiler output
+*.prof
 
 # Ignore any notebook that starts with an underscore
 notebooks/**/_*.ipynb
