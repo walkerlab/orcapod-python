@@ -38,6 +38,10 @@ class RayEngine:
         logger.info("Native Ray async engine initialized")
         logger.info(f"Cluster resources: {ray.cluster_resources()}")
 
+    @property
+    def name(self) -> str:
+        return "ray"
+
     def submit_sync(self, func: Callable[..., T], *args, **kwargs) -> T:
         """
         Submit a function synchronously using Ray.

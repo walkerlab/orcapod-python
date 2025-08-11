@@ -1,6 +1,6 @@
 from orcapod import contexts
 from orcapod.data.base import LabeledContentIdentifiableBase
-from orcapod.protocols import data_protocols as dp, hashing_protocols as hp
+from orcapod.protocols import data_protocols as dp
 from collections import defaultdict
 from collections.abc import Generator, Collection
 from abc import ABC, abstractmethod
@@ -136,7 +136,7 @@ class AutoRegisteringContextBasedTracker(ABC):
         self.set_active(False)
 
 
-# TODO: rename this to stub source or simply use StreamSource
+# TODO: Move this to sources.py
 class StubSource:
     def __init__(self, stream: dp.Stream, label: str | None = None) -> None:
         """
@@ -146,13 +146,15 @@ class StubSource:
         self.label = label or stream.label
         self.stream = stream
 
-    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def output_types(
+        self, *streams: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[TypeSpec, TypeSpec]:
         """
         Returns the types of the tag and packet columns in the stream.
         This is useful for accessing the types of the columns in the stream.
         """
         assert len(streams) == 0, "StubKernel should not have any input streams."
-        return self.stream.types()
+        return self.stream.types(include_system_tags=include_system_tags)
 
     @property
     def kernel_id(self) -> tuple[str, ...]:

@@ -19,6 +19,7 @@ from orcapod.types import DataValue, TypeSpec, typespec_utils
 from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.data.system_constants import constants
+from orcapod.semantic_types import infer_schema_from_pylist_data
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -109,9 +110,9 @@ class SourceBase(TrackedKernelBase, OperatorStreamBaseMixin):
         """Delegate to the cached KernelStream."""
         return self().keys()
 
-    def types(self) -> tuple[TypeSpec, TypeSpec]:
+    def types(self, include_system_tags: bool = False) -> tuple[TypeSpec, TypeSpec]:
         """Delegate to the cached KernelStream."""
-        return self().types()
+        return self().types(include_system_tags=include_system_tags)
 
     @property
     def last_modified(self):
@@ -296,11 +297,13 @@ class CSVSource(SourceBase):
             upstreams=(),
         )
 
-    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def kernel_output_types(
+        self, *streams: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[TypeSpec, TypeSpec]:
         """Infer types from the file (could be cached)."""
         # For demonstration - in practice you might cache this
         sample_stream = self.forward()
-        return sample_stream.types()
+        return sample_stream.types(include_system_tags=include_system_tags)
 
 
 class ManualDeltaTableSource(SourceBase):
@@ -412,8 +415,11 @@ class ManualDeltaTableSource(SourceBase):
         """
         return (self.__class__.__name__, str(self.table_path))
 
-    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def kernel_output_types(
+        self, *streams: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[TypeSpec, TypeSpec]:
         """Return tag and packet types based on schema and tag columns."""
+        # TODO: auto add system entry tag
         tag_types: TypeSpec = {}
         packet_types: TypeSpec = {}
         for field, field_type in self.python_schema.items():
@@ -645,8 +651,8 @@ class DictSource(SourceBase):
         self,
         tags: Collection[dict[str, DataValue]],
         packets: Collection[dict[str, DataValue]],
-        tag_typespec: TypeSpec | None = None,
-        packet_typespec: TypeSpec | None = None,
+        tag_typespec: dict[str, type] | None = None,
+        packet_typespec: dict[str, type] | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -656,11 +662,9 @@ class DictSource(SourceBase):
             raise ValueError(
                 "Tags and packets must be non-empty collections of equal length"
             )
-        self.tag_typespec = tag_typespec or typespec_utils.get_typespec_from_dict(
-            self.tags[0]
-        )
-        self.packet_typespec = packet_typespec or typespec_utils.get_typespec_from_dict(
-            self.packets[0]
+        self.tag_typespec = tag_typespec or infer_schema_from_pylist_data(self.tags)
+        self.packet_typespec = packet_typespec or infer_schema_from_pylist_data(
+            self.packets
         )
         source_info = ":".join(self.kernel_id)
         self.source_info = {
@@ -715,6 +719,9 @@ class DictSource(SourceBase):
             upstreams=(),
         )
 
-    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def kernel_output_types(
+        self, *streams: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[TypeSpec, TypeSpec]:
         """Return tag and packet types based on provided typespecs."""
+        # TODO: add system tag
         return self.tag_typespec, self.packet_typespec

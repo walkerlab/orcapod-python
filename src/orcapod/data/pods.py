@@ -117,15 +117,17 @@ class ActivatablePodBase(TrackedKernelBase):
         self._major_version = major_version
 
     @property
-    def major_version(self) -> str:
+    def major_version(self) -> int:
         return self._major_version
 
-    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def kernel_output_types(
+        self, *streams: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[TypeSpec, TypeSpec]:
         """
         Return the input and output typespecs for the pod.
         This is used to validate the input and output streams.
         """
-        tag_typespec, _ = streams[0].types()
+        tag_typespec, _ = streams[0].types(include_system_tags=include_system_tags)
         return tag_typespec, self.output_packet_types()
 
     def is_active(self) -> bool:
@@ -650,8 +652,11 @@ class CachedPod(WrappedPod):
         skip_cache_insert: bool = False,
     ) -> tuple[dp.Tag, dp.Packet | None]:
         # TODO: consider logic for overwriting existing records
+        execution_engine_hash = execution_engine.name if execution_engine else "default"
         if record_id is None:
-            record_id = self.get_record_id(packet)
+            record_id = self.get_record_id(
+                packet, execution_engine_hash=execution_engine_hash
+            )
         output_packet = None
         if not skip_cache_lookup:
             output_packet = self.get_recorded_output_packet(packet)
@@ -674,8 +679,12 @@ class CachedPod(WrappedPod):
         skip_cache_insert: bool = False,
     ) -> tuple[dp.Tag, dp.Packet | None]:
         # TODO: consider logic for overwriting existing records
+        execution_engine_hash = execution_engine.name if execution_engine else "default"
+
         if record_id is None:
-            record_id = self.get_record_id(packet)
+            record_id = self.get_record_id(
+                packet, execution_engine_hash=execution_engine_hash
+            )
         output_packet = None
         if not skip_cache_lookup:
             output_packet = self.get_recorded_output_packet(packet)

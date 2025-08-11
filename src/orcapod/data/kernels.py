@@ -87,16 +87,22 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
             self._last_modified = datetime.now(timezone.utc)
 
     @abstractmethod
-    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def kernel_output_types(
+        self, *streams: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[TypeSpec, TypeSpec]:
         """
         Return the output types of the kernel given the input streams.
         """
         ...
 
-    def output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def output_types(
+        self, *streams: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[TypeSpec, TypeSpec]:
         processed_streams = self.pre_kernel_processing(*streams)
         self.validate_inputs(*processed_streams)
-        return self.kernel_output_types(*processed_streams)
+        return self.kernel_output_types(
+            *processed_streams, include_system_tags=include_system_tags
+        )
 
     @abstractmethod
     def kernel_identity_structure(
@@ -212,8 +218,12 @@ class WrappedKernel(TrackedKernelBase):
     def kernel_id(self) -> tuple[str, ...]:
         return self.kernel.kernel_id
 
-    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
-        return self.kernel.output_types(*streams)
+    def kernel_output_types(
+        self, *streams: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[TypeSpec, TypeSpec]:
+        return self.kernel.output_types(
+            *streams, include_system_tags=include_system_tags
+        )
 
     def kernel_identity_structure(
         self, streams: Collection[dp.Stream] | None = None

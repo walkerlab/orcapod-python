@@ -32,15 +32,22 @@ class Join(NonZeroInputOperator):
             # raise InputValidationError(f"Input streams are not compatible: {e}") from e
             raise e
 
-    def op_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def op_output_types(
+        self, *streams: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[TypeSpec, TypeSpec]:
         if len(streams) == 1:
             # If only one stream is provided, return its typespecs
-            return streams[0].types()
+            return streams[0].types(include_system_tags=include_system_tags)
 
+        # TODO: consider performing the check always with system tags on
         stream = streams[0]
-        tag_typespec, packet_typespec = stream.types()
+        tag_typespec, packet_typespec = stream.types(
+            include_system_tags=include_system_tags
+        )
         for other_stream in streams[1:]:
-            other_tag_typespec, other_packet_typespec = other_stream.types()
+            other_tag_typespec, other_packet_typespec = other_stream.types(
+                include_system_tags=include_system_tags
+            )
             tag_typespec = union_typespecs(tag_typespec, other_tag_typespec)
             packet_typespec = intersection_typespecs(
                 packet_typespec, other_packet_typespec

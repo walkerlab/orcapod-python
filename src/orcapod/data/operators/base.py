@@ -56,9 +56,11 @@ class UnaryOperator(Operator):
             )
         return output_substreams[0]
 
-    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def kernel_output_types(
+        self, *streams: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[TypeSpec, TypeSpec]:
         stream = streams[0]
-        return self.op_output_types(stream)
+        return self.op_output_types(stream, include_system_tags=include_system_tags)
 
     def kernel_identity_structure(
         self, streams: Collection[dp.Stream] | None = None
@@ -89,7 +91,9 @@ class UnaryOperator(Operator):
         ...
 
     @abstractmethod
-    def op_output_types(self, stream: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def op_output_types(
+        self, stream: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[TypeSpec, TypeSpec]:
         """
         This method should be implemented by subclasses to return the typespecs of the input and output streams.
         It takes two streams as input and returns a tuple of typespecs.
@@ -134,9 +138,13 @@ class BinaryOperator(Operator):
         left_stream, right_stream = streams
         return self.op_forward(left_stream, right_stream)
 
-    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def kernel_output_types(
+        self, *streams: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[TypeSpec, TypeSpec]:
         left_stream, right_stream = streams
-        return self.op_output_types(left_stream, right_stream)
+        return self.op_output_types(
+            left_stream, right_stream, include_system_tags=include_system_tags
+        )
 
     def kernel_identity_structure(
         self, streams: Collection[dp.Stream] | None = None
@@ -170,7 +178,10 @@ class BinaryOperator(Operator):
 
     @abstractmethod
     def op_output_types(
-        self, left_stream: dp.Stream, right_stream: dp.Stream
+        self,
+        left_stream: dp.Stream,
+        right_stream: dp.Stream,
+        include_system_tags: bool = False,
     ) -> tuple[TypeSpec, TypeSpec]:
         """
         This method should be implemented by subclasses to return the typespecs of the input and output streams.
@@ -222,8 +233,10 @@ class NonZeroInputOperator(Operator):
         """
         return self.op_forward(*streams)
 
-    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
-        return self.op_output_types(*streams)
+    def kernel_output_types(
+        self, *streams: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[TypeSpec, TypeSpec]:
+        return self.op_output_types(*streams, include_system_tags=include_system_tags)
 
     def kernel_identity_structure(
         self, streams: Collection[dp.Stream] | None = None
@@ -251,7 +264,9 @@ class NonZeroInputOperator(Operator):
         ...
 
     @abstractmethod
-    def op_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def op_output_types(
+        self, *streams: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[TypeSpec, TypeSpec]:
         """
         This method should be implemented by subclasses to return the typespecs of the input and output streams.
         It takes at least one stream as input and returns a tuple of typespecs.

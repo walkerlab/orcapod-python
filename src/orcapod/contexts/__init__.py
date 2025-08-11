@@ -41,6 +41,10 @@ def _get_registry() -> JSONDataContextRegistry:
     return _registry
 
 
+def get_default_context_key() -> str:
+    return get_default_context().context_key
+
+
 def resolve_context(context_info: str | DataContext | None = None) -> DataContext:
     """
     Resolve context information to a DataContext instance.

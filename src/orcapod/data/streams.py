@@ -202,7 +202,7 @@ class StreamBase(ABC, OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
     def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]: ...
 
     @abstractmethod
-    def types(self) -> tuple[TypeSpec, TypeSpec]: ...
+    def types(self, include_system_tags: bool = False) -> tuple[TypeSpec, TypeSpec]: ...
 
     @property
     def last_modified(self) -> datetime | None:
@@ -392,7 +392,12 @@ class TableStream(ImmutableStream):
 
         if data_context_table is None:
             data_context_table = pa.table(
-                {constants.CONTEXT_KEY: pa.nulls(len(data_table), pa.large_string())}
+                {
+                    constants.CONTEXT_KEY: pa.array(
+                        [contexts.get_default_context_key()] * len(data_table),
+                        pa.large_string(),
+                    )
+                }
             )
 
         prefix_info = {constants.SOURCE_PREFIX: source_info}
@@ -477,15 +482,21 @@ class TableStream(ImmutableStream):
         """
         return self._tag_columns, self._packet_columns
 
-    def types(self) -> tuple[dict[str, type], dict[str, type]]:
+    def types(
+        self, include_system_tags: bool = False
+    ) -> tuple[dict[str, type], dict[str, type]]:
         """
         Returns the types of the tag and packet columns in the stream.
         This is useful for accessing the types of the columns in the stream.
         """
         # TODO: consider using MappingProxyType to avoid copying the dicts
         converter = self._data_context.type_converter
+        if include_system_tags:
+            tag_schema = self._all_tag_schema
+        else:
+            tag_schema = self._tag_schema
         return (
-            converter.arrow_schema_to_python_schema(self._tag_schema),
+            converter.arrow_schema_to_python_schema(tag_schema),
             converter.arrow_schema_to_python_schema(self._packet_schema),
         )
 
@@ -652,12 +663,14 @@ class KernelStream(StreamBase):
         tag_types, packet_types = self.kernel.output_types(*self.upstreams)
         return tuple(tag_types.keys()), tuple(packet_types.keys())
 
-    def types(self) -> tuple[TypeSpec, TypeSpec]:
+    def types(self, include_system_tags: bool = False) -> tuple[TypeSpec, TypeSpec]:
         """
         Returns the types of the tag and packet columns in the stream.
         This is useful for accessing the types of the columns in the stream.
         """
-        return self.kernel.output_types(*self.upstreams)
+        return self.kernel.output_types(
+            *self.upstreams, include_system_tags=include_system_tags
+        )
 
     @property
     def is_current(self) -> bool:
@@ -853,8 +866,10 @@ class LazyPodResultStream(StreamBase):
         packet_keys = tuple(self.pod.output_packet_types().keys())
         return tag_keys, packet_keys
 
-    def types(self) -> tuple[TypeSpec, TypeSpec]:
-        tag_typespec, _ = self.prepared_stream.types()
+    def types(self, include_system_tags: bool = False) -> tuple[TypeSpec, TypeSpec]:
+        tag_typespec, _ = self.prepared_stream.types(
+            include_system_tags=include_system_tags
+        )
         # TODO: check if copying can be avoided
         packet_typespec = dict(self.pod.output_packet_types())
         return tag_typespec, packet_typespec
@@ -1194,8 +1209,10 @@ class EfficientPodResultStream(StreamBase):
         packet_keys = tuple(self.pod.output_packet_types().keys())
         return tag_keys, packet_keys
 
-    def types(self) -> tuple[TypeSpec, TypeSpec]:
-        tag_typespec, _ = self.input_stream.types()
+    def types(self, include_system_tags: bool = False) -> tuple[TypeSpec, TypeSpec]:
+        tag_typespec, _ = self.input_stream.types(
+            include_system_tags=include_system_tags
+        )
         # TODO: check if copying can be avoided
         packet_typespec = dict(self.pod.output_packet_types())
         return tag_typespec, packet_typespec
@@ -1305,12 +1322,12 @@ class WrappedStream(StreamBase):
         """
         return self._stream.keys()
 
-    def types(self) -> tuple[TypeSpec, TypeSpec]:
+    def types(self, include_system_tags: bool = False) -> tuple[TypeSpec, TypeSpec]:
         """
         Returns the types of the tag and packet columns in the stream.
         This is useful for accessing the types of the columns in the stream.
         """
-        return self._stream.types()
+        return self._stream.types(include_system_tags=include_system_tags)
 
     def as_table(
         self,

@@ -43,6 +43,10 @@ class Node(
         self.invocation_hash = self.data_context.object_hasher.hash_to_hex(
             self.identity_structure(()), prefix_hasher_id=True
         )
+        tag_types, _ = self.types(include_system_tags=True)
+        self.tag_schema_hash = self.data_context.object_hasher.hash_to_hex(
+            tag_types, prefix_hasher_id=True
+        )
 
     @property
     def contained_kernel(self) -> dp.Kernel:
@@ -56,7 +60,12 @@ class Node(
         Return the path to the pipeline run records.
         This is used to store the run-associated tag info.
         """
-        return self.pipeline_path_prefix + self.kernel_id + (self.invocation_hash,)
+        # TODO: include output tag hash!
+        return (
+            self.pipeline_path_prefix
+            + self.kernel_id
+            + (self.invocation_hash, self.tag_schema_hash)
+        )
 
     def forward(self, *streams: dp.Stream) -> dp.Stream:
         if len(streams) > 0:
@@ -67,12 +76,16 @@ class Node(
         # super().validate_inputs(*self.input_streams)
         return super().forward(*self.input_streams)  # type: ignore[return-value]
 
-    def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def kernel_output_types(
+        self, *streams: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[TypeSpec, TypeSpec]:
         """
         Return the output types of the node.
         This is used to determine the types of the output streams.
         """
-        return self.contained_kernel.output_types(*self.input_streams)
+        return self.contained_kernel.output_types(
+            *self.input_streams, include_system_tags=include_system_tags
+        )
 
     def kernel_identity_structure(
         self, streams: Collection[dp.Stream] | None = None
@@ -140,10 +153,12 @@ class KernelNode(Node, WrappedKernel):
         """
         # construct identity structure from the node's information and the
         # contained kernel
-        if streams is not None and len(streams) > 0:
-            raise NotImplementedError(
-                "At this moment, Node does not yet support handling additional input streams."
-            )
+        if streams is not None:
+            if len(streams) > 0:
+                raise NotImplementedError(
+                    "At this moment, Node does not yet support handling additional input streams."
+                )
+            return None
         return self.kernel.identity_structure(self.input_streams)
 
     def forward(self, *streams: dp.Stream) -> dp.Stream:

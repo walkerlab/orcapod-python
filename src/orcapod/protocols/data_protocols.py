@@ -1332,7 +1332,7 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
-    def types(self) -> tuple[TypeSpec, TypeSpec]:
+    def types(self, include_system_tags: bool = False) -> tuple[TypeSpec, TypeSpec]:
         """
         Type specifications for the stream content.
 
@@ -1739,7 +1739,9 @@ class Kernel(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
-    def output_types(self, *streams: Stream) -> tuple[TypeSpec, TypeSpec]:
+    def output_types(
+        self, *streams: Stream, include_system_tags: bool = False
+    ) -> tuple[TypeSpec, TypeSpec]:
         """
         Determine output types without triggering computation.
 
