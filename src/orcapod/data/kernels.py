@@ -119,11 +119,6 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         # equivalence of the two by returning the same identity structure for both invocations.
         # This can be achieved, for example, by returning a set over the streams instead of a tuple.
         if streams is not None:
-            if len(streams) == 0:
-                # If no streams are provided, then this is a source kernel
-                # and we simply return None as the identity structure.
-                logger.debug(f"Kernel {self} is acting as a source!")
-                return None
             streams = self.pre_kernel_processing(*streams)
             self.validate_inputs(*streams)
         return self.kernel_identity_structure(streams)

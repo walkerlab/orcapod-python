@@ -169,7 +169,9 @@ class ArrowTag(ArrowDatagram):
             include_meta_columns=include_meta_columns,
             include_context=include_context,
         )
-        if include_all_info or include_system_tags:
+        if (
+            include_all_info or include_system_tags
+        ) and self._system_tags_table.num_rows > 0:
             # add system_tags only for existing data columns
             table = arrow_utils.hstack_tables(table, self._system_tags_table)
         return table

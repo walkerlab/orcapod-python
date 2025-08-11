@@ -7,6 +7,8 @@ DATA_CONTEXT_KEY = "context_key"
 INPUT_PACKET_HASH = "input_packet_hash"
 PACKET_RECORD_ID = "packet_id"
 SYSTEM_TAG_PREFIX = "system_tag_"
+POD_VERSION = "pod_version"
+EXECUTION_ENGINE = "execution_engine"
 
 
 class SystemConstant:
@@ -44,6 +46,14 @@ class SystemConstant:
     @property
     def SYSTEM_TAG_PREFIX(self) -> str:
         return f"{self._global_prefix}{DATAGRAM_PREFIX}{SYSTEM_TAG_PREFIX}"
+
+    @property
+    def POD_VERSION(self) -> str:
+        return f"{self._global_prefix}{SYSTEM_COLUMN_PREFIX}{POD_VERSION}"
+
+    @property
+    def EXECUTION_ENGINE(self) -> str:
+        return f"{self._global_prefix}{SYSTEM_COLUMN_PREFIX}{EXECUTION_ENGINE}"
 
 
 constants = SystemConstant()

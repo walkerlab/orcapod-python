@@ -12,6 +12,9 @@ if TYPE_CHECKING:
 
 
 class ExecutionEngine(Protocol):
+    @property
+    def name(self) -> str: ...
+
     def submit_sync(self, function: Callable, *args, **kwargs) -> Any:
         """
         Run the given function with the provided arguments.
@@ -1832,7 +1835,10 @@ class Pod(Kernel, Protocol):
     and fine-grained caching.
     """
 
-    def get_record_id(self, packet: Packet) -> str: ...
+    @property
+    def version(self) -> str: ...
+
+    def get_record_id(self, packet: Packet, execution_engine_hash: str) -> str: ...
 
     @property
     def tiered_pod_id(self) -> dict[str, str]:

@@ -137,7 +137,7 @@ class AutoRegisteringContextBasedTracker(ABC):
 
 
 # TODO: rename this to stub source or simply use StreamSource
-class StubKernel:
+class StubSource:
     def __init__(self, stream: dp.Stream, label: str | None = None) -> None:
         """
         A placeholder kernel that does nothing.
@@ -172,8 +172,9 @@ class StubKernel:
         if streams is not None:
             # when checked for invocation id, act as a source
             # and just return the output packet types
-            _, packet_types = self.stream.types()
-            return packet_types
+            # _, packet_types = self.stream.types()
+            # return packet_types
+            return None
         # otherwise, return the identity structure of the stream
         return self.stream.identity_structure()
 
@@ -210,7 +211,7 @@ class Invocation(LabeledContentIdentifiableBase):
             if stream.source is not None:
                 parent_invoctions.append(Invocation(stream.source, stream.upstreams))
             else:
-                source = StubKernel(stream)
+                source = StubSource(stream)
                 parent_invoctions.append(Invocation(source))
 
         return tuple(parent_invoctions)
@@ -228,6 +229,9 @@ class Invocation(LabeledContentIdentifiableBase):
         Return a structure that represents the identity of this invocation.
         This is used to uniquely identify the invocation in the tracker.
         """
+        # if no upstreams, then we want to identify the source directly
+        if not self.upstreams:
+            return self.kernel.identity_structure()
         return self.kernel.identity_structure(self.upstreams)
 
     def __repr__(self) -> str:

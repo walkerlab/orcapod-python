@@ -980,7 +980,9 @@ class EfficientPodResultStream(StreamBase):
 
             # identify all entries in the input stream for which we still have not computed packets
             target_entries = self.input_stream.as_table(
-                include_content_hash=constants.INPUT_PACKET_HASH
+                include_content_hash=constants.INPUT_PACKET_HASH,
+                include_source=True,
+                include_system_tags=True,
             )
             existing_entries = self.pod.get_all_records(include_system_columns=True)
             if existing_entries is None or existing_entries.num_rows == 0:

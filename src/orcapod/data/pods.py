@@ -73,8 +73,12 @@ class ActivatablePodBase(TrackedKernelBase):
         """
         ...
 
+    @property
+    def version(self) -> str:
+        return self._version
+
     @abstractmethod
-    def get_record_id(self, packet: dp.Packet) -> str:
+    def get_record_id(self, packet: dp.Packet, execution_engine_hash: str) -> str:
         """
         Return the record ID for the input packet. This is used to identify the pod in the system.
         """
@@ -92,11 +96,29 @@ class ActivatablePodBase(TrackedKernelBase):
         self,
         error_handling: error_handling_options = "raise",
         label: str | None = None,
+        version: str = "v0.0",
         **kwargs,
     ) -> None:
         super().__init__(label=label, **kwargs)
         self._active = True
         self.error_handling = error_handling
+        self._version = version
+        import re
+
+        match = re.match(r"\D.*(\d+)", version)
+        major_version = 0
+        if match:
+            major_version = int(match.group(1))
+        else:
+            raise ValueError(
+                f"Version string {version} does not contain a valid version number"
+            )
+
+        self._major_version = major_version
+
+    @property
+    def major_version(self) -> str:
+        return self._major_version
 
     def kernel_output_types(self, *streams: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
         """
@@ -274,21 +296,8 @@ class FunctionPod(ActivatablePodBase):
         # extract the first full index (potentially with leading 0) in the version string
         if not isinstance(version, str):
             raise TypeError(f"Version must be a string, got {type(version)}")
-        import re
 
-        match = re.match(r"\D.*(\d+)", version)
-        major_version = 0
-        if match:
-            major_version = int(match.group(1))
-        else:
-            raise ValueError(
-                f"Version string {version} does not contain a valid version number"
-            )
-
-        self.version = version
-        self.major_version = major_version
-
-        super().__init__(label=label or self.function_name, **kwargs)
+        super().__init__(label=label or self.function_name, version=version, **kwargs)
 
         # extract input and output types from the function signature
         input_packet_types, output_packet_types = tsutils.extract_function_typespecs(
@@ -334,10 +343,15 @@ class FunctionPod(ActivatablePodBase):
             "v" + str(self.major_version),
         )
 
-    def get_record_id(self, packet: dp.Packet) -> str:
+    def get_record_id(
+        self,
+        packet: dp.Packet,
+        execution_engine_hash: str,
+    ) -> str:
         return combine_hashes(
             packet.content_hash(),
             self._total_pod_id_hash,
+            execution_engine_hash,
             prefix_hasher_id=True,
         )
 
@@ -380,6 +394,8 @@ class FunctionPod(ActivatablePodBase):
             )
             return tag, None
 
+        execution_engine_hash = execution_engine.name if execution_engine else "default"
+
         # any kernel/pod invocation happening inside the function will NOT be tracked
         if not isinstance(packet, dict):
             input_dict = packet.as_dict(include_source=False)
@@ -397,7 +413,7 @@ class FunctionPod(ActivatablePodBase):
 
         if record_id is None:
             # if record_id is not provided, generate it from the packet
-            record_id = self.get_record_id(packet)
+            record_id = self.get_record_id(packet, execution_engine_hash)
         source_info = {
             k: ":".join(self.kernel_id + (record_id, k)) for k in output_data
         }
@@ -427,6 +443,8 @@ class FunctionPod(ActivatablePodBase):
             )
             return tag, None
 
+        execution_engine_hash = execution_engine.name if execution_engine else "default"
+
         # any kernel/pod invocation happening inside the function will NOT be tracked
         # with self._tracker_manager.no_tracking():
         # FIXME: figure out how to properly make context manager work with async/await
@@ -445,7 +463,7 @@ class FunctionPod(ActivatablePodBase):
 
         if record_id is None:
             # if record_id is not provided, generate it from the packet
-            record_id = self.get_record_id(packet)
+            record_id = self.get_record_id(packet, execution_engine_hash)
         source_info = {
             k: ":".join(self.kernel_id + (record_id, k)) for k in output_data
         }
@@ -521,8 +539,8 @@ class WrappedPod(ActivatablePodBase):
         """
         return self.pod.kernel_id
 
-    def get_record_id(self, packet: dp.Packet) -> str:
-        return self.pod.get_record_id(packet)
+    def get_record_id(self, packet: dp.Packet, execution_engine_hash: str) -> str:
+        return self.pod.get_record_id(packet, execution_engine_hash)
 
     @property
     def tiered_pod_id(self) -> dict[str, str]:
@@ -611,6 +629,10 @@ class CachedPod(WrappedPod):
         self.retrieval_mode = retrieval_mode
 
     @property
+    def version(self) -> str:
+        return self.pod.version
+
+    @property
     def record_path(self) -> tuple[str, ...]:
         """
         Return the path to the record in the result store.
@@ -662,7 +684,12 @@ class CachedPod(WrappedPod):
                 tag, packet, record_id=record_id, execution_engine=execution_engine
             )
             if output_packet is not None and not skip_cache_insert:
-                self.record_packet(packet, output_packet, record_id=record_id)
+                self.record_packet(
+                    packet,
+                    output_packet,
+                    record_id=record_id,
+                    execution_engine=execution_engine,
+                )
 
         return tag, output_packet
 
@@ -675,6 +702,7 @@ class CachedPod(WrappedPod):
         input_packet: dp.Packet,
         output_packet: dp.Packet,
         record_id: str | None = None,
+        execution_engine: dp.ExecutionEngine | None = None,
         skip_duplicates: bool = False,
     ) -> dp.Packet:
         """
@@ -696,8 +724,17 @@ class CachedPod(WrappedPod):
             constants.INPUT_PACKET_HASH,
             pa.array([input_packet.content_hash()], type=pa.large_string()),
         )
+        # add execution engine information
+        execution_engine_hash = execution_engine.name if execution_engine else "default"
+        data_table = data_table.append_column(
+            constants.EXECUTION_ENGINE,
+            pa.array([execution_engine_hash], type=pa.large_string()),
+        )
+
         if record_id is None:
-            record_id = self.get_record_id(input_packet)
+            record_id = self.get_record_id(
+                input_packet, execution_engine_hash=execution_engine_hash
+            )
 
         self.result_store.add_record(
             self.record_path,

@@ -156,6 +156,7 @@ class KernelNode(Node, WrappedKernel):
         key_column_name = self.HASH_COLUMN_NAME
         output_table = output_stream.as_table(
             include_data_context=True,
+            include_system_tags=True,
             include_source=True,
             include_content_hash=key_column_name,
         )
@@ -179,8 +180,7 @@ class KernelNode(Node, WrappedKernel):
                 c
                 for c in results.column_names
                 if c.startswith(constants.META_PREFIX)
-                or c.startswith(constants.CONTEXT_KEY)
-                or c.startswith(constants.SOURCE_PREFIX)
+                or c.startswith(constants.DATAGRAM_PREFIX)
             ]
             results = results.drop(system_columns)
 
@@ -228,8 +228,9 @@ class PodNode(Node, CachedPod):
         skip_cache_lookup: bool = False,
         skip_cache_insert: bool = False,
     ) -> tuple[dp.Tag, dp.Packet | None]:
+        execution_engine_hash = execution_engine.name if execution_engine else "default"
         if record_id is None:
-            record_id = self.get_record_id(packet)
+            record_id = self.get_record_id(packet, execution_engine_hash)
 
         tag, output_packet = super().call(
             tag,
@@ -264,8 +265,9 @@ class PodNode(Node, CachedPod):
         skip_cache_lookup: bool = False,
         skip_cache_insert: bool = False,
     ) -> tuple[dp.Tag, dp.Packet | None]:
+        execution_engine_hash = execution_engine.name if execution_engine else "default"
         if record_id is None:
-            record_id = self.get_record_id(packet)
+            record_id = self.get_record_id(packet, execution_engine_hash)
 
         tag, output_packet = await super().async_call(
             tag,
@@ -300,7 +302,8 @@ class PodNode(Node, CachedPod):
         skip_cache_lookup: bool = False,
     ) -> None:
         # combine dp.Tag with packet content hash to compute entry hash
-        tag_with_hash = tag.as_table().append_column(
+        # TODO: add system tag columns
+        tag_with_hash = tag.as_table(include_system_tags=True).append_column(
             constants.INPUT_PACKET_HASH,
             pa.array([input_packet.content_hash()], type=pa.large_string()),
         )
@@ -308,7 +311,6 @@ class PodNode(Node, CachedPod):
         entry_id = self.data_context.arrow_hasher.hash_table(
             tag_with_hash, prefix_hasher_id=True
         )
-
         # FIXME: consider and implement more robust cache lookup logic
         existing_record = None
         if not skip_cache_lookup:
@@ -342,7 +344,9 @@ class PodNode(Node, CachedPod):
             .drop_columns(list(renamed_input_packet.keys()))
         )
 
-        combined_record = arrow_utils.hstack_tables(tag.as_table(), input_packet_info)
+        combined_record = arrow_utils.hstack_tables(
+            tag.as_table(include_system_tags=True), input_packet_info
+        )
 
         self.pipeline_store.add_record(
             self.pipeline_path,
