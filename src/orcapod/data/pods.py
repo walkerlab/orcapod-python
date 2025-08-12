@@ -740,6 +740,12 @@ class CachedPod(WrappedPod):
             pa.array([execution_engine_hash], type=pa.large_string()),
         )
 
+        timestamp = datetime.now(timezone.utc)
+        data_table = data_table.append_column(
+            constants.POD_TIMESTAMP,
+            pa.array([timestamp], type=pa.timestamp("us", tz="UTC")),
+        )
+
         if record_id is None:
             record_id = self.get_record_id(
                 input_packet, execution_engine_hash=execution_engine_hash
