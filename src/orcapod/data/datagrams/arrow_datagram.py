@@ -558,8 +558,14 @@ class ArrowDatagram(BaseDatagram):
                 f"Following meta columns do not exist and cannot be dropped: {sorted(missing_keys)}"
             )
 
+        # Only drop columns that actually exist
+        existing_keys = prefixed_keys - missing_keys
+
         new_datagram = self.copy(include_cache=False)
-        new_datagram._meta_table = self._meta_table.drop_columns(list(prefixed_keys))
+        if existing_keys:  # Only drop if there are existing columns to drop
+            new_datagram._meta_table = self._meta_table.drop_columns(
+                list(existing_keys)
+            )
 
         return new_datagram
 
@@ -603,10 +609,16 @@ class ArrowDatagram(BaseDatagram):
             raise KeyError(
                 f"Following columns do not exist and cannot be dropped: {sorted(missing)}"
             )
-        column_names = tuple(c for c in column_names if self._data_table.columns)
+        # Only keep columns that actually exist
+        existing_columns = tuple(
+            c for c in column_names if c in self._data_table.column_names
+        )
 
         new_datagram = self.copy(include_cache=False)
-        new_datagram._data_table = self._data_table.drop_columns(list(column_names))
+        if existing_columns:  # Only drop if there are existing columns to drop
+            new_datagram._data_table = self._data_table.drop_columns(
+                list(existing_columns)
+            )
         # TODO: consider dropping extra semantic columns if they are no longer needed
         return new_datagram
 

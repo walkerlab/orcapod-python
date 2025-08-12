@@ -59,10 +59,10 @@ class ArrowTag(ArrowDatagram):
                 self._data_table.select(extracted_system_tag_columns)
             )[0]
         )
+        self._system_tags_dict.update(system_tags or {})
         self._system_tags_python_schema = infer_schema_from_pylist_data(
             [self._system_tags_dict]
         )
-        self._system_tags_dict.update(system_tags or {})
         self._system_tags_table = (
             self._data_context.type_converter.python_dicts_to_arrow_table(
                 [self._system_tags_dict], python_schema=self._system_tags_python_schema
@@ -171,8 +171,8 @@ class ArrowTag(ArrowDatagram):
         )
         if (
             include_all_info or include_system_tags
-        ) and self._system_tags_table.num_rows > 0:
-            # add system_tags only for existing data columns
+        ) and self._system_tags_table.num_columns > 0:
+            # add system_tags only if there are actual system tag columns
             table = arrow_utils.hstack_tables(table, self._system_tags_table)
         return table
 
@@ -388,8 +388,12 @@ class ArrowPacket(ArrowDatagram):
             include_context=include_context,
         )
         if include_all_info or include_source:
-            # add source_info only for existing data columns
-            table = arrow_utils.hstack_tables(table, self._source_info_table)
+            # add source_info only if there are columns and the table has meaningful data
+            if (
+                self._source_info_table.num_columns > 0
+                and self._source_info_table.num_rows > 0
+            ):
+                table = arrow_utils.hstack_tables(table, self._source_info_table)
         return table
 
     def as_datagram(
@@ -466,7 +470,7 @@ class ArrowPacket(ArrowDatagram):
         new_names = [column_mapping.get(k, k) for k in self._data_table.column_names]
 
         new_source_info_names = [
-            f"{constants.SOURCE_PREFIX}{column_mapping.get(k.removeprefix(constants.SOURCE_PREFIX), k)}"
+            f"{constants.SOURCE_PREFIX}{column_mapping.get(k.removeprefix(constants.SOURCE_PREFIX), k.removeprefix(constants.SOURCE_PREFIX))}"
             for k in self._source_info_table.column_names
         ]
 
@@ -477,6 +481,62 @@ class ArrowPacket(ArrowDatagram):
         )
 
         return new_datagram
+
+    def with_columns(
+        self,
+        column_types: Mapping[str, type] | None = None,
+        **updates: DataValue,
+    ) -> Self:
+        """
+        Create a new ArrowPacket with new data columns added.
+        Maintains immutability by returning a new instance.
+        Also adds corresponding empty source info columns for new columns.
+
+        Args:
+            column_types: Optional type specifications for new columns
+            **updates: New data columns as keyword arguments
+
+        Returns:
+            New ArrowPacket instance with new data columns and corresponding source info columns
+
+        Raises:
+            ValueError: If any column already exists (use update() instead)
+        """
+        if not updates:
+            return self
+
+        # First call parent method to add the data columns
+        new_packet = super().with_columns(column_types=column_types, **updates)
+
+        # Now add corresponding empty source info columns for the new columns
+        source_info_updates = {}
+        for column_name in updates.keys():
+            source_key = f"{constants.SOURCE_PREFIX}{column_name}"
+            source_info_updates[source_key] = None  # Empty source info
+
+        # Add new source info columns to the source info table
+        if source_info_updates:
+            # Get existing source info
+            schema = new_packet._source_info_table.schema
+            existing_source_info = new_packet._source_info_table.to_pylist()[0]
+
+            # Add the new empty source info columns
+            existing_source_info.update(source_info_updates)
+            schema_columns = list(schema)
+            schema_columns.extend(
+                [
+                    pa.field(name, pa.large_string())
+                    for name in source_info_updates.keys()
+                ]
+            )
+            new_schema = pa.schema(schema_columns)
+
+            # Update the source info table
+            new_packet._source_info_table = pa.Table.from_pylist(
+                [existing_source_info], new_schema
+            )
+
+        return new_packet
 
     # 8. Utility Operations
     def copy(self, include_cache: bool = True) -> Self:
