@@ -9,6 +9,7 @@ PACKET_RECORD_ID = "packet_id"
 SYSTEM_TAG_PREFIX = "system_tag_"
 POD_VERSION = "pod_version"
 EXECUTION_ENGINE = "execution_engine"
+POD_TIMESTAMP = "pod_ts"
 
 
 class SystemConstant:
@@ -54,6 +55,10 @@ class SystemConstant:
     @property
     def EXECUTION_ENGINE(self) -> str:
         return f"{self._global_prefix}{SYSTEM_COLUMN_PREFIX}{EXECUTION_ENGINE}"
+
+    @property
+    def POD_TIMESTAMP(self) -> str:
+        return f"{self._global_prefix}{SYSTEM_COLUMN_PREFIX}{POD_TIMESTAMP}"
 
 
 constants = SystemConstant()

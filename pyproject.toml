@@ -44,6 +44,7 @@ version_file = "src/orcapod/_version.py"
 [dependency-groups]
 dev = [
     "adlfs>=2024.12.0",
+    "boto3>=1.39.11",
     "deltalake>=1.0.2",
     "gcsfs>=2025.7.0",
     "httpie>=3.2.4",
@@ -51,6 +52,7 @@ dev = [
     "ipywidgets>=8.1.7",
     "jsonschema>=4.25.0",
     "minio>=7.2.16",
+    "mkdocs>=1.6.1",
     "pyarrow-stubs>=20.0.0.20250716",
     "pyiceberg>=0.9.1",
     "pytest>=8.3.5",
