@@ -81,14 +81,16 @@ class DictTag(DictDatagram):
         )
 
         if include_all_info or include_system_tags:
-            if self._cached_system_tags_table is None:
-                self._cached_system_tags_table = (
-                    self._data_context.type_converter.python_dicts_to_arrow_table(
-                        [self._system_tags],
-                        python_schema=self._system_tags_python_schema,
+            # Only create and stack system tags table if there are actually system tags
+            if self._system_tags:  # Check if system tags dict is not empty
+                if self._cached_system_tags_table is None:
+                    self._cached_system_tags_table = (
+                        self._data_context.type_converter.python_dicts_to_arrow_table(
+                            [self._system_tags],
+                            python_schema=self._system_tags_python_schema,
+                        )
                     )
-                )
-            table = arrow_utils.hstack_tables(table, self._cached_system_tags_table)
+                table = arrow_utils.hstack_tables(table, self._cached_system_tags_table)
         return table
 
     def as_dict(
@@ -515,10 +517,10 @@ class DictPacket(DictDatagram):
         current_source_info = self._source_info.copy()
 
         for key, value in source_info.items():
-            if not key.startswith(constants.SOURCE_PREFIX):
-                key = f"{constants.SOURCE_PREFIX}{key}"
-            if key in current_source_info:
-                current_source_info[key] = value
+            # Remove prefix if it exists, since _source_info stores unprefixed keys
+            if key.startswith(constants.SOURCE_PREFIX):
+                key = key.removeprefix(constants.SOURCE_PREFIX)
+            current_source_info[key] = value
 
         new_packet = self.copy(include_cache=False)
         new_packet._source_info = current_source_info

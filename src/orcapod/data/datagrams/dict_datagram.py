@@ -629,14 +629,9 @@ class DictDatagram(BaseDatagram):
         if not new_data:
             raise ValueError("Cannot drop all data columns")
 
-        # Reconstruct full data dict for new instance
-        full_data = new_data  # Filtered user data
-        full_data.update(self._meta_data)  # Keep existing meta data
-
-        return self.__class__(
-            data=full_data,
-            data_context=self._data_context,
-        )
+        new_datagram = self.copy(include_cache=False)
+        new_datagram._data = new_data
+        return new_datagram
 
     def rename(self, column_mapping: Mapping[str, str]) -> Self:
         """
@@ -681,7 +676,7 @@ class DictDatagram(BaseDatagram):
     def update(self, **updates: DataValue) -> Self:
         """
         Create a new DictDatagram with existing column values updated.
-        Maintains immutability by returning a new instance.
+        Maintains immutability by returning a new instance if any values are changed.
 
         Args:
             **updates: Column names and their new values (columns must exist)
@@ -707,15 +702,9 @@ class DictDatagram(BaseDatagram):
         new_data = dict(self._data)
         new_data.update(updates)
 
-        # Reconstruct full data dict for new instance
-        full_data = new_data  # Updated user data
-        full_data.update(self._meta_data)  # Keep existing meta data
-
-        # TODO: transfer over python schema
-        return self.__class__(
-            data=full_data,
-            data_context=self._data_context,
-        )
+        new_datagram = self.copy(include_cache=False)
+        new_datagram._data = new_data
+        return new_datagram
 
     def with_columns(
         self,
