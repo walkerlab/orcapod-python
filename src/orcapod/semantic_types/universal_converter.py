@@ -233,22 +233,37 @@ class UniversalTypeConverter:
         self,
         python_dicts: list[dict[str, Any]],
         python_schema: dict[str, type] | None = None,
+        arrow_schema: "pa.Schema | None" = None,
     ) -> pa.Table:
         """
         Convert a list of Python dictionaries to an Arrow table.
 
         This uses the main conversion logic and caches results for performance.
         """
-        if python_schema is None:
+        if python_schema is not None and arrow_schema is not None:
+            logger.warning(
+                "Both Python and Arrow schemas are provided. If they are not compatible, this may lead to unexpected behavior."
+            )
+        if python_schema is None and arrow_schema is None:
+            # Infer schema from data if not provided
             python_schema = infer_schema_from_pylist_data(python_dicts)
+
+        if arrow_schema is None:
+            # Convert to Arrow schema
+            assert python_schema is not None, "Python schema should not be None here"
+            arrow_schema = self.python_schema_to_arrow_schema(python_schema)
+
+        if python_schema is None:
+            assert arrow_schema is not None, (
+                "Arrow schema should not be None if reaching here"
+            )
+            python_schema = self.arrow_schema_to_python_schema(arrow_schema)
 
         struct_dicts = self.python_dicts_to_struct_dicts(
             python_dicts, python_schema=python_schema
         )
 
-        # Convert to Arrow schema
-        arrow_schema = self.python_schema_to_arrow_schema(python_schema)
-
+        # TODO: add more helpful message here
         return pa.Table.from_pylist(struct_dicts, schema=arrow_schema)
 
     def arrow_table_to_python_dicts(
@@ -581,7 +596,8 @@ class UniversalTypeConverter:
         """Create a cached conversion function for Python → Arrow values."""
 
         # Get the Arrow type for this Python type
-        arrow_type = self.python_type_to_arrow_type(python_type)
+        # TODO: check if this step is necessary
+        _ = self.python_type_to_arrow_type(python_type)
 
         # Check for semantic type first
         if self.semantic_registry:
@@ -783,109 +799,6 @@ class UniversalTypeConverter:
             "type_mappings": len(self._python_to_arrow_types)
             + len(self._arrow_to_python_types),
         }
-
-
-# def infer_schema_from_pylist_data(data: list[dict]) -> dict[str, type]:
-#     """
-#     Infer schema from sample data (best effort).
-
-#     Args:
-#         data: List of sample dictionaries
-
-#     Returns:
-#         Dictionary mapping field names to inferred Python types
-
-#     Note: This is best-effort inference and may not handle all edge cases.
-#     For production use, explicit schemas are recommended.
-#     """
-#     if not data:
-#         return {}
-
-#     schema = {}
-
-#     # Get all possible field names
-#     # use list to preserve order of appearance as much as possible
-#     all_fields = []
-#     for record in data:
-#         all_fields.extend(record.keys())
-
-#     all_fields = list(
-#         dict.fromkeys(all_fields)
-#     )  # Remove duplicates while preserving order
-
-#     # Infer type for each field
-#     for field_name in all_fields:
-#         field_values = [
-#             record.get(field_name)
-#             for record in data
-#             if field_name in record and record[field_name] is not None
-#         ]
-
-#         if not field_values:
-#             schema[field_name] = Any  # No non-null values found
-#             continue
-
-#         # Get types of all values
-#         value_types = {type(v) for v in field_values}
-
-#         if len(value_types) == 1:
-#             # All values have same type
-#             value_type = next(iter(value_types))
-
-#             # For containers, try to infer element types
-#             if value_type is list and field_values:
-#                 # Infer list element type from first non-empty list
-#                 for lst in field_values:
-#                     if lst:  # non-empty list
-#                         element_types = {type(elem) for elem in lst}
-#                         if len(element_types) == 1:
-#                             element_type = next(iter(element_types))
-#                             schema[field_name] = list[element_type]
-#                         else:
-#                             schema[field_name] = list[Any]  # Mixed types
-#                         break
-#                 else:
-#                     schema[field_name] = list[Any]  # All lists empty
-
-#             elif value_type in {set, frozenset} and field_values:
-#                 # Infer set element type from first non-empty set
-#                 for s in field_values:
-#                     if s:  # non-empty set
-#                         element_types = {type(elem) for elem in s}
-#                         if len(element_types) == 1:
-#                             element_type = next(iter(element_types))
-#                             schema[field_name] = set[element_type]
-#                         else:
-#                             schema[field_name] = set[Any]  # Mixed types
-#                         break
-#                 else:
-#                     schema[field_name] = set[Any]  # All sets empty
-
-#             elif value_type is dict and field_values:
-#                 # Infer dict types from first non-empty dict
-#                 for d in field_values:
-#                     if d:  # non-empty dict
-#                         key_types = {type(k) for k in d.keys()}
-#                         value_types = {type(v) for v in d.values()}
-
-#                         if len(key_types) == 1 and len(value_types) == 1:
-#                             key_type = next(iter(key_types))
-#                             val_type = next(iter(value_types))
-#                             schema[field_name] = dict[key_type, val_type]
-#                         else:
-#                             schema[field_name] = dict[Any, Any]  # Mixed types
-#                         break
-#                 else:
-#                     schema[field_name] = dict[Any, Any]  # All dicts empty
-
-#             else:
-#                 schema[field_name] = value_type
-
-#         else:
-#             # Mixed types - use Union or Any
-#             schema[field_name] = Any
-
-#     return schema
 
 
 # Public API functions

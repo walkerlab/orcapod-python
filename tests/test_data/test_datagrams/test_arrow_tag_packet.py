@@ -175,6 +175,232 @@ class TestArrowTagSystemTagOperations:
         assert "tag_type" in datagram.keys()
 
 
+class TestArrowTagDataOperations:
+    """Test that system tags are preserved across all data operations."""
+
+    @pytest.fixture
+    def sample_tag_with_system_tags(self):
+        """Create a sample tag with system tags for testing operations."""
+        table = pa.Table.from_pydict(
+            {"user_id": [123], "name": ["Alice"], "score": [85.5], "active": [True]}
+        )
+        system_tags = {
+            "tag_type": "user",
+            "version": "1.0",
+            "created_by": "system",
+            "priority": "high",
+        }
+        return ArrowTag(table, system_tags=system_tags)
+
+    def test_select_preserves_system_tags(self, sample_tag_with_system_tags):
+        """Test that select operation preserves system tags."""
+        original_system_tags = sample_tag_with_system_tags.system_tags()
+
+        # Select subset of columns
+        selected = sample_tag_with_system_tags.select("user_id", "name")
+
+        # System tags should be preserved
+        assert selected.system_tags() == original_system_tags
+        assert selected.system_tags()["tag_type"] == "user"
+        assert selected.system_tags()["version"] == "1.0"
+        assert selected.system_tags()["created_by"] == "system"
+        assert selected.system_tags()["priority"] == "high"
+
+        # Only selected data columns should remain
+        assert "user_id" in selected.keys()
+        assert "name" in selected.keys()
+        assert "score" not in selected.keys()
+        assert "active" not in selected.keys()
+
+    def test_drop_preserves_system_tags(self, sample_tag_with_system_tags):
+        """Test that drop operation preserves system tags."""
+        original_system_tags = sample_tag_with_system_tags.system_tags()
+
+        # Drop some columns
+        dropped = sample_tag_with_system_tags.drop("score", "active")
+
+        # System tags should be preserved
+        assert dropped.system_tags() == original_system_tags
+        assert dropped.system_tags()["tag_type"] == "user"
+        assert dropped.system_tags()["version"] == "1.0"
+
+        # Dropped columns should be gone, others should remain
+        assert "user_id" in dropped.keys()
+        assert "name" in dropped.keys()
+        assert "score" not in dropped.keys()
+        assert "active" not in dropped.keys()
+
+    def test_rename_preserves_system_tags(self, sample_tag_with_system_tags):
+        """Test that rename operation preserves system tags."""
+        original_system_tags = sample_tag_with_system_tags.system_tags()
+
+        # Rename columns
+        renamed = sample_tag_with_system_tags.rename(
+            {"user_id": "id", "name": "username"}
+        )
+
+        # System tags should be preserved
+        assert renamed.system_tags() == original_system_tags
+        assert renamed.system_tags()["tag_type"] == "user"
+        assert renamed.system_tags()["version"] == "1.0"
+
+        # Data columns should be renamed
+        assert "id" in renamed.keys()
+        assert "username" in renamed.keys()
+        assert "user_id" not in renamed.keys()
+        assert "name" not in renamed.keys()
+
+    def test_update_preserves_system_tags(self, sample_tag_with_system_tags):
+        """Test that update operation preserves system tags."""
+        original_system_tags = sample_tag_with_system_tags.system_tags()
+
+        # Update some column values
+        updated = sample_tag_with_system_tags.update(name="Alice Smith", score=92.0)
+
+        # System tags should be preserved
+        assert updated.system_tags() == original_system_tags
+        assert updated.system_tags()["tag_type"] == "user"
+        assert updated.system_tags()["version"] == "1.0"
+
+        # Updated values should be reflected
+        assert updated["name"] == "Alice Smith"
+        assert updated["score"] == 92.0
+        assert updated["user_id"] == 123  # Unchanged
+
+    def test_with_columns_preserves_system_tags(self, sample_tag_with_system_tags):
+        """Test that with_columns operation preserves system tags."""
+        original_system_tags = sample_tag_with_system_tags.system_tags()
+
+        # Add new columns
+        with_new_cols = sample_tag_with_system_tags.with_columns(
+            email="alice@example.com", age=30, department="engineering"
+        )
+
+        # System tags should be preserved
+        assert with_new_cols.system_tags() == original_system_tags
+        assert with_new_cols.system_tags()["tag_type"] == "user"
+        assert with_new_cols.system_tags()["version"] == "1.0"
+        assert with_new_cols.system_tags()["created_by"] == "system"
+        assert with_new_cols.system_tags()["priority"] == "high"
+
+        # New columns should be added
+        assert with_new_cols["email"] == "alice@example.com"
+        assert with_new_cols["age"] == 30
+        assert with_new_cols["department"] == "engineering"
+
+        # Original columns should remain
+        assert with_new_cols["user_id"] == 123
+        assert with_new_cols["name"] == "Alice"
+
+    def test_with_meta_columns_preserves_system_tags(self, sample_tag_with_system_tags):
+        """Test that with_meta_columns operation preserves system tags."""
+        original_system_tags = sample_tag_with_system_tags.system_tags()
+
+        # Add meta columns
+        with_meta = sample_tag_with_system_tags.with_meta_columns(
+            pipeline_version="v2.1.0", processed_at="2024-01-01"
+        )
+
+        # System tags should be preserved
+        assert with_meta.system_tags() == original_system_tags
+        assert with_meta.system_tags()["tag_type"] == "user"
+        assert with_meta.system_tags()["version"] == "1.0"
+
+        # Meta columns should be added
+        assert with_meta.get_meta_value("pipeline_version") == "v2.1.0"
+        assert with_meta.get_meta_value("processed_at") == "2024-01-01"
+
+    def test_drop_meta_columns_preserves_system_tags(self, sample_tag_with_system_tags):
+        """Test that drop_meta_columns operation preserves system tags."""
+        # First add some meta columns
+        with_meta = sample_tag_with_system_tags.with_meta_columns(
+            pipeline_version="v2.1.0", processed_at="2024-01-01"
+        )
+        original_system_tags = with_meta.system_tags()
+
+        # Drop meta columns
+        dropped_meta = with_meta.drop_meta_columns("pipeline_version")
+
+        # System tags should be preserved
+        assert dropped_meta.system_tags() == original_system_tags
+        assert dropped_meta.system_tags()["tag_type"] == "user"
+        assert dropped_meta.system_tags()["version"] == "1.0"
+
+        # Meta column should be dropped
+        assert dropped_meta.get_meta_value("pipeline_version") is None
+        assert dropped_meta.get_meta_value("processed_at") == "2024-01-01"
+
+    def test_with_context_key_preserves_system_tags(self, sample_tag_with_system_tags):
+        """Test that with_context_key operation preserves system tags."""
+        original_system_tags = sample_tag_with_system_tags.system_tags()
+
+        # Change context key (note: "test" will resolve to "default" but that's expected)
+        new_context = sample_tag_with_system_tags.with_context_key("std:v0.1:test")
+
+        # System tags should be preserved
+        assert new_context.system_tags() == original_system_tags
+        assert new_context.system_tags()["tag_type"] == "user"
+        assert new_context.system_tags()["version"] == "1.0"
+
+        # Context should be different from original (even if resolved to default)
+        # The important thing is that the operation worked and system tags are preserved
+        assert new_context.data_context_key.startswith("std:v0.1:")
+        # Verify that this is a different object
+        assert new_context is not sample_tag_with_system_tags
+
+    def test_copy_preserves_system_tags(self, sample_tag_with_system_tags):
+        """Test that copy operation preserves system tags."""
+        original_system_tags = sample_tag_with_system_tags.system_tags()
+
+        # Copy with cache
+        copied_with_cache = sample_tag_with_system_tags.copy(include_cache=True)
+
+        # Copy without cache
+        copied_without_cache = sample_tag_with_system_tags.copy(include_cache=False)
+
+        # System tags should be preserved in both cases
+        assert copied_with_cache.system_tags() == original_system_tags
+        assert copied_without_cache.system_tags() == original_system_tags
+
+        # Verify all system tags are present
+        for copy_obj in [copied_with_cache, copied_without_cache]:
+            assert copy_obj.system_tags()["tag_type"] == "user"
+            assert copy_obj.system_tags()["version"] == "1.0"
+            assert copy_obj.system_tags()["created_by"] == "system"
+            assert copy_obj.system_tags()["priority"] == "high"
+
+    def test_chained_operations_preserve_system_tags(self, sample_tag_with_system_tags):
+        """Test that chained operations preserve system tags."""
+        original_system_tags = sample_tag_with_system_tags.system_tags()
+
+        # Chain multiple operations
+        result = (
+            sample_tag_with_system_tags.with_columns(
+                full_name="Alice Smith", department="eng"
+            )
+            .drop("score")
+            .update(active=False)
+            .rename({"user_id": "id"})
+            .with_meta_columns(processed=True)
+        )
+
+        # System tags should be preserved through all operations
+        assert result.system_tags() == original_system_tags
+        assert result.system_tags()["tag_type"] == "user"
+        assert result.system_tags()["version"] == "1.0"
+        assert result.system_tags()["created_by"] == "system"
+        assert result.system_tags()["priority"] == "high"
+
+        # Verify the chained operations worked
+        assert result["full_name"] == "Alice Smith"
+        assert result["department"] == "eng"
+        assert "score" not in result.keys()
+        assert result["active"] is False
+        assert "id" in result.keys()
+        assert "user_id" not in result.keys()
+        assert result.get_meta_value("processed") is True
+
+
 class TestArrowPacketInitialization:
     """Test ArrowPacket initialization and basic properties."""
 
@@ -658,7 +884,7 @@ class TestArrowTagPacketArrowSpecific:
 
         assert tag["id"] == 123
         assert tag["numbers"] == [1, 2, 3]
-        assert tag["struct_field"]["nested"] == "value"
+        assert tag["struct_field"]["nested"] == "value"  # type: ignore
 
     def test_packet_complex_arrow_types(self):
         """Test packets with complex Arrow data types."""
@@ -678,7 +904,7 @@ class TestArrowTagPacketArrowSpecific:
 
         assert packet["id"] == 123
         assert packet["numbers"] == [1, 2, 3]
-        assert packet["struct_field"]["nested"] == "value"
+        assert packet["struct_field"]["nested"] == "value"  # type: ignore
 
     def test_tag_timestamp_handling(self):
         """Test tag handling of timestamp types."""

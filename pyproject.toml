@@ -16,6 +16,7 @@ dependencies = [
     "pyarrow>=20.0.0",
     "polars>=1.31.0",
     "beartype>=0.21.0",
+    "deltalake>=1.0.2",
 ]
 readme = "README.md"
 requires-python = ">=3.12.0"
@@ -62,5 +63,23 @@ dev = [
     "ruff>=0.11.11",
     "s3fs>=2025.7.0",
     "tqdm>=4.67.1",
-    "unitycatalog-client>=0.3.0",
 ]
+
+[tool.pixi.workspace]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[tool.pixi.pypi-dependencies]
+orcapod = { path = ".", editable = true }
+
+[tool.pixi.environments]
+default = { solve-group = "default" }
+all = { features = ["all", "redis", "ray"], solve-group = "default" }
+dev = { features = ["dev"], solve-group = "default" }
+ray = { features = ["ray"], solve-group = "default" }
+redis = { features = ["redis"], solve-group = "default" }
+
+[tool.pixi.tasks]
+
+[tool.pixi.dependencies]
+python = "3.13.*"

@@ -115,18 +115,6 @@ wheels = [
 ]
 
 [[package]]
-name = "aiohttp-retry"
-version = "2.9.1"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "aiohttp" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/9d/61/ebda4d8e3d8cfa1fd3db0fb428db2dd7461d5742cea35178277ad180b033/aiohttp_retry-2.9.1.tar.gz", hash = "sha256:8eb75e904ed4ee5c2ec242fefe85bf04240f685391c4879d8f541d6028ff01f1", size = 13608, upload-time = "2024-11-06T10:44:54.574Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/1a/99/84ba7273339d0f3dfa57901b846489d2e5c2cd731470167757f1935fffbd/aiohttp_retry-2.9.1-py3-none-any.whl", hash = "sha256:66d2759d1921838256a05a3f80ad7e724936f083e35be5abb5e16eed6be6dc54", size = 9981, upload-time = "2024-11-06T10:44:52.917Z" },
-]
-
-[[package]]
 name = "aioitertools"
 version = "0.12.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1780,6 +1768,7 @@ name = "orcapod"
 source = { editable = "." }
 dependencies = [
     { name = "beartype" },
+    { name = "deltalake" },
     { name = "matplotlib" },
     { name = "networkx" },
     { name = "pandas" },
@@ -1825,12 +1814,12 @@ dev = [
     { name = "ruff" },
     { name = "s3fs" },
     { name = "tqdm" },
-    { name = "unitycatalog-client" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "beartype", specifier = ">=0.21.0" },
+    { name = "deltalake", specifier = ">=1.0.2" },
     { name = "ipywidgets", marker = "extra == 'ray'", specifier = ">=8.1.7" },
     { name = "matplotlib", specifier = ">=3.10.3" },
     { name = "networkx" },
@@ -1868,7 +1857,6 @@ dev = [
     { name = "ruff", specifier = ">=0.11.11" },
     { name = "s3fs", specifier = ">=2025.7.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
-    { name = "unitycatalog-client", specifier = ">=0.3.0" },
 ]
 
 [[package]]
@@ -2956,23 +2944,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/95/32/1a225d6164441be760d75c2c42e2780dc0873fe382da3e98a2e1e48361e5/tzdata-2025.2.tar.gz", hash = "sha256:b60a638fcc0daffadf82fe0f57e53d06bdec2f36c4df66280ae79bce6bd6f2b9", size = 196380, upload-time = "2025-03-23T13:54:43.652Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/5c/23/c7abc0ca0a1526a0774eca151daeb8de62ec457e77262b66b359c3c7679e/tzdata-2025.2-py2.py3-none-any.whl", hash = "sha256:1a403fada01ff9221ca8044d701868fa132215d84beb92242d9acd2147f667a8", size = 347839, upload-time = "2025-03-23T13:54:41.845Z" },
-]
-
-[[package]]
-name = "unitycatalog-client"
-version = "0.3.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "aiohttp" },
-    { name = "aiohttp-retry" },
-    { name = "pydantic" },
-    { name = "python-dateutil" },
-    { name = "typing-extensions" },
-    { name = "urllib3" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/2a/14/430e0fd06707b5ade9ba69a5847e1645a1adab7761b8149fd1916f814216/unitycatalog_client-0.3.0.tar.gz", hash = "sha256:6373b8c26723307beb9e14e92c9c5b75cc6dab343ba30b0a1d93c421ca944dfa", size = 63438, upload-time = "2025-06-06T15:23:06.584Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/76/dd/7e12caea6075a02feec609f60e2b7fe06a7b39f1c7026b32b21eaa6a68b0/unitycatalog_client-0.3.0-py3-none-any.whl", hash = "sha256:29d6061cafd076a098d515d3019a19d2449c14b82621b3910c1273cba16ee6e5", size = 159106, upload-time = "2025-06-06T15:23:03.839Z" },
 ]
 
 [[package]]

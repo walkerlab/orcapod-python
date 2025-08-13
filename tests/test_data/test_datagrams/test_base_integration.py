@@ -122,7 +122,7 @@ class TestBaseDatagram:
         """Test that BaseDatagram cannot be instantiated directly."""
         try:
             # This should raise TypeError for abstract class
-            BaseDatagram()
+            BaseDatagram()  # type: ignore
             pytest.fail("Expected TypeError for abstract class instantiation")
         except TypeError as e:
             # Expected behavior - BaseDatagram is abstract
@@ -573,10 +573,10 @@ class TestDatagramErrorHandling:
 
     def test_consistent_validation(self):
         """Test that validation is consistent."""
-        data = {"user_id": [123], "name": ["Alice"]}  # Lists for PyArrow
+        data = {"user_id": 123, "name": "Alice"}  # Lists for PyArrow
 
         dict_datagram = DictDatagram(data)
-        table = pa.Table.from_pydict(data)
+        table = pa.Table.from_pylist([data])
         arrow_datagram = ArrowDatagram(table)
 
         # Both should handle edge cases consistently

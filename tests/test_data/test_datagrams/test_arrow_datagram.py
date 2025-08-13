@@ -11,18 +11,19 @@ This module tests all functionality of the ArrowDatagram class including:
 - Context operations
 - Utility operations
 """
+# Verified by Edgar Y. Walker
 
+from typing import cast
 import pytest
 import pyarrow as pa
 from datetime import datetime, date
 
 from orcapod.data.datagrams import ArrowDatagram
 from orcapod.data.system_constants import constants
+from orcapod.protocols.data_protocols import Datagram
 
 
 class TestArrowDatagramInitialization:
-    """Test ArrowDatagram initialization and basic properties."""
-
     def test_basic_initialization(self):
         """Test basic initialization with PyArrow table."""
         table = pa.Table.from_pydict(
@@ -49,6 +50,13 @@ class TestArrowDatagramInitialization:
         with pytest.raises(ValueError, match="exactly one row"):
             ArrowDatagram(table)
 
+    def test_string_type_initialization(self) -> None:
+        """Initializing with pa.string() table should yield table with pa.large_string()"""
+        table = pa.Table.from_pydict({"name": ["John"]})
+        datagram = ArrowDatagram(table)
+        # TODO: fix this type annotation mistake in the pyi of pyarrow-stubs
+        assert datagram._data_table.schema[0].type == pa.large_string()  # type: ignore
+
     def test_initialization_with_meta_info(self):
         """Test initialization with meta information."""
         table = pa.Table.from_pydict({"user_id": [123], "name": ["Alice"]})
@@ -59,6 +67,10 @@ class TestArrowDatagramInitialization:
         assert datagram["user_id"] == 123
         assert datagram.get_meta_value("pipeline_version") == "v1.0"
         assert datagram.get_meta_value("timestamp") == "2024-01-01"
+        assert [
+            f"{constants.META_PREFIX}pipeline_version"
+            in datagram.as_table(include_meta_columns=True).column_names
+        ]
 
     def test_initialization_with_context_in_table(self):
         """Test initialization when context is included in table."""
@@ -81,8 +93,8 @@ class TestArrowDatagramInitialization:
             {
                 "user_id": [123],
                 "name": ["Alice"],
-                "__version": ["1.0"],
-                "__timestamp": ["2024-01-01"],
+                f"{constants.META_PREFIX}version": ["1.0"],
+                f"{constants.META_PREFIX}timestamp": ["2024-01-01"],
             }
         )
 
@@ -96,14 +108,17 @@ class TestArrowDatagramInitialization:
         """Test initialization with explicit data context."""
         table = pa.Table.from_pydict({"user_id": [123], "name": ["Alice"]})
 
-        datagram = ArrowDatagram(table, data_context="v0.1")
+        datagram = ArrowDatagram(table, data_context="std:v0.1:default")
 
         assert datagram.data_context_key == "std:v0.1:default"
 
     def test_initialization_no_data_columns_fails(self):
         """Test initialization with no data columns fails."""
         table = pa.Table.from_pydict(
-            {"__version": ["1.0"], constants.CONTEXT_KEY: ["v0.1"]}
+            {
+                f"{constants.META_PREFIX}version": ["1.0"],
+                constants.CONTEXT_KEY: ["std:v0.1:default"],
+            }
         )
 
         with pytest.raises(ValueError, match="at least one data column"):
@@ -117,7 +132,13 @@ class TestArrowDatagramDictInterface:
     def sample_datagram(self):
         """Create a sample datagram for testing."""
         table = pa.Table.from_pydict(
-            {"user_id": [123], "name": ["Alice"], "score": [85.5], "active": [True]}
+            {
+                "user_id": [123],
+                "name": ["Alice"],
+                "score": [85.5],
+                "active": [True],
+                f"{constants.META_PREFIX}version": ["1.0"],
+            }
         )
         return ArrowDatagram(table)
 
@@ -142,6 +163,7 @@ class TestArrowDatagramDictInterface:
     def test_iter(self, sample_datagram):
         """Test __iter__ method."""
         keys = list(sample_datagram)
+        # this should not include the meta column
         expected_keys = ["user_id", "name", "score", "active"]
         assert set(keys) == set(expected_keys)
 
@@ -150,6 +172,29 @@ class TestArrowDatagramDictInterface:
         assert sample_datagram.get("user_id") == 123
         assert sample_datagram.get("nonexistent") is None
         assert sample_datagram.get("nonexistent", "default") == "default"
+
+
+class TestArrowDatagramProtocolAdherance:
+    @pytest.fixture
+    def basic_datagram(self) -> ArrowDatagram:
+        table = pa.Table.from_pydict(
+            {
+                "user_id": [123],
+                "name": ["Alice"],
+                "score": [85.5],
+                "active": [True],
+                f"{constants.META_PREFIX}version": ["1.0"],
+            }
+        )
+        return ArrowDatagram(table)
+
+    def test_is_instance_of_datagram(self, basic_datagram):
+        # ArrowDatagram should ben an instance of Datagram protocol
+        assert isinstance(basic_datagram, Datagram)
+
+        # verify that it is NOT possible to check for inheritance
+        with pytest.raises(TypeError):
+            issubclass(ArrowDatagram, Datagram)
 
 
 class TestArrowDatagramStructuralInfo:
@@ -162,8 +207,8 @@ class TestArrowDatagramStructuralInfo:
             {
                 "user_id": [123],
                 "name": ["Alice"],
-                "__version": ["1.0"],
-                "__pipeline_id": ["test_pipeline"],
+                f"{constants.META_PREFIX}version": ["1.0"],
+                f"{constants.META_PREFIX}pipeline_id": ["test_pipeline"],
             }
         )
         return ArrowDatagram(table)
@@ -177,7 +222,12 @@ class TestArrowDatagramStructuralInfo:
     def test_keys_with_meta_columns(self, datagram_with_meta):
         """Test keys method including meta columns."""
         keys = datagram_with_meta.keys(include_meta_columns=True)
-        expected = ("user_id", "name", "__version", "__pipeline_id")
+        expected = (
+            "user_id",
+            "name",
+            f"{constants.META_PREFIX}version",
+            f"{constants.META_PREFIX}pipeline_id",
+        )
         assert set(keys) == set(expected)
 
     def test_keys_with_context(self, datagram_with_meta):
@@ -192,16 +242,30 @@ class TestArrowDatagramStructuralInfo:
         expected = (
             "user_id",
             "name",
-            "__version",
-            "__pipeline_id",
+            f"{constants.META_PREFIX}version",
+            f"{constants.META_PREFIX}pipeline_id",
             constants.CONTEXT_KEY,
         )
         assert set(keys) == set(expected)
 
     def test_keys_with_specific_meta_prefix(self, datagram_with_meta):
         """Test keys method with specific meta column prefixes."""
-        keys = datagram_with_meta.keys(include_meta_columns=["__version"])
-        expected = ("user_id", "name", "__version")
+        keys = datagram_with_meta.keys(
+            include_meta_columns=[f"{constants.META_PREFIX}version"]
+        )
+        expected = ("user_id", "name", f"{constants.META_PREFIX}version")
+        assert set(keys) == set(expected)
+
+    def test_keys_with_nonexistent_meta_prefix(self, datagram_with_meta):
+        """Test keys methods when called with non-existent meta column prefixes"""
+        # non-existing prefix should be ignored
+        keys = datagram_with_meta.keys(
+            include_meta_columns=[
+                f"{constants.META_PREFIX}nonexistent",
+                f"{constants.META_PREFIX}version",
+            ]
+        )
+        expected = ("user_id", "name", f"{constants.META_PREFIX}version")
         assert set(keys) == set(expected)
 
     def test_types_data_only(self, datagram_with_meta):
@@ -215,7 +279,12 @@ class TestArrowDatagramStructuralInfo:
     def test_types_with_meta_columns(self, datagram_with_meta):
         """Test types method including meta columns."""
         types = datagram_with_meta.types(include_meta_columns=True)
-        expected_keys = {"user_id", "name", "__version", "__pipeline_id"}
+        expected_keys = {
+            "user_id",
+            "name",
+            f"{constants.META_PREFIX}version",
+            f"{constants.META_PREFIX}pipeline_id",
+        }
         assert set(types.keys()) == expected_keys
 
     def test_types_with_context(self, datagram_with_meta):
@@ -234,7 +303,12 @@ class TestArrowDatagramStructuralInfo:
     def test_arrow_schema_with_meta_columns(self, datagram_with_meta):
         """Test arrow_schema method including meta columns."""
         schema = datagram_with_meta.arrow_schema(include_meta_columns=True)
-        expected_names = {"user_id", "name", "__version", "__pipeline_id"}
+        expected_names = {
+            "user_id",
+            "name",
+            f"{constants.META_PREFIX}version",
+            f"{constants.META_PREFIX}pipeline_id",
+        }
         assert set(schema.names) == expected_names
 
     def test_arrow_schema_with_context(self, datagram_with_meta):
@@ -252,6 +326,31 @@ class TestArrowDatagramStructuralInfo:
         assert hash1 == hash2
         assert isinstance(hash1, str)
         assert len(hash1) > 0
+
+    def test_content_hash_same_data_different_meta_data(self):
+        """Test that the content hash is the same for identical data with different meta data."""
+        table1 = pa.Table.from_pydict(
+            {
+                "user_id": [123],
+                "name": ["Alice"],
+                "__version": ["1.0"],
+                "__pipeline_id": ["pipeline_1"],
+            }
+        )
+        table2 = pa.Table.from_pydict(
+            {
+                "user_id": [123],
+                "name": ["Alice"],
+                "__version": ["1.1"],
+                "__pipeline_id": ["pipeline_2"],
+            }
+        )
+        datagram1 = ArrowDatagram(table1)
+        datagram2 = ArrowDatagram(table2)
+        hash1 = datagram1.content_hash()
+        hash2 = datagram2.content_hash()
+
+        assert hash1 == hash2
 
     def test_content_hash_different_data(self):
         """Test that different data produces different hashes."""
@@ -277,8 +376,8 @@ class TestArrowDatagramFormatConversions:
             {
                 "user_id": [123],
                 "name": ["Alice"],
-                "__version": ["1.0"],
-                constants.CONTEXT_KEY: ["v0.1"],
+                f"{constants.META_PREFIX}version": ["1.0"],
+                constants.CONTEXT_KEY: ["std:v0.1:default"],
             }
         )
         return ArrowDatagram(table)
@@ -292,7 +391,11 @@ class TestArrowDatagramFormatConversions:
     def test_as_dict_with_meta_columns(self, datagram_with_all):
         """Test as_dict method including meta columns."""
         result = datagram_with_all.as_dict(include_meta_columns=True)
-        expected = {"user_id": 123, "name": "Alice", "__version": "1.0"}
+        expected = {
+            "user_id": 123,
+            "name": "Alice",
+            f"{constants.META_PREFIX}version": "1.0",
+        }
         assert result == expected
 
     def test_as_dict_with_context(self, datagram_with_all):
@@ -308,13 +411,17 @@ class TestArrowDatagramFormatConversions:
     def test_as_dict_with_all_info(self, datagram_with_all):
         """Test as_dict method including all information."""
         result = datagram_with_all.as_dict(include_all_info=True)
+        all_placed = datagram_with_all.as_dict(
+            include_meta_columns=True, include_context=True
+        )
         expected = {
             "user_id": 123,
             "name": "Alice",
-            "__version": "1.0",
+            f"{constants.META_PREFIX}version": "1.0",
             constants.CONTEXT_KEY: "std:v0.1:default",
         }
         assert result == expected
+        assert result == all_placed
 
     def test_as_table_data_only(self, datagram_with_all):
         """Test as_table method with data columns only."""
@@ -330,8 +437,9 @@ class TestArrowDatagramFormatConversions:
         table = datagram_with_all.as_table(include_meta_columns=True)
 
         assert len(table) == 1
-        expected_columns = {"user_id", "name", "__version"}
+        expected_columns = {"user_id", "name", f"{constants.META_PREFIX}version"}
         assert set(table.column_names) == expected_columns
+        assert table[f"{constants.META_PREFIX}version"].to_pylist() == ["1.0"]
 
     def test_as_table_with_context(self, datagram_with_all):
         """Test as_table method including context."""
@@ -340,10 +448,12 @@ class TestArrowDatagramFormatConversions:
         assert len(table) == 1
         expected_columns = {"user_id", "name", constants.CONTEXT_KEY}
         assert set(table.column_names) == expected_columns
+        assert table[constants.CONTEXT_KEY].to_pylist() == ["std:v0.1:default"]
 
     def test_as_arrow_compatible_dict(self, datagram_with_all):
         """Test as_arrow_compatible_dict method."""
         result = datagram_with_all.as_arrow_compatible_dict()
+        # TODO: add test case including complex data types
 
         # Should have same keys as as_dict
         dict_result = datagram_with_all.as_dict()
@@ -360,8 +470,8 @@ class TestArrowDatagramMetaOperations:
             {
                 "user_id": [123],
                 "name": ["Alice"],
-                "__version": ["1.0"],
-                "__pipeline_id": ["test"],
+                f"{constants.META_PREFIX}version": ["1.0"],
+                f"{constants.META_PREFIX}pipeline_id": ["test"],
             }
         )
         return ArrowDatagram(table)
@@ -369,13 +479,19 @@ class TestArrowDatagramMetaOperations:
     def test_meta_columns_property(self, datagram_with_meta):
         """Test meta_columns property."""
         meta_cols = datagram_with_meta.meta_columns
-        expected = ("__version", "__pipeline_id")
+        expected = (
+            f"{constants.META_PREFIX}version",
+            f"{constants.META_PREFIX}pipeline_id",
+        )
         assert set(meta_cols) == set(expected)
 
     def test_get_meta_value(self, datagram_with_meta):
         """Test get_meta_value method."""
         # With prefix
-        assert datagram_with_meta.get_meta_value("__version") == "1.0"
+        assert (
+            datagram_with_meta.get_meta_value(f"{constants.META_PREFIX}version")
+            == "1.0"
+        )
 
         # Without prefix
         assert datagram_with_meta.get_meta_value("version") == "1.0"
@@ -387,7 +503,7 @@ class TestArrowDatagramMetaOperations:
         """Test with_meta_columns method."""
         updated = datagram_with_meta.with_meta_columns(
             version="2.0",  # Update existing
-            new_meta="new_value",  # Add new
+            new_meta=3.5,  # Add new
         )
 
         # Original should be unchanged
@@ -395,7 +511,16 @@ class TestArrowDatagramMetaOperations:
 
         # Updated should have new values
         assert updated.get_meta_value("version") == "2.0"
-        assert updated.get_meta_value("new_meta") == "new_value"
+        assert updated.get_meta_value("new_meta") == 3.5
+
+        # meta data should be available as meta-prefixed column
+        table_with_meta = updated.as_table(include_meta_columns=True)
+        assert table_with_meta[f"{constants.META_PREFIX}version"].to_pylist() == ["2.0"]
+        assert table_with_meta[f"{constants.META_PREFIX}new_meta"].to_pylist() == [3.5]
+
+        assert (
+            table_with_meta[f"{constants.META_PREFIX}version"].type == pa.large_string()
+        )
 
         # Data should be preserved
         assert updated["user_id"] == 123
@@ -403,7 +528,9 @@ class TestArrowDatagramMetaOperations:
 
     def test_with_meta_columns_prefixed_keys(self, datagram_with_meta):
         """Test with_meta_columns method with prefixed keys."""
-        updated = datagram_with_meta.with_meta_columns(__version="2.0")
+        updated = datagram_with_meta.with_meta_columns(
+            **{f"{constants.META_PREFIX}version": "2.0"}
+        )
 
         assert updated.get_meta_value("version") == "2.0"
 
@@ -414,7 +541,7 @@ class TestArrowDatagramMetaOperations:
         # Original should be unchanged
         assert datagram_with_meta.get_meta_value("version") == "1.0"
 
-        # Updated should not have dropped column
+        # Updated should not have dropped other  metadata columns
         assert updated.get_meta_value("version") is None
         assert updated.get_meta_value("pipeline_id") == "test"
 
@@ -423,13 +550,19 @@ class TestArrowDatagramMetaOperations:
 
     def test_drop_meta_columns_prefixed(self, datagram_with_meta):
         """Test drop_meta_columns method with prefixed keys."""
-        updated = datagram_with_meta.drop_meta_columns("__version")
+        updated = datagram_with_meta.drop_meta_columns(
+            f"{constants.META_PREFIX}version"
+        )
 
         assert updated.get_meta_value("version") is None
 
     def test_drop_meta_columns_multiple(self, datagram_with_meta):
         """Test dropping multiple meta columns."""
         updated = datagram_with_meta.drop_meta_columns("version", "pipeline_id")
+
+        # original should not be modified
+        assert datagram_with_meta.get_meta_value("version") == "1.0"
+        assert datagram_with_meta.get_meta_value("pipeline_id") == "test"
 
         assert updated.get_meta_value("version") is None
         assert updated.get_meta_value("pipeline_id") is None
@@ -459,22 +592,35 @@ class TestArrowDatagramDataOperations:
     def sample_datagram(self):
         """Create a sample datagram for testing."""
         table = pa.Table.from_pydict(
-            {"user_id": [123], "name": ["Alice"], "score": [85.5], "active": [True]}
+            {
+                "user_id": [123],
+                "name": ["Alice"],
+                "score": [85.5],
+                "active": [True],
+                f"{constants.META_PREFIX}version": ["1.0"],
+                f"{constants.META_PREFIX}pipeline_id": ["test"],
+            }
         )
         return ArrowDatagram(table)
 
-    def test_select(self, sample_datagram):
+    def test_select(self, sample_datagram: ArrowDatagram):
         """Test select method."""
         selected = sample_datagram.select("user_id", "name")
 
         assert set(selected.keys()) == {"user_id", "name"}
         assert selected["user_id"] == 123
         assert selected["name"] == "Alice"
+        # meta values should be copied over
+        assert selected.get_meta_value("version") == "1.0"
+        assert selected.get_meta_value("pipeline_id") == "test"
+
+        # context should be preserved
+        assert selected.data_context_key == sample_datagram.data_context_key
 
         # Original should be unchanged
         assert set(sample_datagram.keys()) == {"user_id", "name", "score", "active"}
 
-    def test_select_single_column(self, sample_datagram):
+    def test_select_single_column(self, sample_datagram: ArrowDatagram):
         """Test select method with single column."""
         selected = sample_datagram.select("user_id")
 
@@ -486,7 +632,7 @@ class TestArrowDatagramDataOperations:
         with pytest.raises(ValueError):
             sample_datagram.select("user_id", "nonexistent")
 
-    def test_drop(self, sample_datagram):
+    def test_drop(self, sample_datagram: ArrowDatagram):
         """Test drop method."""
         dropped = sample_datagram.drop("score", "active")
 
@@ -494,27 +640,36 @@ class TestArrowDatagramDataOperations:
         assert dropped["user_id"] == 123
         assert dropped["name"] == "Alice"
 
+        # drop should preserve context and meta values
+        assert dropped.get_meta_value("version") == "1.0"
+        assert dropped.get_meta_value("pipeline_id") == "test"
+        assert dropped.data_context_key == sample_datagram.data_context_key
+
         # Original should be unchanged
         assert set(sample_datagram.keys()) == {"user_id", "name", "score", "active"}
 
-    def test_drop_single_column(self, sample_datagram):
+    def test_drop_single_column(self, sample_datagram: ArrowDatagram):
         """Test drop method with single column."""
         dropped = sample_datagram.drop("score")
+        # drop should preserve context and meta values
+        assert dropped.get_meta_value("version") == "1.0"
+        assert dropped.get_meta_value("pipeline_id") == "test"
+        assert dropped.data_context_key == sample_datagram.data_context_key
 
         assert set(dropped.keys()) == {"user_id", "name", "active"}
 
-    def test_drop_missing_column(self, sample_datagram):
+    def test_drop_missing_column(self, sample_datagram: ArrowDatagram):
         """Test drop method with missing column raises KeyError."""
         with pytest.raises(KeyError):
             sample_datagram.drop("nonexistent")
 
-    def test_drop_ignore_missing(self, sample_datagram):
+    def test_drop_ignore_missing(self, sample_datagram: ArrowDatagram):
         """Test drop method with ignore_missing=True."""
         dropped = sample_datagram.drop("score", "nonexistent", ignore_missing=True)
 
         assert set(dropped.keys()) == {"user_id", "name", "active"}
 
-    def test_rename(self, sample_datagram):
+    def test_rename(self, sample_datagram: ArrowDatagram):
         """Test rename method."""
         renamed = sample_datagram.rename({"user_id": "id", "name": "username"})
 
@@ -524,11 +679,16 @@ class TestArrowDatagramDataOperations:
         assert renamed["username"] == "Alice"
         assert renamed["score"] == 85.5
 
+        # meta and context should be unaffected
+        assert renamed.get_meta_value("version") == "1.0"
+        assert renamed.get_meta_value("pipeline_id") == "test"
+        assert renamed.data_context_key == sample_datagram.data_context_key
+
         # Original should be unchanged
         assert "user_id" in sample_datagram
         assert "id" not in sample_datagram
 
-    def test_rename_empty_mapping(self, sample_datagram):
+    def test_rename_empty_mapping(self, sample_datagram: ArrowDatagram):
         """Test rename method with empty mapping."""
         renamed = sample_datagram.rename({})
 
@@ -536,7 +696,7 @@ class TestArrowDatagramDataOperations:
         assert set(renamed.keys()) == set(sample_datagram.keys())
         assert renamed["user_id"] == sample_datagram["user_id"]
 
-    def test_update(self, sample_datagram):
+    def test_update(self, sample_datagram: ArrowDatagram):
         """Test update method."""
         updated = sample_datagram.update(score=95.0, active=False)
 
@@ -549,19 +709,20 @@ class TestArrowDatagramDataOperations:
         assert not updated["active"]
         assert updated["user_id"] == 123  # Unchanged columns preserved
 
-    def test_update_missing_column(self, sample_datagram):
+    def test_update_missing_column(self, sample_datagram: ArrowDatagram):
         """Test update method with missing column raises KeyError."""
         with pytest.raises(KeyError):
             sample_datagram.update(nonexistent="value")
 
-    def test_update_empty(self, sample_datagram):
+    def test_update_empty(self, sample_datagram: ArrowDatagram):
         """Test update method with no updates returns same instance."""
         updated = sample_datagram.update()
 
         # Should return the same instance
+        # TODO: reconsider if this behavior is what is specified by the protocol
         assert updated is sample_datagram
 
-    def test_with_columns(self, sample_datagram):
+    def test_with_columns(self, sample_datagram: ArrowDatagram):
         """Test with_columns method."""
         new_datagram = sample_datagram.with_columns(
             department="Engineering", salary=75000
@@ -577,7 +738,7 @@ class TestArrowDatagramDataOperations:
         assert new_datagram["department"] == "Engineering"
         assert new_datagram["salary"] == 75000
 
-    def test_with_columns_with_types(self, sample_datagram):
+    def test_with_columns_with_types(self, sample_datagram: ArrowDatagram):
         """Test with_columns method with explicit types."""
         new_datagram = sample_datagram.with_columns(
             column_types={"salary": int, "rate": float}, salary=75000, rate=85.5
@@ -596,6 +757,7 @@ class TestArrowDatagramDataOperations:
         """Test with_columns method with no columns returns same instance."""
         new_datagram = sample_datagram.with_columns()
 
+        # TODO: again consider if this behavior is what's specified by protocol
         assert new_datagram is sample_datagram
 
 
@@ -605,9 +767,9 @@ class TestArrowDatagramContextOperations:
     def test_with_context_key(self):
         """Test with_context_key method."""
         table = pa.Table.from_pydict({"user_id": [123], "name": ["Alice"]})
-        original_datagram = ArrowDatagram(table, data_context="v0.1")
+        original_datagram = ArrowDatagram(table, data_context="std:v0.1:default")
 
-        new_datagram = original_datagram.with_context_key("v0.1")
+        new_datagram = original_datagram.with_context_key("std:v0.1:default")
 
         # Original should be unchanged
         assert original_datagram.data_context_key == "std:v0.1:default"
@@ -627,7 +789,11 @@ class TestArrowDatagramUtilityOperations:
     def sample_datagram(self):
         """Create a sample datagram for testing."""
         table = pa.Table.from_pydict(
-            {"user_id": [123], "name": ["Alice"], "__version": ["1.0"]}
+            {
+                "user_id": [123],
+                "name": ["Alice"],
+                f"{constants.META_PREFIX}version": ["1.0"],
+            }
         )
         return ArrowDatagram(table)
 
@@ -673,7 +839,7 @@ class TestArrowDatagramUtilityOperations:
         assert "Alice" in str_repr
 
         # Should not contain meta columns
-        assert "__version" not in str_repr
+        assert f"{constants.META_PREFIX}version" not in str_repr
 
     def test_repr_representation(self, sample_datagram):
         """Test repr representation."""
@@ -733,7 +899,7 @@ class TestArrowDatagramEdgeCases:
         datagram = ArrowDatagram(table)
 
         assert datagram["id"] == 123
-        assert len(datagram["text"]) > 1000
+        assert len(cast(str, datagram["text"])) > 1000
 
     def test_timestamp_types(self):
         """Test handling of timestamp types."""
@@ -786,6 +952,23 @@ class TestArrowDatagramEdgeCases:
         renamed = datagram.rename({"user_id": "user_id", "name": "name"})
         assert set(renamed.keys()) == set(datagram.keys())
 
+    def test_conversion_to_large_types(self):
+        table = pa.Table.from_arrays(
+            [
+                pa.array([123], type=pa.int8()),
+                pa.array(["A very long string " * 100], type=pa.string()),
+            ],
+            names=["id", "text"],
+        )
+
+        datagram = ArrowDatagram(table)
+
+        returned_table = datagram.as_table()
+
+        # integer should be preserved but string should become large_string
+        assert returned_table["id"].type == pa.int8()
+        assert returned_table["text"].type == pa.large_string()
+
 
 class TestArrowDatagramIntegration:
     """Test integration between different operations."""
@@ -799,9 +982,10 @@ class TestArrowDatagramIntegration:
                 "last_name": ["Smith"],
                 "score": [85.5],
                 "active": [True],
-                "__version": ["1.0"],
+                f"{constants.META_PREFIX}version": ["1.0"],
             }
         )
+        original_keys = set(table.column_names) - {f"{constants.META_PREFIX}version"}
 
         datagram = ArrowDatagram(table)
 
@@ -813,6 +997,11 @@ class TestArrowDatagramIntegration:
             .with_meta_columns(version="2.0")
         )
 
+        # verify original is not modified
+        assert set(datagram.keys()) == original_keys
+        assert datagram["first_name"] == "Alice"
+        assert datagram["score"] == 85.5
+
         # Verify final state
         assert set(result.keys()) == {"user_id", "score", "active", "full_name"}
         assert result["full_name"] == "Alice Smith"
@@ -821,6 +1010,9 @@ class TestArrowDatagramIntegration:
 
     def test_dict_roundtrip(self):
         """Test conversion to dict and back preserves data."""
+
+        # TODO: perform this test but using semantic types
+
         table = pa.Table.from_pydict(
             {"user_id": [123], "name": ["Alice"], "score": [85.5]}
         )
@@ -844,8 +1036,8 @@ class TestArrowDatagramIntegration:
             {
                 "user_id": [123],
                 "name": ["Alice"],
-                "__version": ["1.0"],
-                "__pipeline": ["test"],
+                f"{constants.META_PREFIX}version": ["1.0"],
+                f"{constants.META_PREFIX}pipeline": ["test"],
             }
         )
 
@@ -859,8 +1051,10 @@ class TestArrowDatagramIntegration:
         assert dict1 == dict2
 
         # Test specific meta prefixes
-        dict3 = datagram.as_dict(include_meta_columns=["__version"])
-        expected_keys = {"user_id", "name", "__version"}
+        dict3 = datagram.as_dict(
+            include_meta_columns=[f"{constants.META_PREFIX}version"]
+        )
+        expected_keys = {"user_id", "name", f"{constants.META_PREFIX}version"}
         assert set(dict3.keys()) == expected_keys
 
     def test_arrow_table_schema_preservation(self):
@@ -885,11 +1079,10 @@ class TestArrowDatagramIntegration:
         assert schema.field("name").type == pa.large_string()
         assert schema.field("score").type == pa.float32()
 
-        # Operations should preserve types - but this might not be implemented yet
-        # For now, let's just test that the basic schema is correct
-        # updated = datagram.update(score=90.0)
-        # updated_schema = updated.arrow_schema()
-        # assert updated_schema.field("score").type == pa.float32()
+        # Operations should preserve types
+        updated = datagram.update(score=90.0)
+        updated_schema = updated.arrow_schema()
+        assert updated_schema.field("score").type == pa.float32()
 
 
 class TestArrowDatagramPerformance:

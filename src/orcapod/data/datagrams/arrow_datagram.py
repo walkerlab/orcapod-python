@@ -7,7 +7,7 @@ import pyarrow as pa
 from orcapod import contexts
 from orcapod.data.datagrams.base import BaseDatagram
 from orcapod.data.system_constants import constants
-from orcapod.types import TypeSpec, typespec_utils
+from orcapod.types import TypeSpec
 from orcapod.types.core import DataValue
 from orcapod.utils import arrow_utils
 
@@ -75,6 +75,9 @@ class ArrowDatagram(BaseDatagram):
             raise ValueError(
                 "Table must contain exactly one row to be a valid datagram."
             )
+
+        # normalize the table to large data types (for Polars compatibility)
+        table = arrow_utils.normalize_table_to_large_types(table)
 
         # Split table into data, meta, and context components
         context_columns = (
@@ -527,7 +530,9 @@ class ArrowDatagram(BaseDatagram):
 
         # Create new meta table
         new_datagram._meta_table = (
-            pa.Table.from_pylist([meta_dict]) if meta_dict else None
+            self._data_context.type_converter.python_dicts_to_arrow_table([meta_dict])
+            if meta_dict
+            else None
         )
         return new_datagram
 
@@ -678,10 +683,13 @@ class ArrowDatagram(BaseDatagram):
 
         new_datagram = self.copy(include_cache=False)
 
-        updates_typespec = {k: v for k, v in self.types().items() if k in updates}
+        # use existing schema
+        sub_schema = arrow_utils.schema_select(
+            new_datagram._data_table.schema, list(updates.keys())
+        )
 
         update_table = self._data_context.type_converter.python_dicts_to_arrow_table(
-            [updates], python_schema=updates_typespec
+            [updates], arrow_schema=sub_schema
         )
 
         new_datagram._data_table = arrow_utils.hstack_tables(
@@ -727,14 +735,10 @@ class ArrowDatagram(BaseDatagram):
         new_datagram = self.copy()
 
         # TODO: consider simplifying this conversion logic
-        # prepare update's table
-        typespec: dict[str, type] = typespec_utils.get_typespec_from_dict(
-            updates, column_types
-        )  # type: ignore[assignment]
 
         # TODO: cleanup the handling of typespec python schema and various conversion points
         new_data_table = self._data_context.type_converter.python_dicts_to_arrow_table(
-            [updates], python_schema=typespec
+            [updates], python_schema=dict(column_types) if column_types else None
         )
 
         # perform in-place update
@@ -758,15 +762,10 @@ class ArrowDatagram(BaseDatagram):
         """
         # TODO: consider if there is a more efficient way to handle context
         # Combine all tables for reconstruction
-        combined_table = self._data_table
-        if self._meta_table is not None:
-            combined_table = arrow_utils.hstack_tables(combined_table, self._meta_table)
 
-        return self.__class__(
-            table=combined_table,
-            data_context=new_context_key,
-            # Note: semantic_converter will be rebuilt for new context
-        )
+        new_datagram = self.copy(include_cache=False)
+        new_datagram._data_context = contexts.resolve_context(new_context_key)
+        return new_datagram
 
     # 8. Utility Operations
     def copy(self, include_cache: bool = True) -> Self:

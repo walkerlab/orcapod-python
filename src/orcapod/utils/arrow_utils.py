@@ -15,6 +15,56 @@ else:
     pa = LazyModule("pyarrow")
 
 
+def schema_select(
+    arrow_schema: "pa.Schema",
+    column_names: Collection[str],
+    ignore_missing: bool = False,
+) -> "pa.Schema":
+    """
+    Select a subset of columns from a PyArrow schema.
+
+    Args:
+        arrow_schema: The original PyArrow schema.
+        column_names: A collection of column names to select.
+
+    Returns:
+        A new PyArrow schema containing only the selected columns.
+    """
+    if not ignore_missing:
+        existing_columns = set(field.name for field in arrow_schema)
+        missing_columns = set(column_names) - existing_columns
+        if missing_columns:
+            raise KeyError(f"Missing columns in Arrow schema: {missing_columns}")
+    selected_fields = [field for field in arrow_schema if field.name in column_names]
+    return pa.schema(selected_fields)
+
+
+def schema_drop(
+    arrow_schema: "pa.Schema",
+    column_names: Collection[str],
+    ignore_missing: bool = False,
+) -> "pa.Schema":
+    """
+    Drop a subset of columns from a PyArrow schema.
+
+    Args:
+        arrow_schema: The original PyArrow schema.
+        column_names: A collection of column names to drop.
+
+    Returns:
+        A new PyArrow schema containing only the remaining columns.
+    """
+    if not ignore_missing:
+        existing_columns = set(field.name for field in arrow_schema)
+        missing_columns = set(column_names) - existing_columns
+        if missing_columns:
+            raise KeyError(f"Missing columns in Arrow schema: {missing_columns}")
+    remaining_fields = [
+        field for field in arrow_schema if field.name not in column_names
+    ]
+    return pa.schema(remaining_fields)
+
+
 def normalize_to_large_types(arrow_type: "pa.DataType") -> "pa.DataType":
     """
     Recursively convert Arrow types to their large variants where available.

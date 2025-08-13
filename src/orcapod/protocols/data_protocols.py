@@ -1,6 +1,6 @@
 from collections.abc import Collection, Iterator, Mapping, Callable
 from datetime import datetime
-from typing import Any, ContextManager, Protocol, Self, TYPE_CHECKING
+from typing import Any, ContextManager, Protocol, Self, TYPE_CHECKING, runtime_checkable
 from orcapod.protocols.hashing_protocols import ContentIdentifiable
 from orcapod.types import DataValue, TypeSpec
 
@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     import pandas as pd
 
 
+@runtime_checkable
 class ExecutionEngine(Protocol):
     @property
     def name(self) -> str: ...
@@ -30,6 +31,7 @@ class ExecutionEngine(Protocol):
         ...
 
 
+@runtime_checkable
 class Datagram(Protocol):
     """
     Protocol for immutable datagram containers in Orcapod.
@@ -633,6 +635,7 @@ class Datagram(Protocol):
         ...
 
 
+@runtime_checkable
 class Tag(Datagram, Protocol):
     """
     Metadata associated with each data item in a stream.
@@ -879,6 +882,7 @@ class Tag(Datagram, Protocol):
         ...
 
 
+@runtime_checkable
 class Packet(Datagram, Protocol):
     """
     The actual data payload in a stream.
@@ -1145,6 +1149,7 @@ class Packet(Datagram, Protocol):
         ...
 
 
+@runtime_checkable
 class PodFunction(Protocol):
     """
     A function suitable for use in a FunctionPod.
@@ -1184,6 +1189,7 @@ class PodFunction(Protocol):
         ...
 
 
+@runtime_checkable
 class Labelable(Protocol):
     """
     Protocol for objects that can have a human-readable label.
@@ -1215,6 +1221,7 @@ class Labelable(Protocol):
         ...
 
 
+@runtime_checkable
 class Stream(ContentIdentifiable, Labelable, Protocol):
     """
     Base protocol for all streams in Orcapod.
@@ -1550,6 +1557,7 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         ...
 
 
+@runtime_checkable
 class LiveStream(Stream, Protocol):
     """
     A stream that automatically stays up-to-date with its upstream dependencies.
@@ -1622,6 +1630,7 @@ class LiveStream(Stream, Protocol):
         ...
 
 
+@runtime_checkable
 class Kernel(ContentIdentifiable, Labelable, Protocol):
     """
     The fundamental unit of computation in Orcapod.
@@ -1815,6 +1824,7 @@ class Kernel(ContentIdentifiable, Labelable, Protocol):
         ...
 
 
+@runtime_checkable
 class Pod(Kernel, Protocol):
     """
     Specialized kernel for packet-level processing with advanced caching.
@@ -1940,6 +1950,7 @@ class Pod(Kernel, Protocol):
         ...
 
 
+@runtime_checkable
 class CachedPod(Pod, Protocol):
     async def async_call(
         self,
@@ -2012,6 +2023,7 @@ class CachedPod(Pod, Protocol):
         ...
 
 
+@runtime_checkable
 class Source(Kernel, Stream, Protocol):
     """
     Entry point for data into the computational graph.
@@ -2078,6 +2090,7 @@ class Source(Kernel, Stream, Protocol):
     def as_pandas_df(self, sort_by_tags: bool = False) -> "pd.DataFrame | None": ...
 
 
+@runtime_checkable
 class Tracker(Protocol):
     """
     Records kernel invocations and stream creation for computational graph tracking.
@@ -2176,6 +2189,7 @@ class Tracker(Protocol):
         ...
 
 
+@runtime_checkable
 class TrackerManager(Protocol):
     """
     Manages multiple trackers and coordinates their activity.
