@@ -9,6 +9,7 @@ from orcapod.data.datagrams.base import BaseDatagram
 from orcapod.data.system_constants import constants
 from orcapod.types import TypeSpec
 from orcapod.types.core import DataValue
+from orcapod.protocols.hashing_protocols import ContentHash
 from orcapod.utils import arrow_utils
 
 logger = logging.getLogger(__name__)
@@ -145,7 +146,7 @@ class ArrowDatagram(BaseDatagram):
         self._cached_python_schema: TypeSpec | None = None
         self._cached_python_dict: dict[str, DataValue] | None = None
         self._cached_meta_python_schema: TypeSpec | None = None
-        self._cached_content_hash: str | None = None
+        self._cached_content_hash: ContentHash | None = None
 
     # 1. Core Properties (Identity & Structure)
     @property
@@ -322,7 +323,7 @@ class ArrowDatagram(BaseDatagram):
 
         return arrow_utils.join_arrow_schemas(*all_schemas)
 
-    def content_hash(self) -> str:
+    def content_hash(self) -> ContentHash:
         """
         Calculate and return content hash of the datagram.
         Only includes data columns, not meta columns or context.
@@ -333,7 +334,6 @@ class ArrowDatagram(BaseDatagram):
         if self._cached_content_hash is None:
             self._cached_content_hash = self._data_context.arrow_hasher.hash_table(
                 self._data_table,
-                prefix_hasher_id=True,
             )
         return self._cached_content_hash
 

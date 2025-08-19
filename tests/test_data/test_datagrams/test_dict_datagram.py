@@ -233,8 +233,8 @@ class TestDictDatagramStructuralInfo:
 
     def test_content_hash(self, datagram_with_meta):
         """Test content hash calculation."""
-        hash1 = datagram_with_meta.content_hash()
-        hash2 = datagram_with_meta.content_hash()
+        hash1 = datagram_with_meta.content_hash().to_hex()
+        hash2 = datagram_with_meta.content_hash().to_hex()
 
         # Hash should be consistent
         assert hash1 == hash2

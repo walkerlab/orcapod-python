@@ -1,13 +1,70 @@
 """Hash strategy protocols for dependency injection."""
 
-from collections.abc import Callable
-from typing import Any, Protocol, runtime_checkable, TYPE_CHECKING
 import uuid
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from orcapod.types import TypeSpec, PathLike
+from orcapod.types import PathLike, TypeSpec
 
 if TYPE_CHECKING:
     import pyarrow as pa
+
+
+@dataclass(frozen=True, slots=True)
+class ContentHash:
+    method: str
+    digest: bytes
+
+    def to_hex(self, char_count: int | None = None) -> str:
+        """Convert digest to hex string, optionally truncated."""
+        hex_str = self.digest.hex()
+        return hex_str[:char_count] if char_count else hex_str
+
+    def to_int(self, hexdigits: int = 16) -> int:
+        """
+        Convert digest to integer representation.
+
+        Args:
+            hexdigits: Number of hex digits to use (truncates if needed)
+
+        Returns:
+            Integer representation of the hash
+        """
+        hex_str = self.to_hex()[:hexdigits]
+        return int(hex_str, 16)
+
+    def to_uuid(self, namespace: uuid.UUID = uuid.NAMESPACE_OID) -> uuid.UUID:
+        """
+        Convert digest to UUID format.
+
+        Args:
+            namespace: UUID namespace for uuid5 generation
+
+        Returns:
+            UUID derived from this hash
+        """
+        # Using uuid5 with the hex string ensures deterministic UUIDs
+        return uuid.uuid5(namespace, self.to_hex())
+
+    def to_base64(self) -> str:
+        """Convert digest to base64 string."""
+        import base64
+
+        return base64.b64encode(self.digest).decode("ascii")
+
+    def __str__(self) -> str:
+        return f"{self.method}:{self.to_hex()}"
+
+    @classmethod
+    def from_string(cls, hash_string: str) -> "ContentHash":
+        """Parse 'method:hex_digest' format."""
+        method, hex_digest = hash_string.split(":", 1)
+        return cls(method, bytes.fromhex(hex_digest))
+
+    def display_name(self, length: int = 8) -> str:
+        """Return human-friendly display like 'arrow_v2.1:1a2b3c4d'."""
+        return f"{self.method}:{self.to_hex(length)}"
 
 
 @runtime_checkable
@@ -25,7 +82,7 @@ class ContentIdentifiable(Protocol):
         """
         ...
 
-    def content_hash(self) -> bytes:
+    def content_hash(self) -> ContentHash:
         """
         Compute a hash based on the content of this object.
 
@@ -62,7 +119,7 @@ class ObjectHasher(Protocol):
     """Protocol for general object hashing."""
 
     # TODO: consider more explicitly stating types of objects accepted
-    def hash(self, obj: Any) -> bytes:
+    def hash_object(self, obj: Any) -> ContentHash:
         """
         Hash an object to a byte representation. Object hasher must be
         able to handle ContentIdentifiable objects to hash them based on their
@@ -85,37 +142,11 @@ class ObjectHasher(Protocol):
         """
         ...
 
-    def hash_to_hex(
-        self,
-        obj: Any,
-        char_count: int | None = None,
-        prefix_hasher_id: bool = True,
-    ) -> str: ...
-
-    def hash_to_int(self, obj: Any, hexdigits: int = 16) -> int:
-        """
-        Hash an object to an integer.
-
-        Args:
-            obj (Any): The object to hash.
-            hexdigits (int): Number of hexadecimal digits to use for the hash.
-
-        Returns:
-            int: The integer representation of the hash.
-        """
-        ...
-
-    def hash_to_uuid(
-        self,
-        obj: Any,
-        namespace: uuid.UUID = uuid.NAMESPACE_OID,
-    ) -> uuid.UUID: ...
-
 
 class FileContentHasher(Protocol):
     """Protocol for file-related hashing."""
 
-    def hash_file(self, file_path: PathLike) -> bytes: ...
+    def hash_file(self, file_path: PathLike) -> ContentHash: ...
 
 
 class ArrowHasher(Protocol):
@@ -123,7 +154,9 @@ class ArrowHasher(Protocol):
 
     def get_hasher_id(self) -> str: ...
 
-    def hash_table(self, table: "pa.Table", prefix_hasher_id: bool = True) -> str: ...
+    def hash_table(
+        self, table: "pa.Table", prefix_hasher_id: bool = True
+    ) -> ContentHash: ...
 
 
 class StringCacher(Protocol):
@@ -160,7 +193,7 @@ class SemanticTypeHasher(Protocol):
         self,
         column: "pa.Array",
     ) -> "pa.Array":
-        """Hash a column with this semantic type and return the hash bytes."""
+        """Hash a column with this semantic type and return the hash bytes an an array"""
         ...
 
     def set_cacher(self, cacher: StringCacher) -> None:

@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 from collections.abc import Collection
 from pathlib import Path
 from typing import Any, Mapping
@@ -10,33 +11,10 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-class LabeledContentIdentifiableBase:
-    """
-    Base class for content-identifiable objects.
-    This class provides a way to define objects that can be uniquely identified
-    based on their content rather than their identity in memory. Specifically, the identity of the
-    object is determined by the structure returned by the `identity_structure` method.
-    The hash of the object is computed based on the `identity_structure` using the provided `ObjectHasher`,
-    which defaults to the one returned by `get_default_object_hasher`.
-    Two content-identifiable objects are considered equal if their `identity_structure` returns the same value.
-    """
-
-    def __init__(
-        self,
-        identity_structure_hasher: hp.ObjectHasher | None = None,
-        label: str | None = None,
-        data_context: str | contexts.DataContext | None = None,
-    ) -> None:
-        """
-        Initialize the ContentHashable with an optional ObjectHasher.
-
-        Args:
-            identity_structure_hasher (ObjectHasher | None): An instance of ObjectHasher to use for hashing.
-        """
+class LablableBase:
+    def __init__(self, label: str | None = None, **kwargs):
         self._label = label
-        self._data_context = contexts.resolve_context(data_context)
-        self._content_hash: bytes | None = None
-        self._int_hash: int | None = None
+        super().__init__(**kwargs)
 
     @property
     def has_assigned_label(self) -> bool:
@@ -75,6 +53,32 @@ class LabeledContentIdentifiableBase:
         """
         return None
 
+
+class ContentIdentifiableBase(ABC):
+    """
+    Base class for content-identifiable objects.
+    This class provides a way to define objects that can be uniquely identified
+    based on their content rather than their identity in memory. Specifically, the identity of the
+    object is determined by the structure returned by the `identity_structure` method.
+    The hash of the object is computed based on the `identity_structure` using the provided `ObjectHasher`,
+    which defaults to the one returned by `get_default_object_hasher`.
+    Two content-identifiable objects are considered equal if their `identity_structure` returns the same value.
+    """
+
+    def __init__(
+        self, data_context: str | contexts.DataContext | None = None, **kwargs
+    ) -> None:
+        """
+        Initialize the ContentHashable with an optional ObjectHasher.
+
+        Args:
+            identity_structure_hasher (ObjectHasher | None): An instance of ObjectHasher to use for hashing.
+        """
+        super().__init__(**kwargs)
+        self._data_context = contexts.resolve_context(data_context)
+        self._content_hash: hp.ContentHash | None = None
+        self._int_hash: int | None = None
+
     def identity_structure(self) -> Any:
         """
         Return a structure that represents the identity of this object.
@@ -86,10 +90,9 @@ class LabeledContentIdentifiableBase:
         Returns:
             Any: A structure representing this object's content, or None to use default hash
         """
-        # TODO: come up with a way to signify non-determinate identity structure
-        return None
+        raise NotImplementedError("Subclasses must implement identity_structure")
 
-    def content_hash(self) -> bytes:
+    def content_hash(self) -> hp.ContentHash:
         """
         Compute a hash based on the content of this object.
 
@@ -100,7 +103,7 @@ class LabeledContentIdentifiableBase:
         if self._content_hash is None:
             structure = self.identity_structure()
             processed_structure = process_structure(structure)
-            self._content_hash = self._data_context.object_hasher.hash(
+            self._content_hash = self._data_context.object_hasher.hash_object(
                 processed_structure
             )
         return self._content_hash
@@ -120,7 +123,9 @@ class LabeledContentIdentifiableBase:
                 # If no identity structure is provided, use the default hash
                 self._int_hash = super().__hash__()
             else:
-                self._int_hash = self._data_context.object_hasher.hash_to_int(structure)
+                self._int_hash = self._data_context.object_hasher.hash_object(
+                    structure
+                ).to_int()
         return self._int_hash
 
     def __eq__(self, other: object) -> bool:
@@ -133,10 +138,14 @@ class LabeledContentIdentifiableBase:
         Returns:
             bool: True if both objects have the same identity structure, False otherwise.
         """
-        if not isinstance(other, LabeledContentIdentifiableBase):
+        if not isinstance(other, ContentIdentifiableBase):
             return NotImplemented
 
         return self.identity_structure() == other.identity_structure()
+
+
+class LabeledContentIdentifiableBase(ContentIdentifiableBase, LablableBase):
+    pass
 
 
 def process_structure(

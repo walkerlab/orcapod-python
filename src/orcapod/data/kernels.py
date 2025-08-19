@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from collections.abc import Collection
 from datetime import datetime, timezone
 from typing import Any
@@ -13,7 +13,7 @@ from orcapod.types import TypeSpec
 logger = logging.getLogger(__name__)
 
 
-class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
+class TrackedKernelBase(LabeledContentIdentifiableBase):
     """
     Kernel defines the fundamental unit of computation that can be performed on zero, one or more streams of data.
     It is the base class for all computations and transformations that can be performed on a collection of streams
@@ -50,7 +50,7 @@ class TrackedKernelBase(ABC, LabeledContentIdentifiableBase):
         Returns a unique identifier for the kernel.
         This is used to identify the kernel in the computational graph.
         """
-        return (f"{self.__class__.__name__}", self.content_hash().hex())
+        return (f"{self.__class__.__name__}", self.content_hash().to_hex())
 
     @property
     def data_context(self) -> contexts.DataContext:

@@ -28,6 +28,7 @@ Example usage:
 from .core import DataContext, ContextValidationError, ContextResolutionError
 from .registry import JSONDataContextRegistry
 from typing import Any
+from orcapod.protocols import hashing_protocols as hp, semantic_protocols as sp
 
 # Global registry instance (lazily initialized)
 _registry: JSONDataContextRegistry | None = None
@@ -162,6 +163,36 @@ def get_default_context() -> DataContext:
         DataContext instance for the default version
     """
     return resolve_context()
+
+
+def get_default_object_hasher() -> hp.ObjectHasher:
+    """
+    Get the default object hasher.
+
+    Returns:
+        ObjectHasher instance for the default context
+    """
+    return get_default_context().object_hasher
+
+
+def get_default_arrow_hasher() -> hp.ArrowHasher:
+    """
+    Get the default arrow hasher.
+
+    Returns:
+        ArrowHasher instance for the default context
+    """
+    return get_default_context().arrow_hasher
+
+
+def get_default_type_converter() -> "sp.TypeConverter":
+    """
+    Get the default type converter.
+
+    Returns:
+        UniversalTypeConverter instance for the default context
+    """
+    return get_default_context().type_converter
 
 
 # Convenience function for creating custom registries

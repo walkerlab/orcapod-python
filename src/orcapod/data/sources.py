@@ -1,4 +1,3 @@
-from abc import abstractmethod
 from collections.abc import Collection, Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -11,11 +10,11 @@ from orcapod.data.kernels import TrackedKernelBase
 from orcapod.data.streams import (
     TableStream,
     KernelStream,
-    OperatorStreamBaseMixin,
+    StatefulStreamBase,
 )
 from orcapod.errors import DuplicateTagError
 from orcapod.protocols import data_protocols as dp
-from orcapod.types import DataValue, TypeSpec, typespec_utils
+from orcapod.types import DataValue, TypeSpec
 from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.data.system_constants import constants
@@ -31,7 +30,7 @@ else:
     pa = LazyModule("pyarrow")
 
 
-class SourceBase(TrackedKernelBase, OperatorStreamBaseMixin):
+class SourceBase(TrackedKernelBase, StatefulStreamBase):
     """
     Base class for sources that act as both Kernels and LiveStreams.
 
@@ -132,21 +131,30 @@ class SourceBase(TrackedKernelBase, OperatorStreamBaseMixin):
         """
         return self().iter_packets()
 
-    def iter_packets(self) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+    def iter_packets(
+        self,
+        execution_engine: dp.ExecutionEngine | None = None,
+    ) -> Iterator[tuple[dp.Tag, dp.Packet]]:
         """Delegate to the cached KernelStream."""
-        return self().iter_packets()
+        return self().iter_packets(execution_engine=execution_engine)
 
     def as_table(
         self,
         include_data_context: bool = False,
         include_source: bool = False,
+        include_system_tags: bool = False,
         include_content_hash: bool | str = False,
+        sort_by_tags: bool = True,
+        execution_engine: dp.ExecutionEngine | None = None,
     ) -> "pa.Table":
         """Delegate to the cached KernelStream."""
         return self().as_table(
             include_data_context=include_data_context,
             include_source=include_source,
+            include_system_tags=include_system_tags,
             include_content_hash=include_content_hash,
+            sort_by_tags=sort_by_tags,
+            execution_engine=execution_engine,
         )
 
     def flow(
@@ -203,51 +211,6 @@ class SourceBase(TrackedKernelBase, OperatorStreamBaseMixin):
         # TODO: consider caching this
         _, packet_keys = self.keys()
         return packet_keys
-
-    @abstractmethod
-    def get_all_records(
-        self, include_system_columns: bool = False
-    ) -> "pa.Table | None":
-        """
-        Retrieve all records from the source.
-
-        This method should be implemented by subclasses to return the full dataset.
-        If the source has no records, return None.
-        """
-        ...
-
-    def as_lazy_frame(self, sort_by_tags: bool = False) -> "pl.LazyFrame | None":
-        records = self.get_all_records(include_system_columns=False)
-        if records is not None:
-            result = pl.LazyFrame(records)
-            if sort_by_tags:
-                result = result.sort(self.tag_keys)
-            return result
-        return None
-
-    def as_df(self, sort_by_tags: bool = True) -> "pl.DataFrame | None":
-        """
-        Return the DataFrame representation of the pod's records.
-        """
-        lazy_df = self.as_lazy_frame(sort_by_tags=sort_by_tags)
-        if lazy_df is not None:
-            return lazy_df.collect()
-        return None
-
-    def as_polars_df(self, sort_by_tags: bool = True) -> "pl.DataFrame | None":
-        """
-        Return the DataFrame representation of the pod's records.
-        """
-        return self.as_df(sort_by_tags=sort_by_tags)
-
-    def as_pandas_df(self, sort_by_tags: bool = True) -> "pd.DataFrame | None":
-        """
-        Return the pandas DataFrame representation of the pod's records.
-        """
-        df = self.as_polars_df(sort_by_tags=sort_by_tags)
-        if df is not None:
-            return df.to_pandas()
-        return None
 
     def reset_cache(self) -> None:
         """

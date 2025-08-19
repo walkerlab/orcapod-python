@@ -318,14 +318,13 @@ class PodNode(Node, CachedPod):
     ) -> None:
         # combine dp.Tag with packet content hash to compute entry hash
         # TODO: add system tag columns
+        # TODO: consider using bytes instead of string representation
         tag_with_hash = tag.as_table(include_system_tags=True).append_column(
             constants.INPUT_PACKET_HASH,
-            pa.array([input_packet.content_hash()], type=pa.large_string()),
+            pa.array([str(input_packet.content_hash())], type=pa.large_string()),
         )
 
-        entry_id = self.data_context.arrow_hasher.hash_table(
-            tag_with_hash, prefix_hasher_id=True
-        )
+        entry_id = str(self.data_context.arrow_hasher.hash_table(tag_with_hash))
         # FIXME: consider and implement more robust cache lookup logic
         existing_record = None
         if not skip_cache_lookup:

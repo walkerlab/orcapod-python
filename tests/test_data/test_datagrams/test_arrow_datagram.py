@@ -21,6 +21,7 @@ from datetime import datetime, date
 from orcapod.data.datagrams import ArrowDatagram
 from orcapod.data.system_constants import constants
 from orcapod.protocols.data_protocols import Datagram
+from orcapod.protocols.hashing_protocols import ContentHash
 
 
 class TestArrowDatagramInitialization:
@@ -324,8 +325,8 @@ class TestArrowDatagramStructuralInfo:
 
         # Hash should be consistent
         assert hash1 == hash2
-        assert isinstance(hash1, str)
-        assert len(hash1) > 0
+        assert isinstance(hash1, ContentHash)
+        assert len(hash1.digest) > 0
 
     def test_content_hash_same_data_different_meta_data(self):
         """Test that the content hash is the same for identical data with different meta data."""

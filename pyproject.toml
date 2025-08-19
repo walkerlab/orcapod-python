@@ -82,4 +82,4 @@ redis = { features = ["redis"], solve-group = "default" }
 [tool.pixi.tasks]
 
 [tool.pixi.dependencies]
-python = "3.13.*"
+python = ">=3.12"

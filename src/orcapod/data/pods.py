@@ -314,6 +314,7 @@ class FunctionPod(ActivatablePodBase):
 
         self._function_info_extractor = function_info_extractor
         object_hasher = self.data_context.object_hasher
+        # TODO: fix and replace with object_hasher protocol specific methods
         self._function_signature_hash = object_hasher.hash_to_hex(
             get_function_signature(self.function), prefix_hasher_id=True
         )
@@ -351,7 +352,7 @@ class FunctionPod(ActivatablePodBase):
         execution_engine_hash: str,
     ) -> str:
         return combine_hashes(
-            packet.content_hash(),
+            str(packet.content_hash()),
             self._total_pod_id_hash,
             execution_engine_hash,
             prefix_hasher_id=True,
@@ -731,7 +732,7 @@ class CachedPod(WrappedPod):
         data_table = data_table.add_column(
             0,
             constants.INPUT_PACKET_HASH,
-            pa.array([input_packet.content_hash()], type=pa.large_string()),
+            pa.array([str(input_packet.content_hash())], type=pa.large_string()),
         )
         # add execution engine information
         execution_engine_hash = execution_engine.name if execution_engine else "default"
@@ -779,7 +780,7 @@ class CachedPod(WrappedPod):
 
         # get all records with matching the input packet hash
         # TODO: add match based on match_tier if specified
-        constraints = {constants.INPUT_PACKET_HASH: input_packet.content_hash()}
+        constraints = {constants.INPUT_PACKET_HASH: str(input_packet.content_hash())}
         if self.match_tier is not None:
             constraints[f"{constants.POD_ID_PREFIX}{self.match_tier}"] = (
                 self.pod.tiered_pod_id[self.match_tier]
@@ -794,7 +795,7 @@ class CachedPod(WrappedPod):
 
         if result_table.num_rows > 1:
             logger.info(
-                f"Performing conflict resolution for multiple records for {input_packet.content_hash()}"
+                f"Performing conflict resolution for multiple records for {input_packet.content_hash().display_name()}"
             )
             if self.retrieval_mode == "latest":
                 result_table = result_table.sort_by(
@@ -812,7 +813,7 @@ class CachedPod(WrappedPod):
                         break
                 if result_table.num_rows > 1:
                     logger.warning(
-                        f"No matching record found for {input_packet.content_hash()} with tiered pod ID {self.tiered_pod_id}"
+                        f"No matching record found for {input_packet.content_hash().display_name()} with tiered pod ID {self.tiered_pod_id}"
                     )
                     result_table = result_table.sort_by(
                         self.DATA_RETRIEVED_FLAG, ascending=False

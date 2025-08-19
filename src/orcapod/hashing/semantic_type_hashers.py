@@ -54,9 +54,10 @@ class PathHasher(SemanticTypeHasher):
             if self.cacher:
                 # Cache the computed hash hex
                 self.cacher.set_cached(
-                    f"{self.cache_key_prefix}:{file_path}", hashed_value.hex()
+                    f"{self.cache_key_prefix}:{file_path}", hashed_value.to_hex()
                 )
-            return hashed_value
+            # TODO: make consistent use of bytes/string for hash
+            return hashed_value.digest
 
         except (IOError, OSError, PermissionError) as e:
             if self.handle_missing == "error":

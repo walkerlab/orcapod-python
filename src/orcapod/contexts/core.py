@@ -6,12 +6,8 @@ the context management system.
 """
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:
-    # TODO: consider establishing type converter protocol
-    from orcapod.semantic_types import UniversalTypeConverter
-from orcapod.protocols import hashing_protocols as hp
+from orcapod.protocols import hashing_protocols as hp, semantic_protocols as sp
 
 
 @dataclass
@@ -35,7 +31,7 @@ class DataContext:
     context_key: str
     version: str
     description: str
-    type_converter: "UniversalTypeConverter"
+    type_converter: sp.TypeConverter
     arrow_hasher: hp.ArrowHasher
     object_hasher: hp.ObjectHasher
 

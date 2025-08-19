@@ -1,20 +1,25 @@
 import logging
 from collections.abc import Collection, Iterator, Mapping
-from typing import Self, cast
+from typing import Self, cast, TYPE_CHECKING
 
-import pyarrow as pa
-
+from orcapod.utils.lazy_module import LazyModule
 from orcapod.data.system_constants import constants
 from orcapod import contexts
 from orcapod.data.datagrams.base import BaseDatagram
 from orcapod.semantic_types import infer_schema_from_pylist_data
 from orcapod.types.core import DataValue
 from orcapod.utils import arrow_utils
+from orcapod.protocols.hashing_protocols import ContentHash
 
 logger = logging.getLogger(__name__)
 
 # FIXME: make this configurable!
 DEBUG = False
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+else:
+    pa = LazyModule("pyarrow")
 
 
 class DictDatagram(BaseDatagram):
@@ -122,7 +127,7 @@ class DictDatagram(BaseDatagram):
         # Initialize caches
         self._cached_data_table: pa.Table | None = None
         self._cached_meta_table: pa.Table | None = None
-        self._cached_content_hash: str | None = None
+        self._cached_content_hash: ContentHash | None = None
         self._cached_data_arrow_schema: pa.Schema | None = None
         self._cached_meta_arrow_schema: pa.Schema | None = None
 
@@ -306,7 +311,7 @@ class DictDatagram(BaseDatagram):
 
         return arrow_utils.join_arrow_schemas(*all_schemas)
 
-    def content_hash(self) -> str:
+    def content_hash(self) -> ContentHash:
         """
         Calculate and return content hash of the datagram.
         Only includes data columns, not meta columns or context.
@@ -317,7 +322,6 @@ class DictDatagram(BaseDatagram):
         if self._cached_content_hash is None:
             self._cached_content_hash = self._data_context.arrow_hasher.hash_table(
                 self.as_table(include_meta_columns=False, include_context=False),
-                prefix_hasher_id=True,
             )
         return self._cached_content_hash
 

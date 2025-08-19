@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class ObjectHasherBase(ABC):
     @abstractmethod
-    def hash(self, obj: object) -> bytes: ...
+    def hash_object(self, obj: object) -> hp.ContentHash: ...
 
     @property
     @abstractmethod
@@ -23,8 +23,8 @@ class ObjectHasherBase(ABC):
     def hash_to_hex(
         self, obj: Any, char_count: int | None = None, prefix_hasher_id: bool = False
     ) -> str:
-        hash_bytes = self.hash(obj)
-        hex_str = hash_bytes.hex()
+        content_hash = self.hash_object(obj)
+        hex_str = content_hash.to_hex()
 
         # TODO: clean up this logic, as char_count handling is messy
         if char_count is not None:
@@ -57,7 +57,8 @@ class ObjectHasherBase(ABC):
         namespace: uuid.UUID = uuid.NAMESPACE_OID,
     ) -> uuid.UUID:
         """Convert hash to proper UUID5."""
-        return uuid.uuid5(namespace, self.hash(obj))
+        # TODO: decide whether to use to_hex or digest here
+        return uuid.uuid5(namespace, self.hash_object(obj).to_hex())
 
 
 class BasicObjectHasher(ObjectHasherBase):
@@ -126,7 +127,7 @@ class BasicObjectHasher(ObjectHasherBase):
             logger.debug(
                 f"Processing ContentHashableBase instance of type {type(obj).__name__}"
             )
-            return self._hash_object(obj.identity_structure(), visited=visited).hex()
+            return self._hash_object(obj.identity_structure(), visited=visited).to_hex()
 
         # Handle basic types
         if isinstance(obj, (str, int, float, bool)):
@@ -281,7 +282,7 @@ class BasicObjectHasher(ObjectHasherBase):
         self,
         obj: Any,
         visited: set[int] | None = None,
-    ) -> bytes:
+    ) -> hp.ContentHash:
         # Process the object to handle nested structures and HashableMixin instances
         processed = self.process_structure(obj, visited=visited)
 
@@ -294,7 +295,7 @@ class BasicObjectHasher(ObjectHasherBase):
         )
 
         # Create the hash
-        return hashlib.sha256(json_str).digest()
+        return hp.ContentHash(self.hasher_id, hashlib.sha256(json_str).digest())
 
-    def hash(self, obj: object) -> bytes:
+    def hash_object(self, obj: object) -> hp.ContentHash:
         return self._hash_object(obj)

@@ -281,7 +281,6 @@ class ArrowPacket(ArrowDatagram):
 
         self._cached_source_info: dict[str, str | None] | None = None
         self._cached_python_schema: TypeSpec | None = None
-        self._cached_content_hash: str | None = None
 
     def keys(
         self,

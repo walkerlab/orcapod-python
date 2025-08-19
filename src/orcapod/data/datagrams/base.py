@@ -17,10 +17,12 @@ and type conversions between semantic stores, Python stores, and Arrow tables.
 """
 
 import logging
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from collections.abc import Collection, Iterator, Mapping
 from typing import Self, TypeAlias
 from orcapod import contexts
+from orcapod.data.base import ContentIdentifiableBase
+from orcapod.protocols.hashing_protocols import ContentHash
 
 import pyarrow as pa
 
@@ -102,7 +104,7 @@ def contains_prefix_from(column: str, prefixes: Collection[str]) -> bool:
     return False
 
 
-class BaseDatagram(ABC):
+class BaseDatagram(ContentIdentifiableBase):
     """
     Abstract base class for immutable datagram implementations.
 
@@ -192,7 +194,7 @@ class BaseDatagram(ABC):
         ...
 
     @abstractmethod
-    def content_hash(self) -> str:
+    def content_hash(self) -> ContentHash:
         """Calculate and return content hash of the datagram."""
         ...
 
