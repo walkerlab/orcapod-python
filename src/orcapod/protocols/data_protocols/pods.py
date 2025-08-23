@@ -187,11 +187,23 @@ class CachedPod(Pod, Protocol):
         """
         ...
 
-    def get_all_records(
+    def get_cached_output_for_packet(self, input_packet: Packet) -> Packet | None:
+        """
+        Retrieve the cached output packet for a given input packet.
+
+        Args:
+            input_packet: The input packet to look up in the cache
+
+        Returns:
+            Packet | None: The cached output packet, or None if not found
+        """
+        ...
+
+    def get_all_cached_outputs(
         self, include_system_columns: bool = False
     ) -> "pa.Table | None":
         """
-        Retrieve all records processed by this Pod.
+        Retrieve all packets processed by this Pod.
 
         This method returns a table containing all packets processed by the Pod,
         including metadata and system columns if requested. It is useful for:

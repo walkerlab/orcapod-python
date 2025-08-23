@@ -63,26 +63,33 @@ def synchronous_run(async_func, *args, **kwargs):
 
 
 class OperatorStreamBaseMixin:
-    def join(self, other_stream: dp.Stream) -> dp.Stream:
+    def join(self, other_stream: dp.Stream, label: str | None = None) -> dp.Stream:
         """
         Joins this stream with another stream, returning a new stream that contains
         the combined data from both streams.
         """
         from orcapod.data.operators import Join
 
-        return Join()(self, other_stream)  # type: ignore[return-value]
+        return Join()(self, other_stream, label=label)  # type: ignore
 
-    def semi_join(self, other_stream: dp.Stream) -> dp.Stream:
+    def semi_join(
+        self,
+        other_stream: dp.Stream,
+        label: str | None = None,
+    ) -> dp.Stream:
         """
         Performs a semi-join with another stream, returning a new stream that contains
         only the packets from this stream that have matching tags in the other stream.
         """
         from orcapod.data.operators import SemiJoin
 
-        return SemiJoin()(self, other_stream)  # type: ignore[return-value]
+        return SemiJoin()(self, other_stream, label=label)  # type: ignore
 
     def map_tags(
-        self, name_map: Mapping[str, str], drop_unmapped: bool = True
+        self,
+        name_map: Mapping[str, str],
+        drop_unmapped: bool = True,
+        label: str | None = None,
     ) -> dp.Stream:
         """
         Maps the tags in this stream according to the provided name_map.
@@ -90,10 +97,13 @@ class OperatorStreamBaseMixin:
         """
         from orcapod.data.operators import MapTags
 
-        return MapTags(name_map, drop_unmapped)(self)  # type: ignore[return-value]
+        return MapTags(name_map, drop_unmapped)(self, label=label)  # type: ignore
 
     def map_packets(
-        self, name_map: Mapping[str, str], drop_unmapped: bool = True
+        self,
+        name_map: Mapping[str, str],
+        drop_unmapped: bool = True,
+        label: str | None = None,
     ) -> dp.Stream:
         """
         Maps the packets in this stream according to the provided packet_map.
@@ -101,7 +111,21 @@ class OperatorStreamBaseMixin:
         """
         from orcapod.data.operators import MapPackets
 
-        return MapPackets(name_map, drop_unmapped)(self)  # type: ignore[return-value]
+        return MapPackets(name_map, drop_unmapped)(self, label=label)  # type: ignore
+
+    def batch(
+        self,
+        batch_size: int = 0,
+        drop_last: bool = False,
+        label: str | None = None,
+    ) -> dp.Stream:
+        """
+        Batch stream into fixed-size chunks, each of size batch_size.
+        If drop_last is True, any remaining elements that don't fit into a full batch will be dropped.
+        """
+        from orcapod.data.operators import Batch
+
+        return Batch(batch_size=batch_size, drop_last=drop_last)(self, label=label)  # type: ignore
 
 
 class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
@@ -617,9 +641,14 @@ class TableStream(ImmutableStream):
         table = arrow_utils.hstack_tables(*table_stack)
 
         if sort_by_tags:
-            return table.sort_by(
-                [(column, "ascending") for column in self._all_tag_columns]
-            )
+            # TODO: cleanup the sorting tag selection logic
+            try:
+                return table.sort_by(
+                    [(column, "ascending") for column in self._all_tag_columns]
+                )
+            except pa.ArrowTypeError:
+                # If sorting fails, fall back to unsorted table
+                return table
 
         return table
 
@@ -1094,7 +1123,9 @@ class EfficientPodResultStream(StreamBase):
                 include_source=True,
                 include_system_tags=True,
             )
-            existing_entries = self.pod.get_all_records(include_system_columns=True)
+            existing_entries = self.pod.get_all_cached_outputs(
+                include_system_columns=True
+            )
             if existing_entries is None or existing_entries.num_rows == 0:
                 missing = target_entries.drop_columns([constants.INPUT_PACKET_HASH])
                 existing = None
@@ -1156,7 +1187,7 @@ class EfficientPodResultStream(StreamBase):
     def run(
         self,
         execution_engine: dp.ExecutionEngine | None = None,
-        try_async_backend: bool = True,
+        try_async_backend: bool = False,
     ) -> None:
         if try_async_backend:
             # Use async run if requested
@@ -1187,7 +1218,9 @@ class EfficientPodResultStream(StreamBase):
                 include_content_hash=constants.INPUT_PACKET_HASH,
                 execution_engine=execution_engine,
             )
-            existing_entries = self.pod.get_all_records(include_system_columns=True)
+            existing_entries = self.pod.get_all_cached_outputs(
+                include_system_columns=True
+            )
             if existing_entries is None or existing_entries.num_rows == 0:
                 missing = target_entries.drop_columns([constants.INPUT_PACKET_HASH])
                 existing = None
@@ -1202,14 +1235,29 @@ class EfficientPodResultStream(StreamBase):
                 # .select([constants.INPUT_PACKET_HASH]).append_column(
                 #     "_exists", pa.array([True] * len(existing_entries))
                 # ),
-                all_results = target_entries.join(
+
+                # TODO: do more proper replacement operation
+                target_df = pl.DataFrame(target_entries)
+                existing_df = pl.DataFrame(
                     existing_entries.append_column(
                         "_exists", pa.array([True] * len(existing_entries))
-                    ),
-                    keys=[constants.INPUT_PACKET_HASH],
-                    join_type="left outer",
-                    right_suffix="_right",
+                    )
                 )
+                all_results_df = target_df.join(
+                    existing_df,
+                    on=constants.INPUT_PACKET_HASH,
+                    how="left",
+                    suffix="_right",
+                )
+                all_results = all_results_df.to_arrow()
+                # all_results = target_entries.join(
+                #     existing_entries.append_column(
+                #         "_exists", pa.array([True] * len(existing_entries))
+                #     ),
+                #     keys=[constants.INPUT_PACKET_HASH],
+                #     join_type="left outer",
+                #     right_suffix="_right",  # rename the existing records in case of collision of output packet keys with input packet keys
+                # )
                 # grab all columns from target_entries first
                 missing = (
                     all_results.filter(pc.is_null(pc.field("_exists")))
@@ -1217,10 +1265,16 @@ class EfficientPodResultStream(StreamBase):
                     .drop_columns([constants.INPUT_PACKET_HASH])
                 )
 
-                existing = (
-                    all_results.filter(pc.is_valid(pc.field("_exists")))
-                    .drop_columns(target_entries.column_names)
-                    .drop_columns(["_exists"])
+                existing = all_results.filter(
+                    pc.is_valid(pc.field("_exists"))
+                ).drop_columns(
+                    [
+                        "_exists",
+                        constants.INPUT_PACKET_HASH,
+                        constants.PACKET_RECORD_ID,
+                        *self.input_stream.keys()[1],  # remove the input packet keys
+                    ]
+                    # TODO: look into NOT fetching back the record ID
                 )
                 renamed = [
                     c.removesuffix("_right") if c.endswith("_right") else c
@@ -1361,10 +1415,13 @@ class EfficientPodResultStream(StreamBase):
             )
 
         if sort_by_tags:
-            # TODO: consider having explicit tag/packet properties?
-            output_table = output_table.sort_by(
-                [(column, "ascending") for column in self.keys()[0]]
-            )
+            try:
+                # TODO: consider having explicit tag/packet properties?
+                output_table = output_table.sort_by(
+                    [(column, "ascending") for column in self.keys()[0]]
+                )
+            except pa.ArrowTypeError:
+                pass
 
         return output_table
 

@@ -6,6 +6,7 @@ from collections.abc import Mapping, Collection
 from typing import Any
 
 
+
 from typing import TYPE_CHECKING
 from orcapod.utils.lazy_module import LazyModule
 
@@ -89,6 +90,9 @@ def normalize_to_large_types(arrow_type: "pa.DataType") -> "pa.DataType":
         struct<name: large_string>
     """
     # Handle primitive types that have large variants
+    if pa.types.is_null(arrow_type):
+        # TODO: make this configurable
+        return pa.large_string()
     if pa.types.is_string(arrow_type):
         return pa.large_string()
     elif pa.types.is_binary(arrow_type):
@@ -597,7 +601,12 @@ def prepare_prefixed_columns(
 
             if value is not None:
                 # Use value from source_info dictionary
-                column_values = pa.array([value] * num_rows, type=pa.large_string())
+                # TODO: clean up the logic here
+                if not isinstance(value, str) and isinstance(value, Collection):
+                    # TODO: this won't work other data types!!!
+                    column_values = pa.array([value] * num_rows, type=pa.list_(pa.large_string()))
+                else:
+                    column_values = pa.array([value] * num_rows, type=pa.large_string())
             # if col_name is in existing_source_info, use that column
             elif col_name in existing_columns:
                 # Use existing prefixed column, but convert to large_string
@@ -618,9 +627,11 @@ def prepare_prefixed_columns(
     data_table: pa.Table = pa.Table.from_arrays(data_columns, names=data_column_names)
     result_tables = {}
     for prefix in all_prefix_info:
-        result_tables[prefix] = pa.Table.from_arrays(
+        prefix_table = pa.Table.from_arrays(
             prefixed_columns[prefix], names=prefixed_column_names[prefix]
         )
+        result_tables[prefix] = normalize_table_to_large_types(prefix_table)
+
     return data_table, result_tables
 
 

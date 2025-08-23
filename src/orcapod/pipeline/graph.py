@@ -1,5 +1,6 @@
 from orcapod.data.trackers import GraphTracker, Invocation
 from orcapod.pipeline.nodes import KernelNode, PodNode
+from orcapod.protocols.pipeline_protocols import Node
 from orcapod import contexts
 from orcapod.protocols import data_protocols as dp
 from orcapod.protocols import store_protocols as sp
@@ -41,7 +42,7 @@ class Pipeline(GraphTracker):
             self.results_store_path_prefix = self.name + ("_results",)
         self.pipeline_store = pipeline_store
         self.results_store = results_store
-        self.nodes = {}
+        self.nodes: dict[str, Node] = {}
         self.auto_compile = auto_compile
         self._dirty = False
         self._ordered_nodes = []  # Track order of invocations
@@ -79,6 +80,8 @@ class Pipeline(GraphTracker):
     def compile(self) -> None:
         import networkx as nx
 
+        name_candidates = {}
+
         invocation_to_stream_lut = {}
         G = self.generate_graph()
         for invocation in nx.topological_sort(G):
@@ -87,7 +90,17 @@ class Pipeline(GraphTracker):
             ]
             node = self.wrap_invocation(invocation, new_input_streams=input_streams)
             invocation_to_stream_lut[invocation] = node()
-            self.nodes[node.label] = node
+            name_candidates.setdefault(node.label, []).append(node)
+
+        # visit through the name candidates and resolve any collisions
+        for label, nodes in name_candidates.items():
+            if len(nodes) > 1:
+                # If there are multiple nodes with the same label, we need to resolve the collision
+                logger.info(f"Collision detected for label '{label}': {nodes}")
+                for i, node in enumerate(nodes, start=1):
+                    self.nodes[f"{label}_{i}"] = node
+            else:
+                self.nodes[label] = nodes[0]
 
     def run(self, execution_engine: dp.ExecutionEngine | None = None) -> None:
         # FIXME: perform more efficient traversal through the graph!
@@ -100,7 +113,7 @@ class Pipeline(GraphTracker):
         self,
         invocation: Invocation,
         new_input_streams: Collection[dp.Stream],
-    ) -> dp.Kernel:
+    ) -> Node:
         if invocation in self.invocation_to_pod_lut:
             pod = self.invocation_to_pod_lut[invocation]
             node = PodNode(

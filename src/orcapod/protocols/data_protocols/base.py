@@ -83,7 +83,7 @@ class Labelable(Protocol):
     """
 
     @property
-    def label(self) -> str | None:
+    def label(self) -> str:
         """
         Return the human-readable label for this object.
 
@@ -93,5 +93,18 @@ class Labelable(Protocol):
         Returns:
             str: Human-readable label for this object
             None: No label is set (will use default naming)
+        """
+        ...
+
+    @label.setter
+    def label(self, label: str | None) -> None:
+        """
+        Set the human-readable label for this object.
+
+        Labels should be descriptive and help users understand the purpose
+        or role of the object in the computational graph.
+
+        Args:
+            value (str): Human-readable label for this object
         """
         ...

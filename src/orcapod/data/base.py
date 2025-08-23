@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+from abc import ABC
 from collections.abc import Collection
 from pathlib import Path
 from typing import Any, Mapping

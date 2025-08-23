@@ -19,7 +19,7 @@ else:
     pd = LazyModule("pandas")
 
 
-class Node(
+class NodeBase(
     SourceBase,
 ):
     """
@@ -36,17 +36,17 @@ class Node(
         super().__init__(**kwargs)
         self._cached_stream: KernelStream | None = None
         self.input_streams = tuple(input_streams)
-        self.pipeline_store = pipeline_store
         self.pipeline_path_prefix = pipeline_path_prefix
         # compute invocation hash - note that empty () is passed into identity_structure to signify
         # identity structure of invocation with no input streams
-        self.invocation_hash = self.data_context.object_hasher.hash_to_hex(
-            self.identity_structure(()), prefix_hasher_id=True
-        )
+        self.invocation_hash = self.data_context.object_hasher.hash_object(
+            self.identity_structure(())
+        ).to_string()
         tag_types, _ = self.types(include_system_tags=True)
-        self.tag_schema_hash = self.data_context.object_hasher.hash_to_hex(
-            tag_types, prefix_hasher_id=True
-        )
+        self.tag_schema_hash = self.data_context.object_hasher.hash_object(
+            tag_types
+        ).to_string()
+        self.pipeline_store = pipeline_store
 
     @property
     def contained_kernel(self) -> dp.Kernel:
@@ -112,7 +112,7 @@ class Node(
         raise NotImplementedError("This method should be implemented by subclasses.")
 
 
-class KernelNode(Node, WrappedKernel):
+class KernelNode(NodeBase, WrappedKernel):
     """
     A node in the pipeline that represents a kernel.
     This node can be used to execute the kernel and process data streams.
@@ -202,7 +202,7 @@ class KernelNode(Node, WrappedKernel):
         return results
 
 
-class PodNode(Node, CachedPod):
+class PodNode(NodeBase, CachedPod):
     def __init__(
         self,
         pod: dp.Pod,
@@ -321,10 +321,10 @@ class PodNode(Node, CachedPod):
         # TODO: consider using bytes instead of string representation
         tag_with_hash = tag.as_table(include_system_tags=True).append_column(
             constants.INPUT_PACKET_HASH,
-            pa.array([str(input_packet.content_hash())], type=pa.large_string()),
+            pa.array([input_packet.content_hash().to_string()], type=pa.large_string()),
         )
 
-        entry_id = str(self.data_context.arrow_hasher.hash_table(tag_with_hash))
+        entry_id = self.data_context.arrow_hasher.hash_table(tag_with_hash).to_string()
         # FIXME: consider and implement more robust cache lookup logic
         existing_record = None
         if not skip_cache_lookup:

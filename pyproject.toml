@@ -17,6 +17,7 @@ dependencies = [
     "polars>=1.31.0",
     "beartype>=0.21.0",
     "deltalake>=1.0.2",
+    "selection-pipeline",
 ]
 readme = "README.md"
 requires-python = ">=3.12.0"
@@ -46,15 +47,19 @@ version_file = "src/orcapod/_version.py"
 dev = [
     "adlfs>=2024.12.0",
     "boto3>=1.39.11",
+    "datajoint>=0.14.6",
     "deltalake>=1.0.2",
     "gcsfs>=2025.7.0",
     "httpie>=3.2.4",
+    "hydra-core>=1.3.2",
+    "imageio>=2.37.0",
     "ipykernel>=6.29.5",
     "ipywidgets>=8.1.7",
     "jsonschema>=4.25.0",
     "minio>=7.2.16",
     "mkdocs>=1.6.1",
     "pyarrow-stubs>=20.0.0.20250716",
+    "pygraphviz>=1.14",
     "pyiceberg>=0.9.1",
     "pytest>=8.3.5",
     "pytest-cov>=6.1.1",
@@ -83,3 +88,6 @@ redis = { features = ["redis"], solve-group = "default" }
 
 [tool.pixi.dependencies]
 python = ">=3.12"
+
+[tool.uv.sources]
+selection-pipeline = { git = "https://github.com/enigma-brain/selection_pipeline" }

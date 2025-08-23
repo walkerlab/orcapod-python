@@ -49,10 +49,11 @@ class Join(NonZeroInputOperator):
                 include_system_tags=include_system_tags
             )
             tag_typespec = union_typespecs(tag_typespec, other_tag_typespec)
-            packet_typespec = intersection_typespecs(
+            intersection_packet_typespec = intersection_typespecs(
                 packet_typespec, other_packet_typespec
             )
-            if packet_typespec:
+            packet_typespec = union_typespecs(packet_typespec, other_packet_typespec)
+            if intersection_packet_typespec:
                 raise InputValidationError(
                     f"Packets should not have overlapping keys, but {packet_typespec.keys()} found in {stream} and {other_stream}."
                 )

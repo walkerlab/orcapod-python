@@ -43,18 +43,23 @@ class UnaryOperator(Operator):
         It expects exactly one stream as input.
         """
         stream = streams[0]
-        # visit each substream
-        output_substreams = []
-        for substream_id in stream.substream_identities:
-            substream = stream.get_substream(substream_id)
-            output_substreams.append(self.op_forward(substream))
+        return self.op_forward(stream)
 
-        # at the moment only single output substream is supported
-        if len(output_substreams) != 1:
-            raise NotImplementedError(
-                "Support for multiple output substreams is not implemented yet."
-            )
-        return output_substreams[0]
+        # TODO: complete substream implementation
+        # Substream implementation pending
+        # stream = streams[0]
+        # # visit each substream
+        # output_substreams = []
+        # for substream_id in stream.substream_identities:
+        #     substream = stream.get_substream(substream_id)
+        #     output_substreams.append(self.op_forward(substream))
+
+        # # at the moment only single output substream is supported
+        # if len(output_substreams) != 1:
+        #     raise NotImplementedError(
+        #         "Support for multiple output substreams is not implemented yet."
+        #     )
+        # return output_substreams[0]
 
     def kernel_output_types(
         self, *streams: dp.Stream, include_system_tags: bool = False

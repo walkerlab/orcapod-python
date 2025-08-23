@@ -315,20 +315,20 @@ class FunctionPod(ActivatablePodBase):
         self._function_info_extractor = function_info_extractor
         object_hasher = self.data_context.object_hasher
         # TODO: fix and replace with object_hasher protocol specific methods
-        self._function_signature_hash = object_hasher.hash_to_hex(
-            get_function_signature(self.function), prefix_hasher_id=True
-        )
-        self._function_content_hash = object_hasher.hash_to_hex(
-            get_function_components(self.function), prefix_hasher_id=True
-        )
+        self._function_signature_hash = object_hasher.hash_object(
+            get_function_signature(self.function)
+        ).to_string()
+        self._function_content_hash = object_hasher.hash_object(
+            get_function_components(self.function)
+        ).to_string()
 
-        self._output_packet_type_hash = object_hasher.hash_to_hex(
-            self.output_packet_types(), prefix_hasher_id=True
-        )
+        self._output_packet_type_hash = object_hasher.hash_object(
+            self.output_packet_types()
+        ).to_string()
 
-        self._total_pod_id_hash = object_hasher.hash_to_hex(
-            self.tiered_pod_id, prefix_hasher_id=True
-        )
+        self._total_pod_id_hash = object_hasher.hash_object(
+            self.tiered_pod_id
+        ).to_string()
 
     @property
     def tiered_pod_id(self) -> dict[str, str]:
@@ -613,7 +613,6 @@ class CachedPod(WrappedPod):
     """
 
     # name of the column in the tag store that contains the packet hash
-    PACKET_HASH_COLUMN = f"{constants.META_PREFIX}packet_hash"
     DATA_RETRIEVED_FLAG = f"{constants.META_PREFIX}data_retrieved"
 
     def __init__(
@@ -660,7 +659,7 @@ class CachedPod(WrappedPod):
             )
         output_packet = None
         if not skip_cache_lookup:
-            output_packet = self.get_recorded_output_packet(packet)
+            output_packet = self.get_cached_output_for_packet(packet)
         if output_packet is None:
             tag, output_packet = super().call(
                 tag, packet, record_id=record_id, execution_engine=execution_engine
@@ -688,7 +687,7 @@ class CachedPod(WrappedPod):
             )
         output_packet = None
         if not skip_cache_lookup:
-            output_packet = self.get_recorded_output_packet(packet)
+            output_packet = self.get_cached_output_for_packet(packet)
         if output_packet is None:
             tag, output_packet = await super().async_call(
                 tag, packet, record_id=record_id, execution_engine=execution_engine
@@ -766,7 +765,7 @@ class CachedPod(WrappedPod):
         # # TODO: make store return retrieved table
         return output_packet
 
-    def get_recorded_output_packet(self, input_packet: dp.Packet) -> dp.Packet | None:
+    def get_cached_output_for_packet(self, input_packet: dp.Packet) -> dp.Packet | None:
         """
         Retrieve the output packet from the result store based on the input packet.
         If more than one output packet is found, conflict resolution strategy
@@ -836,15 +835,18 @@ class CachedPod(WrappedPod):
             meta_info={self.DATA_RETRIEVED_FLAG: str(datetime.now(timezone.utc))},
         )
 
-    def get_all_records(
+    def get_all_cached_outputs(
         self, include_system_columns: bool = False
     ) -> "pa.Table | None":
         """
         Get all records from the result store for this pod.
         If include_system_columns is True, include system columns in the result.
         """
+        record_id_column = (
+            constants.PACKET_RECORD_ID if include_system_columns else None
+        )
         result_table = self.result_store.get_all_records(
-            self.record_path, record_id_column=constants.INPUT_PACKET_HASH
+            self.record_path, record_id_column=record_id_column
         )
         if result_table is None or result_table.num_rows == 0:
             return None

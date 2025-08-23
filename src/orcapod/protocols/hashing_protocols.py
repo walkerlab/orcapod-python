@@ -53,8 +53,14 @@ class ContentHash:
 
         return base64.b64encode(self.digest).decode("ascii")
 
+    def to_string(self, prefix_method: bool = True) -> str:
+        """Convert digest to a string representation."""
+        if prefix_method:
+            return f"{self.method}:{self.to_hex()}"
+        return self.to_hex()
+
     def __str__(self) -> str:
-        return f"{self.method}:{self.to_hex()}"
+        return self.to_string()
 
     @classmethod
     def from_string(cls, hash_string: str) -> "ContentHash":
