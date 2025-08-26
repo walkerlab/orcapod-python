@@ -54,7 +54,24 @@ class LablableBase:
         return None
 
 
-class ContentIdentifiableBase(ABC):
+class ContextAwareBase(ABC):
+    def __init__(
+        self, data_context: str | contexts.DataContext | None = None, **kwargs
+    ):
+        super().__init__(**kwargs)
+        self._data_context = contexts.resolve_context(data_context)
+
+    @property
+    def data_context(self) -> contexts.DataContext:
+        return self._data_context
+
+    @property
+    def data_context_key(self) -> str:
+        """Return the data context key."""
+        return self._data_context.context_key
+
+
+class ContentIdentifiableBase(ContextAwareBase):
     """
     Base class for content-identifiable objects.
     This class provides a way to define objects that can be uniquely identified
@@ -65,9 +82,7 @@ class ContentIdentifiableBase(ABC):
     Two content-identifiable objects are considered equal if their `identity_structure` returns the same value.
     """
 
-    def __init__(
-        self, data_context: str | contexts.DataContext | None = None, **kwargs
-    ) -> None:
+    def __init__(self, **kwargs) -> None:
         """
         Initialize the ContentHashable with an optional ObjectHasher.
 
@@ -75,9 +90,8 @@ class ContentIdentifiableBase(ABC):
             identity_structure_hasher (ObjectHasher | None): An instance of ObjectHasher to use for hashing.
         """
         super().__init__(**kwargs)
-        self._data_context = contexts.resolve_context(data_context)
-        self._content_hash: hp.ContentHash | None = None
-        self._int_hash: int | None = None
+        self._cached_content_hash: hp.ContentHash | None = None
+        self._cached_int_hash: int | None = None
 
     def identity_structure(self) -> Any:
         """
@@ -100,13 +114,13 @@ class ContentIdentifiableBase(ABC):
             bytes: A byte representation of the hash based on the content.
                    If no identity structure is provided, return None.
         """
-        if self._content_hash is None:
+        if self._cached_content_hash is None:
             structure = self.identity_structure()
             processed_structure = process_structure(structure)
-            self._content_hash = self._data_context.object_hasher.hash_object(
+            self._cached_content_hash = self._data_context.object_hasher.hash_object(
                 processed_structure
             )
-        return self._content_hash
+        return self._cached_content_hash
 
     def __hash__(self) -> int:
         """
@@ -117,16 +131,16 @@ class ContentIdentifiableBase(ABC):
             int: A hash value based on either content or identity
         """
         # Get the identity structure
-        if self._int_hash is None:
+        if self._cached_int_hash is None:
             structure = self.identity_structure()
             if structure is None:
                 # If no identity structure is provided, use the default hash
-                self._int_hash = super().__hash__()
+                self._cached_int_hash = super().__hash__()
             else:
-                self._int_hash = self._data_context.object_hasher.hash_object(
+                self._cached_int_hash = self._data_context.object_hasher.hash_object(
                     structure
                 ).to_int()
-        return self._int_hash
+        return self._cached_int_hash
 
     def __eq__(self, other: object) -> bool:
         """

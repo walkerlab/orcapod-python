@@ -20,7 +20,7 @@ dependencies = [
     "selection-pipeline",
 ]
 readme = "README.md"
-requires-python = ">=3.12.0"
+requires-python = ">=3.11.0"
 license = { text = "MIT License" }
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -90,4 +90,4 @@ redis = { features = ["redis"], solve-group = "default" }
 python = ">=3.12"
 
 [tool.uv.sources]
-selection-pipeline = { git = "https://github.com/enigma-brain/selection_pipeline" }
+selection-pipeline = { git = "https://github.com/enigma-brain/selection_pipeline" } #, rev = "6218290" }
