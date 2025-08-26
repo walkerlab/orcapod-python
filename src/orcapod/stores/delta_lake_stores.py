@@ -24,9 +24,9 @@ else:
 logger = logging.getLogger(__name__)
 
 
-class BatchedDeltaTableArrowStore:
+class DeltaTableStore:
     """
-    A batched Delta table store with clear insert vs update semantics.
+    A Delta table store with clear insert vs update semantics.
 
     - insert(): Never overwrites existing records by default. Can skip duplicates if requested.
                 Can be batched for performance. Supports composite keys.
