@@ -7,8 +7,7 @@ import pyarrow as pa
 from orcapod import contexts
 from orcapod.data.datagrams.base import BaseDatagram
 from orcapod.data.system_constants import constants
-from orcapod.types import TypeSpec
-from orcapod.types.core import DataValue
+from orcapod.types import DataValue, TypeSpec
 from orcapod.protocols.hashing_protocols import ContentHash
 from orcapod.utils import arrow_utils
 

@@ -8,9 +8,8 @@ import pyarrow as pa
 from orcapod.data.system_constants import constants
 from orcapod import contexts
 from orcapod.semantic_types import infer_schema_from_pylist_data
-from orcapod.types import TypeSpec
 
-from orcapod.types.core import DataValue
+from orcapod.types import DataValue, TypeSpec
 from orcapod.utils import arrow_utils
 
 from orcapod.data.datagrams.arrow_datagram import ArrowDatagram

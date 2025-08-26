@@ -26,8 +26,7 @@ from orcapod.protocols.hashing_protocols import ContentHash
 
 import pyarrow as pa
 
-from orcapod.types import TypeSpec
-from orcapod.types.core import DataValue
+from orcapod.types import DataValue, TypeSpec
 
 logger = logging.getLogger(__name__)
 

@@ -18,7 +18,7 @@ from orcapod.protocols import data_protocols as dp
 from orcapod.protocols import hashing_protocols as hp
 from orcapod.protocols.store_protocols import ArrowDataStore
 from orcapod.types import DataValue, TypeSpec
-from orcapod.types import typespec_utils as tsutils
+from orcapod.utils import types_utils
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.hashing.hash_utils import get_function_signature, get_function_components
 import hashlib
@@ -175,7 +175,7 @@ class ActivatablePodBase(TrackedKernelBase):
             )
         input_stream = streams[0]
         _, incoming_packet_types = input_stream.types()
-        if not tsutils.check_typespec_compatibility(
+        if not types_utils.check_typespec_compatibility(
             incoming_packet_types, self.input_packet_types()
         ):
             # TODO: use custom exception type for better error handling
@@ -302,11 +302,13 @@ class FunctionPod(ActivatablePodBase):
         super().__init__(label=label or self.function_name, version=version, **kwargs)
 
         # extract input and output types from the function signature
-        input_packet_types, output_packet_types = tsutils.extract_function_typespecs(
-            self.function,
-            self.output_keys,
-            input_typespec=input_python_schema,
-            output_typespec=output_python_schema,
+        input_packet_types, output_packet_types = (
+            types_utils.extract_function_typespecs(
+                self.function,
+                self.output_keys,
+                input_typespec=input_python_schema,
+                output_typespec=output_python_schema,
+            )
         )
         self._input_packet_schema = dict(input_packet_types)
         self._output_packet_schema = dict(output_packet_types)

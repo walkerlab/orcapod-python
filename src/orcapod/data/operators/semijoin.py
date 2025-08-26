@@ -1,7 +1,7 @@
 from orcapod.protocols import data_protocols as dp
 from orcapod.data.streams import TableStream
+from orcapod.utils import types_utils
 from orcapod.types import TypeSpec
-from orcapod.types.typespec_utils import union_typespecs, intersection_typespecs
 from typing import Any, TYPE_CHECKING
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.errors import InputValidationError
@@ -59,11 +59,17 @@ class SemiJoin(BinaryOperator):
         right_tag_typespec, right_packet_typespec = right_stream.types()
 
         # Find overlapping columns across all columns (tags + packets)
-        left_all_typespec = union_typespecs(left_tag_typespec, left_packet_typespec)
-        right_all_typespec = union_typespecs(right_tag_typespec, right_packet_typespec)
+        left_all_typespec = types_utils.union_typespecs(
+            left_tag_typespec, left_packet_typespec
+        )
+        right_all_typespec = types_utils.union_typespecs(
+            right_tag_typespec, right_packet_typespec
+        )
 
         common_keys = tuple(
-            intersection_typespecs(left_all_typespec, right_all_typespec).keys()
+            types_utils.intersection_typespecs(
+                left_all_typespec, right_all_typespec
+            ).keys()
         )
 
         # If no overlapping columns, return the left stream unmodified
@@ -91,14 +97,17 @@ class SemiJoin(BinaryOperator):
         )
 
     def op_output_types(
-        self, left_stream: dp.Stream, right_stream: dp.Stream
+        self,
+        left_stream: dp.Stream,
+        right_stream: dp.Stream,
+        include_system_tags: bool = False,
     ) -> tuple[TypeSpec, TypeSpec]:
         """
         Returns the output types for the semi-join operation.
         The output preserves the exact schema of the left stream.
         """
         # Semi-join preserves the left stream's schema exactly
-        return left_stream.types()
+        return left_stream.types(include_system_tags=include_system_tags)
 
     def op_validate_inputs(
         self, left_stream: dp.Stream, right_stream: dp.Stream
@@ -112,13 +121,15 @@ class SemiJoin(BinaryOperator):
             right_tag_typespec, right_packet_typespec = right_stream.types()
 
             # Check that overlapping columns have compatible types across all columns
-            left_all_typespec = union_typespecs(left_tag_typespec, left_packet_typespec)
-            right_all_typespec = union_typespecs(
+            left_all_typespec = types_utils.union_typespecs(
+                left_tag_typespec, left_packet_typespec
+            )
+            right_all_typespec = types_utils.union_typespecs(
                 right_tag_typespec, right_packet_typespec
             )
 
             # intersection_typespecs will raise an error if types are incompatible
-            intersection_typespecs(left_all_typespec, right_all_typespec)
+            types_utils.intersection_typespecs(left_all_typespec, right_all_typespec)
 
         except Exception as e:
             raise InputValidationError(

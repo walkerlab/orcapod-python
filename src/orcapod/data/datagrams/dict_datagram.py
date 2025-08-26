@@ -7,7 +7,7 @@ from orcapod.data.system_constants import constants
 from orcapod import contexts
 from orcapod.data.datagrams.base import BaseDatagram
 from orcapod.semantic_types import infer_schema_from_pylist_data
-from orcapod.types.core import DataValue
+from orcapod.types import DataValue
 from orcapod.utils import arrow_utils
 from orcapod.protocols.hashing_protocols import ContentHash
 

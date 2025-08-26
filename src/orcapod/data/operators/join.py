@@ -1,7 +1,7 @@
 from orcapod.protocols import data_protocols as dp
 from orcapod.data.streams import TableStream
 from orcapod.types import TypeSpec
-from orcapod.types.typespec_utils import union_typespecs, intersection_typespecs
+from orcapod.utils import types_utils
 from typing import Any, TYPE_CHECKING
 from orcapod.utils.lazy_module import LazyModule
 from collections.abc import Collection
@@ -48,11 +48,13 @@ class Join(NonZeroInputOperator):
             other_tag_typespec, other_packet_typespec = other_stream.types(
                 include_system_tags=include_system_tags
             )
-            tag_typespec = union_typespecs(tag_typespec, other_tag_typespec)
-            intersection_packet_typespec = intersection_typespecs(
+            tag_typespec = types_utils.union_typespecs(tag_typespec, other_tag_typespec)
+            intersection_packet_typespec = types_utils.intersection_typespecs(
                 packet_typespec, other_packet_typespec
             )
-            packet_typespec = union_typespecs(packet_typespec, other_packet_typespec)
+            packet_typespec = types_utils.union_typespecs(
+                packet_typespec, other_packet_typespec
+            )
             if intersection_packet_typespec:
                 raise InputValidationError(
                     f"Packets should not have overlapping keys, but {packet_typespec.keys()} found in {stream} and {other_stream}."
