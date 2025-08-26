@@ -10,6 +10,7 @@ from orcapod.types import TypeSpec
 if TYPE_CHECKING:
     import polars as pl
     import pyarrow as pa
+    import pandas as pd
     from orcapod.protocols.data_protocols.kernel import Kernel
 
 
@@ -115,7 +116,9 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
-    def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    def keys(
+        self, include_system_tags: bool = False
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """
         Available keys/fields in the stream content.
 
@@ -128,6 +131,20 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
 
         Returns:
             tuple[tuple[str, ...], tuple[str, ...]]: (tag_keys, packet_keys)
+        """
+        ...
+
+    def tag_keys(self, include_system_tags: bool = False) -> tuple[str, ...]:
+        """
+        Return the keys used for the tag in the pipeline run records.
+        This is used to store the run-associated tag info.
+        """
+        ...
+
+    def packet_keys(self) -> tuple[str, ...]:
+        """
+        Return the keys used for the packet in the pipeline run records.
+        This is used to store the run-associated packet info.
         """
         ...
 
@@ -145,6 +162,23 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
             tuple[TypeSpec, TypeSpec]: (tag_types, packet_types)
         """
         ...
+
+    def tag_types(self, include_system_tags: bool = False) -> TypeSpec:
+        """
+        Type specifications for the stream content.
+
+        Returns the type schema for both tags and packets in this stream.
+        This information is used for:
+        - Type checking and validation
+        - Schema inference and planning
+        - Compatibility checking between kernels
+
+        Returns:
+            tuple[TypeSpec, TypeSpec]: (tag_types, packet_types)
+        """
+        ...
+
+    def packet_types(self) -> TypeSpec: ...
 
     @property
     def last_modified(self) -> datetime | None:
@@ -260,6 +294,41 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         Convert the entire stream to a Polars DataFrame.
         """
         ...
+
+    def as_lazy_frame(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_system_tags: bool = False,
+        include_content_hash: bool | str = False,
+        sort_by_tags: bool = True,
+        execution_engine: ExecutionEngine | None = None,
+    ) -> "pl.LazyFrame | None":
+        """
+        Load the entire stream to a Polars LazyFrame.
+        """
+        ...
+
+    def as_polars_df(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_system_tags: bool = False,
+        include_content_hash: bool | str = False,
+        sort_by_tags: bool = True,
+        execution_engine: ExecutionEngine | None = None,
+    ) -> "pl.DataFrame | None": ...
+
+    def as_pandas_df(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_system_tags: bool = False,
+        include_content_hash: bool | str = False,
+        sort_by_tags: bool = True,
+        index_by_tags: bool = True,
+        execution_engine: ExecutionEngine | None = None,
+    ) -> "pd.DataFrame | None": ...
 
     def as_table(
         self,
