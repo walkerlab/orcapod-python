@@ -1,5 +1,6 @@
+from abc import abstractmethod
 from collections.abc import Collection, Iterator
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 
 from orcapod.data.kernels import TrackedKernelBase
@@ -35,6 +36,29 @@ class SourceBase(TrackedKernelBase, StatefulStreamBase):
         super().__init__(**kwargs)
         # Cache the KernelStream for reuse across all stream method calls
         self._cached_kernel_stream: KernelStream | None = None
+
+    def kernel_identity_structure(
+        self, streams: Collection[dp.Stream] | None = None
+    ) -> Any:
+        if streams is not None:
+            # when checked for invocation id, act as a source
+            # and just return the output packet types
+            # _, packet_types = self.stream.types()
+            # return packet_types
+            return None
+        # otherwise, return the identity structure of the stream
+        return self.source_identity_structure()
+
+    def kernel_output_types(
+        self, *streams: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[dict[str, type], dict[str, type]]:
+        return self.source_output_types(include_system_tags=include_system_tags)
+
+    @abstractmethod
+    def source_identity_structure(self) -> Any: ...
+
+    @abstractmethod
+    def source_output_types(self, include_system_tags: bool = False) -> Any: ...
 
     # =========================== Kernel Methods ===========================
 
@@ -209,6 +233,51 @@ class SourceBase(TrackedKernelBase, StatefulStreamBase):
         if self._cached_kernel_stream is not None:
             self._cached_kernel_stream.invalidate()
         self._cached_kernel_stream = None
+
+
+class StreamSource(SourceBase):
+    def __init__(self, stream: dp.Stream, label: str | None = None, **kwargs) -> None:
+        """
+        A placeholder source based on stream
+        This is used to represent a kernel that has no computation.
+        """
+        label = label or stream.label
+        self.stream = stream
+        super().__init__(label=label, **kwargs)
+
+    def source_output_types(
+        self, include_system_tags: bool = False
+    ) -> tuple[TypeSpec, TypeSpec]:
+        """
+        Returns the types of the tag and packet columns in the stream.
+        This is useful for accessing the types of the columns in the stream.
+        """
+        return self.stream.types(include_system_tags=include_system_tags)
+
+    @property
+    def kernel_id(self) -> tuple[str, ...]:
+        return (self.stream.__class__.__name__,)
+
+    def forward(self, *args: Any, **kwargs: Any) -> dp.Stream:
+        """
+        Forward the stream through the stub kernel.
+        This is a no-op and simply returns the stream.
+        """
+        return self.stream
+
+    def source_identity_structure(self) -> Any:
+        return self.stream.identity_structure()
+
+    # def __hash__(self) -> int:
+    #     # TODO: resolve the logic around identity structure on a stream / stub kernel
+    #     """
+    #     Hash the StubKernel based on its label and stream.
+    #     This is used to uniquely identify the StubKernel in the tracker.
+    #     """
+    #     identity_structure = self.identity_structure()
+    #     if identity_structure is None:
+    #         return hash(self.stream)
+    #     return identity_structure
 
 
 # ==================== Example Implementation ====================
