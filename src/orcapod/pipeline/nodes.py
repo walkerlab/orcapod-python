@@ -76,8 +76,8 @@ class NodeBase(
         # super().validate_inputs(*self.input_streams)
         return super().forward(*self.input_streams)  # type: ignore[return-value]
 
-    def kernel_output_types(
-        self, *streams: dp.Stream, include_system_tags: bool = False
+    def source_output_types(
+        self, include_system_tags: bool = False
     ) -> tuple[TypeSpec, TypeSpec]:
         """
         Return the output types of the node.
@@ -87,19 +87,12 @@ class NodeBase(
             *self.input_streams, include_system_tags=include_system_tags
         )
 
-    def kernel_identity_structure(
-        self, streams: Collection[dp.Stream] | None = None
-    ) -> Any:
+    def source_identity_structure(self) -> Any:
         """
         Return the identity structure of the node.
         This is used to compute the invocation hash.
         """
         # construct identity structure from the node's information and the
-        # contained kernel
-        if streams is not None and len(streams) > 0:
-            raise NotImplementedError(
-                "At this moment, Node does not yet support handling additional input streams."
-            )
         return self.contained_kernel.identity_structure(self.input_streams)
 
     def get_all_records(
@@ -145,21 +138,6 @@ class KernelNode(NodeBase, WrappedKernel):
 
     def __str__(self):
         return f"KernelNode:{self.kernel!s}"
-
-    def identity_structure(self, streams: Collection[dp.Stream] | None = None) -> Any:
-        """
-        Return the identity structure of the node.
-        This is used to compute the invocation hash.
-        """
-        # construct identity structure from the node's information and the
-        # contained kernel
-        if streams is not None:
-            if len(streams) > 0:
-                raise NotImplementedError(
-                    "At this moment, Node does not yet support handling additional input streams."
-                )
-            return None
-        return self.kernel.identity_structure(self.input_streams)
 
     def forward(self, *streams: dp.Stream) -> dp.Stream:
         output_stream = super().forward(*streams)

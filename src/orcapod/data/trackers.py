@@ -1,13 +1,11 @@
-from orcapod import contexts
 from orcapod.data.base import LabeledContentIdentifiableBase
 from orcapod.protocols import data_protocols as dp
 from collections import defaultdict
-from collections.abc import Generator, Collection
+from collections.abc import Generator
 from abc import ABC, abstractmethod
 from typing import Any, TYPE_CHECKING
 from contextlib import contextmanager
 
-from orcapod.types import TypeSpec
 
 if TYPE_CHECKING:
     import networkx as nx
@@ -136,62 +134,6 @@ class AutoRegisteringContextBasedTracker(ABC):
         self.set_active(False)
 
 
-# TODO: Move this to sources.py
-class StubSource:
-    def __init__(self, stream: dp.Stream, label: str | None = None) -> None:
-        """
-        A placeholder kernel that does nothing.
-        This is used to represent a kernel that has no computation.
-        """
-        self.label = label or stream.label
-        self.stream = stream
-
-    def output_types(
-        self, *streams: dp.Stream, include_system_tags: bool = False
-    ) -> tuple[TypeSpec, TypeSpec]:
-        """
-        Returns the types of the tag and packet columns in the stream.
-        This is useful for accessing the types of the columns in the stream.
-        """
-        assert len(streams) == 0, "StubKernel should not have any input streams."
-        return self.stream.types(include_system_tags=include_system_tags)
-
-    @property
-    def kernel_id(self) -> tuple[str, ...]:
-        return (self.stream.__class__.__name__,)
-
-    def forward(self, *args: Any, **kwargs: Any) -> dp.Stream:
-        """
-        Forward the stream through the stub kernel.
-        This is a no-op and simply returns the stream.
-        """
-        return self.stream
-
-    def __call__(self, *args: Any, **kwargs: Any) -> dp.Stream:
-        return self.forward(*args, **kwargs)
-
-    def identity_structure(self, streams: Collection[dp.Stream] | None = None) -> Any:
-        if streams is not None:
-            # when checked for invocation id, act as a source
-            # and just return the output packet types
-            # _, packet_types = self.stream.types()
-            # return packet_types
-            return None
-        # otherwise, return the identity structure of the stream
-        return self.stream.identity_structure()
-
-    def __hash__(self) -> int:
-        # TODO: resolve the logic around identity structure on a stream / stub kernel
-        """
-        Hash the StubKernel based on its label and stream.
-        This is used to uniquely identify the StubKernel in the tracker.
-        """
-        identity_structure = self.identity_structure()
-        if identity_structure is None:
-            return hash(self.stream)
-        return identity_structure
-
-
 class Invocation(LabeledContentIdentifiableBase):
     def __init__(
         self,
@@ -213,7 +155,10 @@ class Invocation(LabeledContentIdentifiableBase):
             if stream.source is not None:
                 parent_invoctions.append(Invocation(stream.source, stream.upstreams))
             else:
-                source = StubSource(stream)
+                # import JIT to avoid circular imports
+                from orcapod.data.sources.base import StreamSource
+
+                source = StreamSource(stream)
                 parent_invoctions.append(Invocation(source))
 
         return tuple(parent_invoctions)
@@ -251,10 +196,9 @@ class GraphTracker(AutoRegisteringContextBasedTracker):
     def __init__(
         self,
         tracker_manager: dp.TrackerManager | None = None,
-        data_context: str | contexts.DataContext | None = None,
+        **kwargs,
     ) -> None:
         super().__init__(tracker_manager=tracker_manager)
-        self._data_context = contexts.resolve_context(data_context)
 
         # Dictionary to map kernels to the streams they have invoked
         # This is used to track the computational graph and the invocations of kernels

@@ -425,7 +425,7 @@ class FunctionPod(ActivatablePodBase):
             output_data,
             source_info=source_info,
             python_schema=self.output_packet_types(),
-            data_context=self._data_context,
+            data_context=self.data_context,
         )
         return tag, output_packet
 
@@ -475,7 +475,7 @@ class FunctionPod(ActivatablePodBase):
             output_data,
             source_info=source_info,
             python_schema=self.output_packet_types(),
-            data_context=self._data_context,
+            data_context=self.data_context,
         )
         return tag, output_packet
 
@@ -525,6 +525,7 @@ class WrappedPod(ActivatablePodBase):
         data_context: str | contexts.DataContext | None = None,
         **kwargs,
     ) -> None:
+        # if data_context is not explicitly given, use that of the contained pod
         if data_context is None:
             data_context = pod.data_context_key
         super().__init__(

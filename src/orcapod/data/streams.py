@@ -24,11 +24,13 @@ if TYPE_CHECKING:
     import pyarrow as pa
     import pyarrow.compute as pc
     import polars as pl
+    import pandas as pd
     import asyncio
 else:
     pa = LazyModule("pyarrow")
     pc = LazyModule("pyarrow.compute")
     pl = LazyModule("polars")
+    pd = LazyModule("pandas")
     asyncio = LazyModule("asyncio")
 
 
@@ -135,7 +137,6 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
 
     def __init__(
         self,
-        data_context: str | contexts.DataContext | None = None,
         execution_engine: dp.ExecutionEngine | None = None,
         **kwargs,
     ) -> None:
@@ -144,7 +145,6 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
         self._set_modified_time()
         # note that this is not necessary for Stream protocol, but is provided
         # for convenience to resolve semantic types and other context-specific information
-        self._data_context = contexts.resolve_context(data_context)
         self._execution_engine = execution_engine
 
     @property
@@ -182,14 +182,6 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
             raise ValueError(f"Substream with ID {substream_id} not found.")
 
     @property
-    def data_context(self) -> contexts.DataContext:
-        """
-        Returns the data context for the stream.
-        This is used to resolve semantic types and other context-specific information.
-        """
-        return self._data_context
-
-    @property
     @abstractmethod
     def source(self) -> dp.Kernel | None:
         """
@@ -214,10 +206,24 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
         return None
 
     @abstractmethod
-    def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]: ...
+    def keys(
+        self, include_system_tags: bool = False
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]: ...
+
+    def tag_keys(self, include_system_tags: bool = False) -> tuple[str, ...]:
+        return self.keys(include_system_tags=include_system_tags)[0]
+
+    def packet_keys(self) -> tuple[str, ...]:
+        return self.keys()[1]
 
     @abstractmethod
     def types(self, include_system_tags: bool = False) -> tuple[TypeSpec, TypeSpec]: ...
+
+    def tag_types(self, include_system_tags: bool = False) -> TypeSpec:
+        return self.types(include_system_tags=include_system_tags)[0]
+
+    def packet_types(self) -> TypeSpec:
+        return self.types()[1]
 
     @property
     def last_modified(self) -> datetime | None:
@@ -303,7 +309,7 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
         execution_engine: dp.ExecutionEngine | None = None,
     ) -> "pa.Table": ...
 
-    def as_df(
+    def as_polars_df(
         self,
         include_data_context: bool = False,
         include_source: bool = False,
@@ -325,6 +331,77 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
                 execution_engine=execution_engine,
             )
         )
+
+    def as_df(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_system_tags: bool = False,
+        include_content_hash: bool | str = False,
+        sort_by_tags: bool = True,
+        execution_engine: dp.ExecutionEngine | None = None,
+    ) -> "pl.DataFrame | None":
+        """
+        Convert the entire stream to a Polars DataFrame.
+        """
+        return self.as_polars_df(
+            include_data_context=include_data_context,
+            include_source=include_source,
+            include_system_tags=include_system_tags,
+            include_content_hash=include_content_hash,
+            sort_by_tags=sort_by_tags,
+            execution_engine=execution_engine,
+        )
+
+    def as_lazy_frame(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_system_tags: bool = False,
+        include_content_hash: bool | str = False,
+        sort_by_tags: bool = True,
+        execution_engine: dp.ExecutionEngine | None = None,
+    ) -> "pl.LazyFrame | None":
+        """
+        Convert the entire stream to a Polars LazyFrame.
+        """
+        df = self.as_polars_df(
+            include_data_context=include_data_context,
+            include_source=include_source,
+            include_system_tags=include_system_tags,
+            include_content_hash=include_content_hash,
+            sort_by_tags=sort_by_tags,
+            execution_engine=execution_engine,
+        )
+        if df is None:
+            return None
+        return df.lazy()
+
+    def as_pandas_df(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_system_tags: bool = False,
+        include_content_hash: bool | str = False,
+        sort_by_tags: bool = True,
+        index_by_tags: bool = True,
+        execution_engine: dp.ExecutionEngine | None = None,
+    ) -> "pd.DataFrame | None":
+        df = self.as_polars_df(
+            include_data_context=include_data_context,
+            include_source=include_source,
+            include_system_tags=include_system_tags,
+            include_content_hash=include_content_hash,
+            sort_by_tags=sort_by_tags,
+            execution_engine=execution_engine,
+        )
+        if df is None:
+            return None
+        tag_keys, _ = self.keys()
+        pdf = df.to_pandas()
+        if index_by_tags:
+            pdf = pdf.set_index(list(tag_keys))
+        return pdf
 
     def flow(
         self, execution_engine: dp.ExecutionEngine | None = None
@@ -364,6 +441,8 @@ class StreamBase(StatefulStreamBase):
         super().__init__(**kwargs)
         self._source = source
         self._upstreams = upstreams
+
+        # if data context is not provided, use that of the source kernel
         if data_context is None and source is not None:
             # if source is provided, use its data context
             data_context = source.data_context_key
@@ -477,6 +556,7 @@ class TableStream(ImmutableStream):
         self,
         table: "pa.Table",
         tag_columns: Collection[str] = (),
+        system_tag_columns: Collection[str] = (),
         source_info: dict[str, str | None] | None = None,
         source: dp.Kernel | None = None,
         upstreams: tuple[dp.Stream, ...] = (),
@@ -510,6 +590,19 @@ class TableStream(ImmutableStream):
         self._system_tag_columns = tuple(
             c for c in table.column_names if c.startswith(constants.SYSTEM_TAG_PREFIX)
         )
+        if len(system_tag_columns) > 0:
+            # rename system_tag_columns
+            column_name_map = {
+                c: f"{constants.SYSTEM_TAG_PREFIX}{c}" for c in system_tag_columns
+            }
+            table = table.rename_columns(
+                [column_name_map.get(c, c) for c in table.column_names]
+            )
+
+            self._system_tag_columns += tuple(
+                f"{constants.SYSTEM_TAG_PREFIX}{c}" for c in system_tag_columns
+            )
+
         self._all_tag_columns = self._tag_columns + self._system_tag_columns
         if delta := set(tag_columns) - set(self._tag_columns):
             raise ValueError(
@@ -567,7 +660,7 @@ class TableStream(ImmutableStream):
         Returns a hash of the content of the stream.
         This is used to identify the content of the stream.
         """
-        table_hash = self._data_context.arrow_hasher.hash_table(
+        table_hash = self.data_context.arrow_hasher.hash_table(
             self.as_table(
                 include_data_context=True, include_source=True, include_system_tags=True
             ),
@@ -578,12 +671,17 @@ class TableStream(ImmutableStream):
             self._tag_columns,
         )
 
-    def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    def keys(
+        self, include_system_tags: bool = False
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """
         Returns the keys of the tag and packet columns in the stream.
         This is useful for accessing the columns in the stream.
         """
-        return self._tag_columns, self._packet_columns
+        tag_columns = self._tag_columns
+        if include_system_tags:
+            tag_columns += self._system_tag_columns
+        return tag_columns, self._packet_columns
 
     def types(
         self, include_system_tags: bool = False
@@ -593,7 +691,7 @@ class TableStream(ImmutableStream):
         This is useful for accessing the types of the columns in the stream.
         """
         # TODO: consider using MappingProxyType to avoid copying the dicts
-        converter = self._data_context.type_converter
+        converter = self.data_context.type_converter
         if include_system_tags:
             tag_schema = self._all_tag_schema
         else:
@@ -643,9 +741,10 @@ class TableStream(ImmutableStream):
         if sort_by_tags:
             # TODO: cleanup the sorting tag selection logic
             try:
-                return table.sort_by(
-                    [(column, "ascending") for column in self._all_tag_columns]
+                target_tags = (
+                    self._all_tag_columns if include_system_tags else self._tag_columns
                 )
+                return table.sort_by([(column, "ascending") for column in target_tags])
             except pa.ArrowTypeError:
                 # If sorting fails, fall back to unsorted table
                 return table
@@ -684,7 +783,7 @@ class TableStream(ImmutableStream):
                     if tag_present:
                         tag = ArrowTag(
                             tag_batch.slice(i, 1),  # type: ignore
-                            data_context=self._data_context,
+                            data_context=self.data_context,
                         )
 
                     else:
@@ -698,7 +797,7 @@ class TableStream(ImmutableStream):
                                 source_info=self._source_info_table.slice(
                                     i, 1
                                 ).to_pylist()[0],
-                                data_context=self._data_context,
+                                data_context=self.data_context,
                             ),
                         )
                     )
@@ -771,12 +870,16 @@ class KernelStream(StreamBase):
         self._cached_stream = None
         self._set_modified_time(invalidate=True)
 
-    def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    def keys(
+        self, include_system_tags: bool = False
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """
         Returns the keys of the tag and packet columns in the stream.
         This is useful for accessing the columns in the stream.
         """
-        tag_types, packet_types = self.kernel.output_types(*self.upstreams)
+        tag_types, packet_types = self.kernel.output_types(
+            *self.upstreams, include_system_tags=include_system_tags
+        )
         return tuple(tag_types.keys()), tuple(packet_types.keys())
 
     def types(self, include_system_tags: bool = False) -> tuple[TypeSpec, TypeSpec]:
@@ -974,13 +1077,15 @@ class LazyPodResultStream(StreamBase):
                 # Fallback to synchronous run
         self.flow(execution_engine=execution_engine)
 
-    def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    def keys(
+        self, include_system_tags: bool = False
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """
         Returns the keys of the tag and packet columns in the stream.
         This is useful for accessing the columns in the stream.
         """
 
-        tag_keys, _ = self.prepared_stream.keys()
+        tag_keys, _ = self.prepared_stream.keys(include_system_tags=include_system_tags)
         packet_keys = tuple(self.pod.output_packet_types().keys())
         return tag_keys, packet_keys
 
@@ -1023,7 +1128,7 @@ class LazyPodResultStream(StreamBase):
                 all_packets.append(dict_patcket)
 
             # TODO: re-verify the implemetation of this conversion
-            converter = self._data_context.type_converter
+            converter = self.data_context.type_converter
 
             struct_packets = converter.python_dicts_to_struct_dicts(all_packets)
             all_tags_as_tables: pa.Table = pa.Table.from_pylist(
@@ -1311,13 +1416,15 @@ class EfficientPodResultStream(StreamBase):
                 if packet is not None:
                     yield tag, packet
 
-    def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    def keys(
+        self, include_system_tags: bool = False
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """
         Returns the keys of the tag and packet columns in the stream.
         This is useful for accessing the columns in the stream.
         """
 
-        tag_keys, _ = self.input_stream.keys()
+        tag_keys, _ = self.input_stream.keys(include_system_tags=include_system_tags)
         packet_keys = tuple(self.pod.output_packet_types().keys())
         return tag_keys, packet_keys
 
@@ -1359,7 +1466,7 @@ class EfficientPodResultStream(StreamBase):
                         dict_patcket[k] = str(v)
                 all_packets.append(dict_patcket)
 
-            converter = self._data_context.type_converter
+            converter = self.data_context.type_converter
 
             struct_packets = converter.python_dicts_to_struct_dicts(all_packets)
             all_tags_as_tables: pa.Table = pa.Table.from_pylist(
@@ -1438,12 +1545,14 @@ class WrappedStream(StreamBase):
         super().__init__(source=source, upstreams=input_streams, label=label, **kwargs)
         self._stream = stream
 
-    def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    def keys(
+        self, include_system_tags: bool = False
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """
         Returns the keys of the tag and packet columns in the stream.
         This is useful for accessing the columns in the stream.
         """
-        return self._stream.keys()
+        return self._stream.keys(include_system_tags=include_system_tags)
 
     def types(self, include_system_tags: bool = False) -> tuple[TypeSpec, TypeSpec]:
         """
