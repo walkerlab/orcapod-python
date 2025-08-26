@@ -6,7 +6,6 @@ from orcapod.protocols import data_protocols as dp
 import logging
 from orcapod.data.streams import KernelStream
 from orcapod.data.base import LabeledContentIdentifiableBase
-from orcapod import contexts
 from orcapod.data.trackers import DEFAULT_TRACKER_MANAGER
 from orcapod.types import TypeSpec
 
@@ -28,15 +27,12 @@ class TrackedKernelBase(LabeledContentIdentifiableBase):
     def __init__(
         self,
         label: str | None = None,
-        data_context: str | contexts.DataContext | None = None,
         skip_tracking: bool = False,
         tracker_manager: dp.TrackerManager | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         self._label = label
-
-        self._data_context = contexts.resolve_context(data_context)
 
         self._skip_tracking = skip_tracking
         self._tracker_manager = tracker_manager or DEFAULT_TRACKER_MANAGER
@@ -51,15 +47,6 @@ class TrackedKernelBase(LabeledContentIdentifiableBase):
         This is used to identify the kernel in the computational graph.
         """
         return (f"{self.__class__.__name__}", self.content_hash().to_hex())
-
-    @property
-    def data_context(self) -> contexts.DataContext:
-        return self._data_context
-
-    @property
-    def data_context_key(self) -> str:
-        """Return the data context key."""
-        return self._data_context.context_key
 
     @property
     def last_modified(self) -> datetime | None:
