@@ -16,12 +16,13 @@ class ContentHash:
     method: str
     digest: bytes
 
-    def to_hex(self, char_count: int | None = None) -> str:
+    # TODO: make the default char count configurable
+    def to_hex(self, char_count: int | None = 20) -> str:
         """Convert digest to hex string, optionally truncated."""
         hex_str = self.digest.hex()
         return hex_str[:char_count] if char_count else hex_str
 
-    def to_int(self, hexdigits: int = 16) -> int:
+    def to_int(self, hexdigits: int = 20) -> int:
         """
         Convert digest to integer representation.
 
