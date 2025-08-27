@@ -19,15 +19,14 @@ class Datagram(ContentIdentifiable, Protocol):
 
     Each datagram contains:
     - **Data columns**: The primary business data (user_id, name, etc.)
-    - **Meta columns**: Internal system metadata with {orcapod.META_PREFIX} (typically '__') prefixes (e.g. __processed_at, etc.)
-    - **Context column**: Data context information ({orcapod.CONTEXT_KEY})
+    - **Meta columns**: Internal system metadata with {constants.META_PREFIX} (typically '__') prefixes (e.g. __processed_at, etc.)
+    - **Context column**: Data context information ({constants.CONTEXT_KEY})
 
     Derivative of datagram (such as Packet or Tag) will also include some specific columns pertinent to the function of the specialized datagram:
-    - **Source info columns**: Data provenance with {orcapod.SOURCE_PREFIX} ('_source_') prefixes (_source_user_id, etc.) used in Packet
-    - **System tags**: Internal tags for system use, typically prefixed with {orcapod.SYSTEM_TAG_PREFIX} ('_system_') (_system_created_at, etc.) used in Tag
+    - **Source info columns**: Data provenance with {constants.SOURCE_PREFIX} ('_source_') prefixes (_source_user_id, etc.) used in Packet
+    - **System tags**: Internal tags for system use, typically prefixed with {constants.SYSTEM_TAG_PREFIX} ('_system_') (_system_created_at, etc.) used in Tag
 
-    All operations are by design immutable - methods return new datagram instances rather than
-    modifying existing ones.
+    All operations are by design immutable - methods return new datagram instances rather than modifying existing ones.
 
     Example:
         >>> datagram = DictDatagram({"user_id": 123, "name": "Alice"})
@@ -55,7 +54,7 @@ class Datagram(ContentIdentifiable, Protocol):
 
     @property
     def meta_columns(self) -> tuple[str, ...]:
-        """Return tuple of meta column names (with {orcapod.META_PREFIX} ('__') prefix)."""
+        """Return tuple of meta column names (with {constants.META_PREFIX} ('__') prefix)."""
         ...
 
     # 2. Dict-like Interface (Data Access)

@@ -41,12 +41,15 @@ class TrackedKernelBase(LabeledContentIdentifiableBase):
         self._set_modified_time()
 
     @property
-    def kernel_id(self) -> tuple[str, ...]:
+    def reference(self) -> tuple[str, ...]:
         """
         Returns a unique identifier for the kernel.
         This is used to identify the kernel in the computational graph.
         """
-        return (f"{self.__class__.__name__}", self.content_hash().to_hex())
+        return (
+            f"{self.__class__.__name__}",
+            self.content_hash().to_hex(),
+        )
 
     @property
     def last_modified(self) -> datetime | None:
@@ -202,8 +205,8 @@ class WrappedKernel(TrackedKernelBase):
         return self.kernel.label
 
     @property
-    def kernel_id(self) -> tuple[str, ...]:
-        return self.kernel.kernel_id
+    def reference(self) -> tuple[str, ...]:
+        return self.kernel.reference
 
     def kernel_output_types(
         self, *streams: dp.Stream, include_system_tags: bool = False

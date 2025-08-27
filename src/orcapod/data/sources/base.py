@@ -49,9 +49,15 @@ class SourceBase(TrackedKernelBase, StatefulStreamBase):
         # otherwise, return the identity structure of the stream
         return self.source_identity_structure()
 
+    # @property
+    # @abstractmethod
+    # def reference(self) -> tuple[str, ...]:
+    #     """Return the unique identifier for the kernel."""
+    #     ...
+
     def kernel_output_types(
         self, *streams: dp.Stream, include_system_tags: bool = False
-    ) -> tuple[dict[str, type], dict[str, type]]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         return self.source_output_types(include_system_tags=include_system_tags)
 
     @abstractmethod
@@ -116,9 +122,11 @@ class SourceBase(TrackedKernelBase, StatefulStreamBase):
         """Sources have no upstream dependencies."""
         return ()
 
-    def keys(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    def keys(
+        self, include_system_tags: bool = False
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
         """Delegate to the cached KernelStream."""
-        return self().keys()
+        return self().keys(include_system_tags=include_system_tags)
 
     def types(
         self, include_system_tags: bool = False

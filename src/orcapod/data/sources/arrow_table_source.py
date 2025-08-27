@@ -20,11 +20,12 @@ from orcapod.data.sources.base import SourceBase
 class ArrowTableSource(SourceBase):
     """Construct source from a collection of dictionaries"""
 
+    SOURCE_ID = "arrow"
+
     def __init__(
         self,
         table: "pa.Table",
         tag_columns: Collection[str] = (),
-        source_info: str | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -33,10 +34,6 @@ class ArrowTableSource(SourceBase):
         # TODO: consider special treatment of system columns if provided
         table = arrow_data_utils.drop_system_columns(table)
         self.table_hash = self.data_context.arrow_hasher.hash_table(table)
-
-        if source_info is None:
-            source_info = f"arrow_table:{self.table_hash.to_hex(char_count=16)}"
-        self.source_info = source_info
 
         self.tag_columns = [col for col in tag_columns if col in table.column_names]
 
@@ -58,6 +55,10 @@ class ArrowTableSource(SourceBase):
             source=self,
             upstreams=(),
         )
+
+    @property
+    def reference(self) -> tuple[str, ...]:
+        return (self.SOURCE_ID, self.table_hash.to_hex())
 
     @property
     def table(self) -> "pa.Table":

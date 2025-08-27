@@ -33,16 +33,16 @@ class Kernel(ContentIdentifiable, Labelable, Protocol):
     """
 
     @property
-    def kernel_id(self) -> tuple[str, ...]:
+    def reference(self) -> tuple[str, ...]:
         """
-        Return a unique identifier for this Pod.
+        Reference to the kernel
 
-        The pod_id is used for caching and tracking purposes. It should
-        uniquely identify the Pod's computational logic, parameters, and
-        any relevant metadata that affects its behavior.
+        The reference is used for caching/storage and tracking purposes.
+        As the name indicates, this is how data originating from the kernel will be referred to.
+
 
         Returns:
-            tuple[str, ...]: Unique identifier for this Pod
+            tuple[str, ...]: Reference for this kernel
         """
         ...
 
