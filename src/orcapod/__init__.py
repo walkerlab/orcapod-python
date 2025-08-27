@@ -2,7 +2,7 @@ from .data import DEFAULT_TRACKER_MANAGER
 from .data.pods import function_pod, FunctionPod, CachedPod
 from .data import streams
 from .data import operators
-from . import stores
+from . import databases
 from .pipeline import Pipeline
 
 
@@ -15,7 +15,7 @@ __all__ = [
     "FunctionPod",
     "CachedPod",
     "streams",
-    "stores",
+    "databases",
     "operators",
     "Pipeline",
 ]

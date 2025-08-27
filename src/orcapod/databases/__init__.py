@@ -13,4 +13,4 @@
 #     "SimpleParquetDataStore",
 # ]
 
-from .delta_lake_stores import DeltaTableStore
+from .delta_lake_databases import DeltaTableDatabase

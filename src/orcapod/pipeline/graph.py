@@ -3,7 +3,7 @@ from orcapod.pipeline.nodes import KernelNode, PodNode
 from orcapod.protocols.pipeline_protocols import Node
 from orcapod import contexts
 from orcapod.protocols import data_protocols as dp
-from orcapod.protocols import store_protocols as sp
+from orcapod.protocols import database_protocols as dbp
 from typing import Any
 from collections.abc import Collection
 import logging
@@ -21,8 +21,8 @@ class Pipeline(GraphTracker):
     def __init__(
         self,
         name: str | tuple[str, ...],
-        pipeline_store: sp.ArrowDataStore,
-        results_store: sp.ArrowDataStore | None = None,
+        pipeline_database: dbp.ArrowDatabase,
+        results_database: dbp.ArrowDatabase | None = None,
         tracker_manager: dp.TrackerManager | None = None,
         data_context: str | contexts.DataContext | None = None,
         auto_compile: bool = True,
@@ -33,15 +33,15 @@ class Pipeline(GraphTracker):
         self.name = name
         self.pipeline_store_path_prefix = self.name
         self.results_store_path_prefix = ()
-        if results_store is None:
-            if pipeline_store is None:
+        if results_database is None:
+            if pipeline_database is None:
                 raise ValueError(
-                    "Either pipeline_store or results_store must be provided"
+                    "Either pipeline_database or results_database must be provided"
                 )
-            results_store = pipeline_store
+            results_database = pipeline_database
             self.results_store_path_prefix = self.name + ("_results",)
-        self.pipeline_store = pipeline_store
-        self.results_store = results_store
+        self.pipeline_database = pipeline_database
+        self.results_database = results_database
         self.nodes: dict[str, Node] = {}
         self.auto_compile = auto_compile
         self._dirty = False
@@ -56,8 +56,8 @@ class Pipeline(GraphTracker):
             self.compile()
 
     def flush(self) -> None:
-        self.pipeline_store.flush()
-        self.results_store.flush()
+        self.pipeline_database.flush()
+        self.results_database.flush()
 
     def record_kernel_invocation(
         self,
@@ -119,9 +119,9 @@ class Pipeline(GraphTracker):
             node = PodNode(
                 pod=pod,
                 input_streams=new_input_streams,
-                result_store=self.results_store,
+                result_database=self.results_database,
                 record_path_prefix=self.results_store_path_prefix,
-                pipeline_store=self.pipeline_store,
+                pipeline_database=self.pipeline_database,
                 pipeline_path_prefix=self.pipeline_store_path_prefix,
                 label=invocation.label,
             )
@@ -130,7 +130,7 @@ class Pipeline(GraphTracker):
             node = KernelNode(
                 kernel=source,
                 input_streams=new_input_streams,
-                pipeline_store=self.pipeline_store,
+                pipeline_database=self.pipeline_database,
                 pipeline_path_prefix=self.pipeline_store_path_prefix,
                 label=invocation.label,
             )
@@ -138,7 +138,7 @@ class Pipeline(GraphTracker):
             node = KernelNode(
                 kernel=invocation.kernel,
                 input_streams=new_input_streams,
-                pipeline_store=self.pipeline_store,
+                pipeline_database=self.pipeline_database,
                 pipeline_path_prefix=self.pipeline_store_path_prefix,
                 label=invocation.label,
             )

@@ -13,7 +13,7 @@ from orcapod.hashing.types import (
     LegacyPacketHasher,
     LegacyPathSetHasher,
 )
-from orcapod.stores.legacy.dict_data_stores import DirDataStore
+from orcapod.databases.legacy.dict_data_stores import DirDataStore
 
 
 class MockFileHasher(LegacyFileHasher):

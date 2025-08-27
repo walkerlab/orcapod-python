@@ -16,7 +16,7 @@ from orcapod.data.streams import LazyPodResultStream, EfficientPodResultStream
 from orcapod.data.system_constants import constants
 from orcapod.protocols import data_protocols as dp
 from orcapod.protocols import hashing_protocols as hp
-from orcapod.protocols.store_protocols import ArrowDataStore
+from orcapod.protocols.database_protocols import ArrowDatabase
 from orcapod.types import DataValue, PythonSchema
 from orcapod.utils import types_utils
 from orcapod.utils.lazy_module import LazyModule
@@ -341,7 +341,7 @@ class FunctionPod(ActivatablePodBase):
         }
 
     @property
-    def kernel_id(self) -> tuple[str, ...]:
+    def reference(self) -> tuple[str, ...]:
         return (
             self.function_name,
             self._output_packet_type_hash,
@@ -360,14 +360,14 @@ class FunctionPod(ActivatablePodBase):
             prefix_hasher_id=True,
         )
 
-    def input_packet_types(self) -> dict[str, type]:
+    def input_packet_types(self) -> PythonSchema:
         """
         Return the input typespec for the function pod.
         This is used to validate the input streams.
         """
         return self._input_packet_schema.copy()
 
-    def output_packet_types(self) -> dict[str, type]:
+    def output_packet_types(self) -> PythonSchema:
         """
         Return the output typespec for the function pod.
         This is used to validate the output streams.
@@ -420,7 +420,7 @@ class FunctionPod(ActivatablePodBase):
             # if record_id is not provided, generate it from the packet
             record_id = self.get_record_id(packet, execution_engine_hash)
         source_info = {
-            k: ":".join(self.kernel_id + (record_id, k)) for k in output_data
+            k: ":".join(self.reference + (record_id, k)) for k in output_data
         }
 
         output_packet = DictPacket(
@@ -470,7 +470,7 @@ class FunctionPod(ActivatablePodBase):
             # if record_id is not provided, generate it from the packet
             record_id = self.get_record_id(packet, execution_engine_hash)
         source_info = {
-            k: ":".join(self.kernel_id + (record_id, k)) for k in output_data
+            k: ":".join(self.reference + (record_id, k)) for k in output_data
         }
 
         output_packet = DictPacket(
@@ -504,7 +504,7 @@ class FunctionPod(ActivatablePodBase):
     def kernel_identity_structure(
         self, streams: Collection[dp.Stream] | None = None
     ) -> Any:
-        id_struct = (self.__class__.__name__,) + self.kernel_id
+        id_struct = (self.__class__.__name__,) + self.reference
         # if streams are provided, perform pre-processing step, validate, and add the
         # resulting single stream to the identity structure
         if streams is not None and len(streams) != 0:
@@ -538,12 +538,12 @@ class WrappedPod(ActivatablePodBase):
         self.pod = pod
 
     @property
-    def kernel_id(self) -> tuple[str, ...]:
+    def reference(self) -> tuple[str, ...]:
         """
         Return the pod ID, which is the function name of the wrapped pod.
         This is used to identify the pod in the system.
         """
-        return self.pod.kernel_id
+        return self.pod.reference
 
     def get_record_id(self, packet: dp.Packet, execution_engine_hash: str) -> str:
         return self.pod.get_record_id(packet, execution_engine_hash)
@@ -621,7 +621,7 @@ class CachedPod(WrappedPod):
     def __init__(
         self,
         pod: dp.Pod,
-        result_store: ArrowDataStore,
+        result_database: ArrowDatabase,
         record_path_prefix: tuple[str, ...] = (),
         match_tier: str | None = None,
         retrieval_mode: Literal["latest", "most_specific"] = "latest",
@@ -629,7 +629,7 @@ class CachedPod(WrappedPod):
     ):
         super().__init__(pod, **kwargs)
         self.record_path_prefix = record_path_prefix
-        self.result_store = result_store
+        self.result_database = result_database
         self.match_tier = match_tier
         self.retrieval_mode = retrieval_mode
 
@@ -643,7 +643,7 @@ class CachedPod(WrappedPod):
         Return the path to the record in the result store.
         This is used to store the results of the pod.
         """
-        return self.record_path_prefix + self.kernel_id
+        return self.record_path_prefix + self.reference
 
     def call(
         self,
@@ -754,7 +754,7 @@ class CachedPod(WrappedPod):
                 input_packet, execution_engine_hash=execution_engine_hash
             )
 
-        self.result_store.add_record(
+        self.result_database.add_record(
             self.record_path,
             record_id,
             data_table,
@@ -788,7 +788,7 @@ class CachedPod(WrappedPod):
                 self.pod.tiered_pod_id[self.match_tier]
             )
 
-        result_table = self.result_store.get_records_with_column_value(
+        result_table = self.result_database.get_records_with_column_value(
             self.record_path,
             constraints,
         )
@@ -848,7 +848,7 @@ class CachedPod(WrappedPod):
         record_id_column = (
             constants.PACKET_RECORD_ID if include_system_columns else None
         )
-        result_table = self.result_store.get_all_records(
+        result_table = self.result_database.get_all_records(
             self.record_path, record_id_column=record_id_column
         )
         if result_table is None or result_table.num_rows == 0:

@@ -1,7 +1,7 @@
 from orcapod.data.kernels import KernelStream, WrappedKernel
 from orcapod.data.sources import SourceBase
-from orcapod.data.pods import ArrowDataStore, CachedPod
-from orcapod.protocols import data_protocols as dp
+from orcapod.data.pods import CachedPod
+from orcapod.protocols import data_protocols as dp, database_protocols as dbp
 from orcapod.types import PythonSchema
 from orcapod.utils.lazy_module import LazyModule
 from typing import TYPE_CHECKING, Any
@@ -29,7 +29,7 @@ class NodeBase(
     def __init__(
         self,
         input_streams: Collection[dp.Stream],
-        pipeline_store: ArrowDataStore,
+        pipeline_database: dbp.ArrowDatabase,
         pipeline_path_prefix: tuple[str, ...] = (),
         **kwargs,
     ):
@@ -46,7 +46,7 @@ class NodeBase(
         self.tag_schema_hash = self.data_context.object_hasher.hash_object(
             tag_types
         ).to_string()
-        self.pipeline_store = pipeline_store
+        self.pipeline_database = pipeline_database
 
     @property
     def contained_kernel(self) -> dp.Kernel:
@@ -63,7 +63,7 @@ class NodeBase(
         # TODO: include output tag hash!
         return (
             self.pipeline_path_prefix
-            + self.kernel_id
+            + self.reference
             + (self.invocation_hash, self.tag_schema_hash)
         )
 
@@ -117,14 +117,14 @@ class KernelNode(NodeBase, WrappedKernel):
         self,
         kernel: dp.Kernel,
         input_streams: Collection[dp.Stream],
-        pipeline_store: ArrowDataStore,
+        pipeline_database: dbp.ArrowDatabase,
         pipeline_path_prefix: tuple[str, ...] = (),
         **kwargs,
     ) -> None:
         super().__init__(
             kernel=kernel,
             input_streams=input_streams,
-            pipeline_store=pipeline_store,
+            pipeline_database=pipeline_database,
             pipeline_path_prefix=pipeline_path_prefix,
             **kwargs,
         )
@@ -153,7 +153,7 @@ class KernelNode(NodeBase, WrappedKernel):
             include_source=True,
             include_content_hash=key_column_name,
         )
-        self.pipeline_store.add_records(
+        self.pipeline_database.add_records(
             self.pipeline_path,
             output_table,
             record_id_column=key_column_name,
@@ -163,7 +163,7 @@ class KernelNode(NodeBase, WrappedKernel):
     def get_all_records(
         self, include_system_columns: bool = False
     ) -> "pa.Table | None":
-        results = self.pipeline_store.get_all_records(self.pipeline_path)
+        results = self.pipeline_database.get_all_records(self.pipeline_path)
 
         if results is None:
             return None
@@ -185,22 +185,22 @@ class PodNode(NodeBase, CachedPod):
         self,
         pod: dp.Pod,
         input_streams: Collection[dp.Stream],
-        pipeline_store: ArrowDataStore,
-        result_store: ArrowDataStore | None = None,
+        pipeline_database: dbp.ArrowDatabase,
+        result_database: dbp.ArrowDatabase | None = None,
         record_path_prefix: tuple[str, ...] = (),
         pipeline_path_prefix: tuple[str, ...] = (),
         **kwargs,
     ) -> None:
         super().__init__(
             pod=pod,
-            result_store=result_store,
+            result_database=result_database,
             record_path_prefix=record_path_prefix,
             input_streams=input_streams,
-            pipeline_store=pipeline_store,
+            pipeline_database=pipeline_database,
             pipeline_path_prefix=pipeline_path_prefix,
             **kwargs,
         )
-        self.pipeline_store = pipeline_store
+        self.pipeline_store = pipeline_database
 
     @property
     def contained_kernel(self) -> dp.Kernel:
@@ -350,7 +350,7 @@ class PodNode(NodeBase, CachedPod):
     def get_all_records(
         self, include_system_columns: bool = False
     ) -> "pa.Table | None":
-        results = self.result_store.get_all_records(
+        results = self.result_database.get_all_records(
             self.record_path, record_id_column=constants.PACKET_RECORD_ID
         )
 

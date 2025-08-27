@@ -7,7 +7,7 @@ from typing import Any, cast
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 import logging
-from orcapod.stores.types import DuplicateError
+from orcapod.databases.types import DuplicateError
 from pathlib import Path
 
 # Module-level logger

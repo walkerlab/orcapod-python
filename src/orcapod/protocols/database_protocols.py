@@ -5,7 +5,7 @@ if TYPE_CHECKING:
     import pyarrow as pa
 
 
-class ArrowDataStore(Protocol):
+class ArrowDatabase(Protocol):
     def add_record(
         self,
         record_path: tuple[str, ...],
@@ -82,7 +82,7 @@ class MetadataCapable(Protocol):
     ) -> Collection[str]: ...
 
 
-class ArrowDataStoreWithMetadata(ArrowDataStore, MetadataCapable, Protocol):
-    """A protocol that combines ArrowDataStore with metadata capabilities."""
+class ArrowDatabaseWithMetadata(ArrowDatabase, MetadataCapable, Protocol):
+    """A protocol that combines ArrowDatabase with metadata capabilities."""
 
     pass

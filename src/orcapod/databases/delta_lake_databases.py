@@ -1,4 +1,3 @@
-from multiprocessing import Value
 from pathlib import Path
 from typing import Any, Literal, TYPE_CHECKING, cast
 import logging
@@ -7,7 +6,6 @@ from deltalake.exceptions import TableNotFoundError
 from collections import defaultdict
 from collections.abc import Collection, Mapping
 
-from pyarrow import Table
 from orcapod.data import constants
 from orcapod.utils.lazy_module import LazyModule
 
@@ -24,9 +22,9 @@ else:
 logger = logging.getLogger(__name__)
 
 
-class DeltaTableStore:
+class DeltaTableDatabase:
     """
-    A Delta table store with clear insert vs update semantics.
+    A Delta table database with clear insert vs update semantics.
 
     - insert(): Never overwrites existing records by default. Can skip duplicates if requested.
                 Can be batched for performance. Supports composite keys.

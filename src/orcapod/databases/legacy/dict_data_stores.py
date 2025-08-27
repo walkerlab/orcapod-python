@@ -7,7 +7,7 @@ from pathlib import Path
 from orcapod.hashing.legacy_core import hash_packet
 from orcapod.hashing.types import LegacyPacketHasher
 from orcapod.hashing.defaults import get_default_composite_file_hasher
-from orcapod.stores.legacy.types import DataStore
+from orcapod.databases.legacy.types import DataStore
 from orcapod.types import Packet, PacketLike
 
 logger = logging.getLogger(__name__)
