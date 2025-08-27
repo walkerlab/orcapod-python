@@ -1,14 +1,12 @@
-from collections.abc import Collection, Mapping
+from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
 
 
-from orcapod.data.streams import TableStream
 from orcapod.protocols import data_protocols as dp
-from orcapod.types import DataValue
-from orcapod.utils import arrow_utils
+from orcapod.types import DataValue, PythonSchema, PythonSchemaLike
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.data.system_constants import constants
-from orcapod.semantic_types import infer_python_schema_from_pylist_data
+from orcapod.data.sources.arrow_table_source import ArrowTableSource
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -65,49 +63,28 @@ class DictSource(SourceBase):
     def __init__(
         self,
         data: Collection[dict[str, DataValue]],
-        tag_columns: Collection[str],
-        tag_schema: Mapping[str, type] | None = None,
-        packet_schema: Mapping[str, type] | None = None,
+        tag_columns: Collection[str] = (),
+        system_tag_columns: Collection[str] = (),
+        data_schema: PythonSchemaLike | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
-        data = list(data)
-        tags = []
-        packets = []
-        for item in data:
-            tags.append({k: item[k] for k in tag_columns})
-            packets.append({k: item[k] for k in item if k not in tag_columns})
-
-        # TODO: visit source info logic
-        source_info = ":".join(self.kernel_id)
-
-        raw_data, system_data = split_system_columns(data)
-
-        self.tags = tags
-        self.packets = [add_source_field(packet, source_info) for packet in packets]
-
-        self.tag_schema = (
-            dict(tag_schema)
-            if tag_schema
-            else infer_python_schema_from_pylist_data(self.tags)
+        arrow_table = self.data_context.type_converter.python_dicts_to_arrow_table(
+            list(data), python_schema=data_schema
         )
-        self.packet_schema = (
-            dict(packet_schema)
-            if packet_schema
-            else infer_python_schema_from_pylist_data(self.packets)
+        self._table_source = ArrowTableSource(
+            arrow_table, tag_columns=tag_columns, system_tag_columns=system_tag_columns
         )
 
     def source_identity_structure(self) -> Any:
-        return (
-            self.__class__.__name__,
-            tuple(self.tag_schema.items()),
-            tuple(self.packet_schema.items()),
-        )
+        return self._table_source.source_identity_structure()
 
     def get_all_records(
         self, include_system_columns: bool = False
     ) -> "pa.Table | None":
-        return self().as_table(include_source=include_system_columns)
+        return self._table_source.get_all_records(
+            include_system_columns=include_system_columns
+        )
 
     def forward(self, *streams: dp.Stream) -> dp.Stream:
         """
@@ -115,38 +92,13 @@ class DictSource(SourceBase):
 
         This is called by forward() and creates a fresh snapshot each time.
         """
-        tag_arrow_schema = (
-            self._data_context.type_converter.python_schema_to_arrow_schema(
-                self.tag_schema
-            )
-        )
-        packet_arrow_schema = (
-            self._data_context.type_converter.python_schema_to_arrow_schema(
-                self.packet_schema
-            )
-        )
-
-        joined_data = [
-            {**tag, **packet} for tag, packet in zip(self.tags, self.packets)
-        ]
-
-        table = pa.Table.from_pylist(
-            joined_data,
-            schema=arrow_utils.join_arrow_schemas(
-                tag_arrow_schema, packet_arrow_schema
-            ),
-        )
-
-        return TableStream(
-            table=table,
-            tag_columns=self.tag_keys,
-            source=self,
-            upstreams=(),
-        )
+        return self._table_source.forward(*streams)
 
     def source_output_types(
         self, include_system_tags: bool = False
-    ) -> tuple[dict[str, type], dict[str, type]]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         """Return tag and packet types based on provided typespecs."""
         # TODO: add system tag
-        return self.tag_schema, self.packet_schema
+        return self._table_source.source_output_types(
+            include_system_tags=include_system_tags
+        )

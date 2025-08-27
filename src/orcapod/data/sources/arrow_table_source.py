@@ -1,14 +1,13 @@
-from collections.abc import Collection, Mapping
+from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
 
 
 from orcapod.data.streams import TableStream
 from orcapod.protocols import data_protocols as dp
-from orcapod.types import DataValue
-from orcapod.utils import arrow_utils
+from orcapod.types import PythonSchema
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.data.system_constants import constants
-from orcapod.semantic_types import infer_python_schema_from_pylist_data
+from orcapod.data import arrow_data_utils
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -25,26 +24,47 @@ class ArrowTableSource(SourceBase):
         self,
         table: "pa.Table",
         tag_columns: Collection[str] = (),
-        system_tag_columns: Collection[str] = (),
-        source_info: dict[str, str | None] | None = None,
+        source_info: str | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
-        self.table = table
-        self.tag_columns = tag_columns
-        self.system_tag_columns = system_tag_columns
+
+        # clean the table, dropping any system columns
+        # TODO: consider special treatment of system columns if provided
+        table = arrow_data_utils.drop_system_columns(table)
+        self.table_hash = self.data_context.arrow_hasher.hash_table(table)
+
+        if source_info is None:
+            source_info = f"arrow_table:{self.table_hash.to_hex(char_count=16)}"
         self.source_info = source_info
-        self.table_hash = self.data_context.arrow_hasher.hash_table(self.table)
+
+        self.tag_columns = [col for col in tag_columns if col in table.column_names]
+
+        # add system tag column, indexing into the array
+        system_tag_column = pa.array(list(range(table.num_rows)), pa.int64())
+
+        table = table.add_column(
+            0, f"{constants.SYSTEM_TAG_PREFIX}{self.source_info}", system_tag_column
+        )
+
+        # add source info
+        self._table = arrow_data_utils.add_source_info(
+            table, self.source_info, exclude_columns=tag_columns
+        )
+
         self._table_stream = TableStream(
-            table=self.table,
+            table=self._table,
             tag_columns=self.tag_columns,
-            system_tag_columns=self.system_tag_columns,
             source=self,
             upstreams=(),
         )
 
+    @property
+    def table(self) -> "pa.Table":
+        return self._table
+
     def source_identity_structure(self) -> Any:
-        return (self.__class__.__name__, self.table_hash)
+        return (self.__class__.__name__, self.source_info, self.table_hash)
 
     def get_all_records(
         self, include_system_columns: bool = False
@@ -61,6 +81,6 @@ class ArrowTableSource(SourceBase):
 
     def source_output_types(
         self, include_system_tags: bool = False
-    ) -> tuple[dict[str, type], dict[str, type]]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         """Return tag and packet types based on provided typespecs."""
         return self._table_stream.types(include_system_tags=include_system_tags)
