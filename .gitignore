@@ -18,8 +18,9 @@ notebooks/**/*.db
 # Ignore profiler output
 *.prof
 
-# Ignore any notebook that starts with an underscore
+# Ignore any notebook that starts with an underscore or test
 notebooks/**/_*.ipynb
+notebooks/**/test*.ipynb
 
 # Ignore vscode settings
 .vscode/
