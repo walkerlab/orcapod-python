@@ -11,7 +11,7 @@ This module tests the function type extraction functionality, covering:
 import pytest
 from collections.abc import Collection
 
-from orcapod.types.typespec_utils import extract_function_typespecs
+from orcapod.utils.types_utils import extract_function_typespecs
 
 
 class TestExtractFunctionDataTypes:

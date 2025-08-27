@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from orcapod.protocols.data_protocols.base import ExecutionEngine, Labelable
 from orcapod.protocols.data_protocols.datagrams import Packet, Tag
 from orcapod.protocols.hashing_protocols import ContentIdentifiable
-from orcapod.types import TypeSpec
+from orcapod.types import PythonSchema
 
 if TYPE_CHECKING:
     import polars as pl
@@ -148,7 +148,9 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
-    def types(self, include_system_tags: bool = False) -> tuple[TypeSpec, TypeSpec]:
+    def types(
+        self, include_system_tags: bool = False
+    ) -> tuple[PythonSchema, PythonSchema]:
         """
         Type specifications for the stream content.
 
@@ -163,7 +165,7 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
-    def tag_types(self, include_system_tags: bool = False) -> TypeSpec:
+    def tag_types(self, include_system_tags: bool = False) -> PythonSchema:
         """
         Type specifications for the stream content.
 
@@ -178,7 +180,7 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
-    def packet_types(self) -> TypeSpec: ...
+    def packet_types(self) -> PythonSchema: ...
 
     @property
     def last_modified(self) -> datetime | None:

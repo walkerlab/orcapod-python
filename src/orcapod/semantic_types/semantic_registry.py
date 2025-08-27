@@ -1,8 +1,11 @@
 from typing import Any, TYPE_CHECKING
-from collections.abc import Collection
-from orcapod.protocols.semantic_protocols import SemanticStructConverter
+from collections.abc import Mapping
+from orcapod.protocols.semantic_types_protocols import SemanticStructConverter
 from orcapod.utils.lazy_module import LazyModule
 
+# from orcapod.semantic_types.type_inference import infer_python_schema_from_pylist_data
+from orcapod.types import PythonSchema
+from orcapod.semantic_types import pydata_utils
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -19,7 +22,21 @@ class SemanticTypeRegistry:
     struct schema alone.
     """
 
-    def __init__(self, converters: Collection[SemanticStructConverter] | None = None):
+    @staticmethod
+    def infer_python_schema_from_pylist(data: list[dict[str, Any]]) -> PythonSchema:
+        """
+        Infer Python schema from a list of dictionaries (pylist)
+        """
+        return pydata_utils.infer_python_schema_from_pylist_data(data)
+
+    @staticmethod
+    def infer_python_schema_from_pydict(data: dict[str, list[Any]]) -> PythonSchema:
+        # TODO: consider which data type is more efficient and use that pylist or pydict
+        return pydata_utils.infer_python_schema_from_pylist_data(
+            pydata_utils.pydict_to_pylist(data)
+        )
+
+    def __init__(self, converters: Mapping[str, SemanticStructConverter] | None = None):
         # Bidirectional mappings between Python types and struct signatures
         self._python_to_struct: dict[type, "pa.StructType"] = {}
         self._struct_to_python: dict["pa.StructType", type] = {}
@@ -29,12 +46,13 @@ class SemanticTypeRegistry:
         self._name_to_converter: dict[str, SemanticStructConverter] = {}
         self._struct_to_name: dict["pa.StructType", str] = {}
 
+        # If initialized with a list of converters, register them
         if converters:
-            for converter in converters:
-                self.register_converter(converter)
+            for semantic_type_name, converter in converters.items():
+                self.register_converter(semantic_type_name, converter)
 
     def register_converter(
-        self, converter: SemanticStructConverter, semantic_name: str | None = None
+        self, semantic_type_name: str, converter: SemanticStructConverter
     ) -> None:
         """
         Register a semantic type converter.
@@ -65,25 +83,27 @@ class SemanticTypeRegistry:
                     f"Existing: {existing_python}, New: {python_type}"
                 )
 
-        if semantic_name in self._name_to_converter:
-            existing = self._name_to_converter[semantic_name]
-            if existing != converter:
+        # catch case where a different converter is already registered with the semantic type name
+        if existing_converter := self.get_converter_for_semantic_type(
+            semantic_type_name
+        ):
+            if existing_converter != converter:
                 raise ValueError(
-                    f"Semantic type name '{semantic_name}' already registered"
+                    f"Semantic type name '{semantic_type_name}' is already registered to {existing_converter}"
                 )
 
         # Register bidirectional mappings
         self._python_to_struct[python_type] = struct_signature
         self._struct_to_python[struct_signature] = python_type
         self._struct_to_converter[struct_signature] = converter
-        if semantic_name is not None:
-            self._name_to_converter[semantic_name] = converter
-            self._struct_to_name[struct_signature] = semantic_name
+
+        self._name_to_converter[semantic_type_name] = converter
+        self._struct_to_name[struct_signature] = semantic_type_name
 
     def get_converter_for_python_type(
         self, python_type: type
     ) -> SemanticStructConverter | None:
-        """Get converter for a Python type."""
+        """Get converter registered to the Python type."""
         # Direct lookup first
         struct_signature = self._python_to_struct.get(python_type)
         if struct_signature:
@@ -107,16 +127,14 @@ class SemanticTypeRegistry:
     def get_converter_for_semantic_type(
         self, semantic_type_name: str
     ) -> SemanticStructConverter | None:
-        """Get converter by semantic type name."""
+        """Get converter registered to the semantic type name."""
         return self._name_to_converter.get(semantic_type_name)
 
     def get_converter_for_struct_signature(
         self, struct_signature: "pa.StructType"
     ) -> SemanticStructConverter | None:
         """
-        Get converter for an Arrow struct signature.
-
-        This is the core method for struct signature recognition.
+        Get converter registered to the Arrow struct signature.
         """
         return self._struct_to_converter.get(struct_signature)
 
@@ -124,29 +142,27 @@ class SemanticTypeRegistry:
         self, struct_signature: "pa.StructType"
     ) -> type | None:
         """
-        Get Python type for an Arrow struct signature.
-
-        This enables automatic type inference from struct schemas.
+        Get Python type registered to the Arrow struct signature.
         """
         return self._struct_to_python.get(struct_signature)
 
     def get_semantic_struct_signature_for_python_type(
         self, python_type: type
     ) -> "pa.StructType | None":
-        """Get Arrow struct signature for a Python type."""
+        """Get Arrow struct signature registered to the Python type."""
         return self._python_to_struct.get(python_type)
 
-    def is_semantic_struct_signature(self, struct_signature: "pa.StructType") -> bool:
-        """Check if a struct signature represents a semantic type."""
-        return struct_signature in self._struct_to_python
+    def has_semantic_type(self, semantic_type_name: str) -> bool:
+        """Check if the semantic type name is registered."""
+        return semantic_type_name in self._name_to_converter
 
     def has_python_type(self, python_type: type) -> bool:
-        """Check if a Python type is registered."""
+        """Check if the Python type is registered."""
         return python_type in self._python_to_struct
 
-    def has_semantic_type(self, semantic_type_name: str) -> bool:
-        """Check if a semantic type name is registered."""
-        return semantic_type_name in self._name_to_converter
+    def has_semantic_struct_signature(self, struct_signature: "pa.StructType") -> bool:
+        """Check if the struct signature is registered."""
+        return struct_signature in self._struct_to_python
 
     def list_semantic_types(self) -> list[str]:
         """Get all registered semantic type names."""
@@ -221,98 +237,3 @@ class SemanticTypeRegistry:
             struct_signature
         )
         return registered_type == expected_python_type
-
-
-# # Conversion utilities using struct signature recognition
-# class SemanticStructConverter:
-#     """Main converter class for working with semantic structs using signature recognition."""
-
-#     def __init__(self, registry: SemanticTypeRegistry):
-#         self.registry = registry
-
-#     def python_to_struct_dict(self, value: Any) -> dict[str, Any] | None:
-#         """Convert Python value to struct dict if it's a semantic type."""
-#         converter = self.registry.get_converter_for_python_type(type(value))
-#         if converter:
-#             return converter.python_to_struct_dict(value)
-#         return None
-
-#     def struct_dict_to_python(
-#         self, struct_dict: dict[str, Any], struct_signature: "pa.StructType"
-#     ) -> Any:
-#         """
-#         Convert struct dict back to Python value using struct signature recognition.
-
-#         Args:
-#             struct_dict: Dictionary representation of the struct
-#             struct_signature: PyArrow struct type signature
-
-#         Returns:
-#             Python object corresponding to the semantic type
-#         """
-#         converter = self.registry.get_converter_for_struct_signature(struct_signature)
-#         if not converter:
-#             raise ValueError(
-#                 f"No converter found for struct signature: {struct_signature}"
-#             )
-
-#         return converter.struct_dict_to_python(struct_dict)
-
-#     def is_semantic_struct_dict(
-#         self, struct_dict: dict[str, Any], struct_signature: "pa.StructType"
-#     ) -> bool:
-#         # FIXME: inconsistent implementation -- should check the passed in struct_dict
-#         """Check if a dict represents a semantic struct based on signature."""
-#         return self.registry.is_semantic_struct_signature(struct_signature)
-
-#     def get_semantic_type_from_struct_signature(
-#         self, struct_signature: "pa.StructType"
-#     ) -> str | None:
-#         """Extract semantic type name from struct signature."""
-#         converter = self.registry.get_converter_for_struct_signature(struct_signature)
-#         return converter.semantic_type_name if converter else None
-
-#     def python_to_arrow_array(self, values: list[Any]) -> "pa.Array":
-#         """Convert list of Python values to Arrow array of structs."""
-#         if not values:
-#             raise ValueError("Cannot convert empty list")
-
-#         # Check if first value is a semantic type
-#         first_converter = self.registry.get_converter_for_python_type(type(values[0]))
-#         if not first_converter:
-#             raise ValueError(f"No semantic type converter for {type(values[0])}")
-
-#         # Convert all values to struct dicts
-#         struct_dicts = []
-#         for value in values:
-#             converter = self.registry.get_converter_for_python_type(type(value))
-#             if converter is None or converter != first_converter:
-#                 raise ValueError("All values must be the same semantic type")
-#             struct_dicts.append(converter.python_to_struct_dict(value))
-
-#         # Create Arrow array with the registered struct signature
-#         return pa.array(struct_dicts, type=first_converter.arrow_struct_type)
-
-#         # Create Arrow array with the registered struct signature
-#         return pa.array(struct_dicts, type=first_converter.arrow_struct_type)
-
-#     def arrow_array_to_python(self, array: "pa.Array") -> list[Any]:
-#         """Convert Arrow struct array back to list of Python values."""
-#         if not pa.types.is_struct(array.type):
-#             raise ValueError(f"Expected struct array, got {array.type}")
-
-#         converter = self.registry.get_converter_for_struct_signature(array.type)
-#         if not converter:
-#             raise ValueError(f"No converter found for struct signature: {array.type}")
-
-#         # Convert each struct to Python value
-#         python_values = []
-#         for i in range(len(array)):
-#             struct_scalar = array[i]
-#             if struct_scalar.is_valid:
-#                 struct_dict = struct_scalar.as_py()
-#                 python_values.append(converter.struct_dict_to_python(struct_dict))
-#             else:
-#                 python_values.append(None)
-
-#         return python_values
