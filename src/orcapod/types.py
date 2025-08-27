@@ -9,7 +9,9 @@ logger = logging.getLogger(__name__)
 
 DataType: TypeAlias = type | UnionType
 
-PythonSchema: TypeAlias = dict[
+PythonSchema: TypeAlias = dict[str, DataType]  # dict of parameter names to their types
+
+PythonSchemaLike: TypeAlias = Mapping[
     str, DataType
 ]  # Mapping of parameter names to their types
 

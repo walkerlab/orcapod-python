@@ -215,7 +215,7 @@ class ArrowDatagram(BaseDatagram):
         include_all_info: bool = False,
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
-    ) -> dict[str, type]:
+    ) -> PythonSchema:
         """
         Return Python schema for the datagram.
 

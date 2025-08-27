@@ -687,7 +687,7 @@ class TableStream(ImmutableStream):
 
     def types(
         self, include_system_tags: bool = False
-    ) -> tuple[dict[str, type], dict[str, type]]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         """
         Returns the types of the tag and packet columns in the stream.
         This is useful for accessing the types of the columns in the stream.

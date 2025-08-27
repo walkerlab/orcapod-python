@@ -1,7 +1,7 @@
 from ast import Not
 from orcapod.data.kernels import TrackedKernelBase
 from orcapod.protocols import data_protocols as dp
-from orcapod.types import TypeSpec
+from orcapod.types import PythonSchema
 from abc import abstractmethod
 from typing import Any
 from collections.abc import Collection
@@ -63,7 +63,7 @@ class UnaryOperator(Operator):
 
     def kernel_output_types(
         self, *streams: dp.Stream, include_system_tags: bool = False
-    ) -> tuple[TypeSpec, TypeSpec]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         stream = streams[0]
         return self.op_output_types(stream, include_system_tags=include_system_tags)
 
@@ -98,7 +98,7 @@ class UnaryOperator(Operator):
     @abstractmethod
     def op_output_types(
         self, stream: dp.Stream, include_system_tags: bool = False
-    ) -> tuple[TypeSpec, TypeSpec]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         """
         This method should be implemented by subclasses to return the typespecs of the input and output streams.
         It takes two streams as input and returns a tuple of typespecs.
@@ -145,7 +145,7 @@ class BinaryOperator(Operator):
 
     def kernel_output_types(
         self, *streams: dp.Stream, include_system_tags: bool = False
-    ) -> tuple[TypeSpec, TypeSpec]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         left_stream, right_stream = streams
         return self.op_output_types(
             left_stream, right_stream, include_system_tags=include_system_tags
@@ -187,7 +187,7 @@ class BinaryOperator(Operator):
         left_stream: dp.Stream,
         right_stream: dp.Stream,
         include_system_tags: bool = False,
-    ) -> tuple[TypeSpec, TypeSpec]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         """
         This method should be implemented by subclasses to return the typespecs of the input and output streams.
         It takes two streams as input and returns a tuple of typespecs.
@@ -240,7 +240,7 @@ class NonZeroInputOperator(Operator):
 
     def kernel_output_types(
         self, *streams: dp.Stream, include_system_tags: bool = False
-    ) -> tuple[TypeSpec, TypeSpec]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         return self.op_output_types(*streams, include_system_tags=include_system_tags)
 
     def kernel_identity_structure(
@@ -271,7 +271,7 @@ class NonZeroInputOperator(Operator):
     @abstractmethod
     def op_output_types(
         self, *streams: dp.Stream, include_system_tags: bool = False
-    ) -> tuple[TypeSpec, TypeSpec]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         """
         This method should be implemented by subclasses to return the typespecs of the input and output streams.
         It takes at least one stream as input and returns a tuple of typespecs.

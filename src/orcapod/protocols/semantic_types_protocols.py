@@ -1,5 +1,6 @@
 from typing import TYPE_CHECKING, Any, Protocol
 from collections.abc import Callable
+from orcapod.types import PythonSchema, PythonSchemaLike
 
 
 if TYPE_CHECKING:
@@ -10,19 +11,19 @@ class TypeConverter(Protocol):
     def python_type_to_arrow_type(self, python_type: type) -> "pa.DataType": ...
 
     def python_schema_to_arrow_schema(
-        self, python_schema: dict[str, type]
+        self, python_schema: PythonSchemaLike
     ) -> "pa.Schema": ...
 
     def arrow_type_to_python_type(self, arrow_type: "pa.DataType") -> type: ...
 
     def arrow_schema_to_python_schema(
         self, arrow_schema: "pa.Schema"
-    ) -> dict[str, type]: ...
+    ) -> PythonSchema: ...
 
     def python_dicts_to_struct_dicts(
         self,
         python_dicts: list[dict[str, Any]],
-        python_schema: dict[str, type] | None = None,
+        python_schema: PythonSchemaLike | None = None,
     ) -> list[dict[str, Any]]: ...
 
     def struct_dicts_to_python_dicts(
@@ -34,7 +35,7 @@ class TypeConverter(Protocol):
     def python_dicts_to_arrow_table(
         self,
         python_dicts: list[dict[str, Any]],
-        python_schema: dict[str, type] | None = None,
+        python_schema: PythonSchemaLike | None = None,
         arrow_schema: "pa.Schema | None" = None,
     ) -> "pa.Table": ...
 
