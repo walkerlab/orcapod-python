@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Collection, Sequence, Mapping
 from typing import get_origin, get_args, Any
-from orcapod.types import PythonSchema
+from orcapod.types import PythonSchema, PythonSchemaLike
 import inspect
 import logging
 
@@ -55,8 +55,8 @@ def check_typespec_compatibility(
 def extract_function_typespecs(
     func: Callable,
     output_keys: Collection[str],
-    input_typespec: PythonSchema | None = None,
-    output_typespec: PythonSchema | Sequence[type] | None = None,
+    input_typespec: PythonSchemaLike | None = None,
+    output_typespec: PythonSchemaLike | Sequence[type] | None = None,
 ) -> tuple[PythonSchema, PythonSchema]:
     """
     Extract input and output data types from a function signature.

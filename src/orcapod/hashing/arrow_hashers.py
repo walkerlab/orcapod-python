@@ -54,10 +54,10 @@ class SemanticArrowHasher:
 
     def __init__(
         self,
+        semantic_registry: SemanticTypeRegistry,
         hasher_id: str | None = None,
         hash_algorithm: str = "sha256",
         chunk_size: int = 8192,
-        semantic_registry: SemanticTypeRegistry | None = None,
         handle_missing: str = "error",
         serialization_method: str = "logical",
         # TODO: consider passing options for serialization method
@@ -126,6 +126,8 @@ class SemanticArrowHasher:
                     processed_data.append(processed_value)
 
                 # Create new Arrow column from processed data
+                assert new_type is not None, "Failed to infer new column type"
+                # TODO: revisit this logic
                 new_column = pa.array(processed_data, type=new_type)
                 new_field = pa.field(field.name, new_type)
 

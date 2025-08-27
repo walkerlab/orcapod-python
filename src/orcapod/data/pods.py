@@ -17,7 +17,7 @@ from orcapod.data.system_constants import constants
 from orcapod.protocols import data_protocols as dp
 from orcapod.protocols import hashing_protocols as hp
 from orcapod.protocols.database_protocols import ArrowDatabase
-from orcapod.types import DataValue, PythonSchema
+from orcapod.types import DataValue, PythonSchema, PythonSchemaLike
 from orcapod.utils import types_utils
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.hashing.hash_utils import get_function_signature, get_function_components
@@ -274,8 +274,8 @@ class FunctionPod(ActivatablePodBase):
         output_keys: str | Collection[str] | None = None,
         function_name=None,
         version: str = "v0.0",
-        input_python_schema: Mapping[str, type] | None = None,
-        output_python_schema: Mapping[str, type] | Sequence[type] | None = None,
+        input_python_schema: PythonSchemaLike | None = None,
+        output_python_schema: PythonSchemaLike | Sequence[type] | None = None,
         label: str | None = None,
         function_info_extractor: hp.FunctionInfoExtractor | None = None,
         **kwargs,

@@ -214,25 +214,6 @@ class SourceBase(TrackedKernelBase, StatefulStreamBase):
 
     # ==================== Source Protocol ====================
 
-    @property
-    def tag_keys(self) -> tuple[str, ...]:
-        """
-        Return the keys used for the tag in the pipeline run records.
-        This is used to store the run-associated tag info.
-        """
-        tag_keys, _ = self.keys()
-        return tag_keys
-
-    @property
-    def packet_keys(self) -> tuple[str, ...]:
-        """
-        Return the keys used for the packet in the pipeline run records.
-        This is used to store the run-associated packet info.
-        """
-        # TODO: consider caching this
-        _, packet_keys = self.keys()
-        return packet_keys
-
     def reset_cache(self) -> None:
         """
         Clear the cached KernelStream, forcing a fresh one on next access.
