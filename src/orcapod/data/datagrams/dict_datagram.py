@@ -7,7 +7,7 @@ from orcapod.data.system_constants import constants
 from orcapod import contexts
 from orcapod.data.datagrams.base import BaseDatagram
 from orcapod.semantic_types import infer_python_schema_from_pylist_data
-from orcapod.types import DataValue, PythonSchema
+from orcapod.types import DataValue, PythonSchema, PythonSchemaLike
 from orcapod.utils import arrow_utils
 from orcapod.protocols.hashing_protocols import ContentHash
 
@@ -57,7 +57,7 @@ class DictDatagram(BaseDatagram):
     def __init__(
         self,
         data: Mapping[str, DataValue],
-        python_schema: dict[str, type] | None = None,
+        python_schema: PythonSchemaLike | None = None,
         meta_info: Mapping[str, DataValue] | None = None,
         data_context: str | contexts.DataContext | None = None,
     ) -> None:

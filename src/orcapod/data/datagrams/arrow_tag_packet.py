@@ -92,7 +92,7 @@ class ArrowTag(ArrowDatagram):
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
         include_system_tags: bool = False,
-    ) -> dict[str, type]:
+    ) -> PythonSchema:
         """Return copy of the Python schema."""
         schema = super().types(
             include_all_info=include_all_info,
@@ -303,7 +303,7 @@ class ArrowPacket(ArrowDatagram):
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
         include_source: bool = False,
-    ) -> dict[str, type]:
+    ) -> PythonSchema:
         """Return copy of the Python schema."""
         schema = super().types(
             include_all_info=include_all_info,

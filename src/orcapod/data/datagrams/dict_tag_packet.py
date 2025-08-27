@@ -9,7 +9,7 @@ from orcapod import contexts
 from orcapod.data.datagrams.dict_datagram import DictDatagram
 from orcapod.utils import arrow_utils
 from orcapod.semantic_types import infer_python_schema_from_pylist_data
-from orcapod.types import DataValue
+from orcapod.types import DataValue, PythonSchema, PythonSchemaLike
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +54,7 @@ class DictTag(DictDatagram):
         )
 
         self._system_tags = {**extracted_system_tags, **(system_tags or {})}
-        self._system_tags_python_schema: dict[str, type] = (
+        self._system_tags_python_schema: PythonSchema = (
             infer_python_schema_from_pylist_data([self._system_tags])
         )
         self._cached_system_tags_table: pa.Table | None = None
@@ -141,7 +141,7 @@ class DictTag(DictDatagram):
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
         include_system_tags: bool = False,
-    ) -> dict[str, type]:
+    ) -> PythonSchema:
         """Return copy of the Python schema."""
         schema = super().types(
             include_all_info=include_all_info,
@@ -266,7 +266,7 @@ class DictPacket(DictDatagram):
         data: Mapping[str, DataValue],
         meta_info: Mapping[str, DataValue] | None = None,
         source_info: Mapping[str, str | None] | None = None,
-        python_schema: dict[str, type] | None = None,
+        python_schema: PythonSchemaLike | None = None,
         data_context: str | contexts.DataContext | None = None,
     ) -> None:
         # normalize the data content and remove any source info keys
@@ -391,7 +391,7 @@ class DictPacket(DictDatagram):
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
         include_source: bool = False,
-    ) -> dict[str, type]:
+    ) -> PythonSchema:
         """Return copy of the Python schema."""
         schema = super().types(
             include_all_info=include_all_info,
