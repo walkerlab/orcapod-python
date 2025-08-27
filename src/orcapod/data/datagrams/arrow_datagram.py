@@ -7,7 +7,7 @@ import pyarrow as pa
 from orcapod import contexts
 from orcapod.data.datagrams.base import BaseDatagram
 from orcapod.data.system_constants import constants
-from orcapod.types import DataValue, TypeSpec
+from orcapod.types import DataValue, PythonSchema
 from orcapod.protocols.hashing_protocols import ContentHash
 from orcapod.utils import arrow_utils
 
@@ -142,9 +142,9 @@ class ArrowDatagram(BaseDatagram):
         )
 
         # Initialize caches
-        self._cached_python_schema: TypeSpec | None = None
+        self._cached_python_schema: PythonSchema | None = None
         self._cached_python_dict: dict[str, DataValue] | None = None
-        self._cached_meta_python_schema: TypeSpec | None = None
+        self._cached_meta_python_schema: PythonSchema | None = None
         self._cached_content_hash: ContentHash | None = None
 
     # 1. Core Properties (Identity & Structure)

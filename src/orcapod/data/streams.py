@@ -15,7 +15,7 @@ from orcapod.data.datagrams import (
 )
 from orcapod.data.system_constants import constants
 from orcapod.protocols import data_protocols as dp
-from orcapod.types import TypeSpec
+from orcapod.types import PythonSchema
 from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule
 
@@ -217,12 +217,14 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
         return self.keys()[1]
 
     @abstractmethod
-    def types(self, include_system_tags: bool = False) -> tuple[TypeSpec, TypeSpec]: ...
+    def types(
+        self, include_system_tags: bool = False
+    ) -> tuple[PythonSchema, PythonSchema]: ...
 
-    def tag_types(self, include_system_tags: bool = False) -> TypeSpec:
+    def tag_types(self, include_system_tags: bool = False) -> PythonSchema:
         return self.types(include_system_tags=include_system_tags)[0]
 
-    def packet_types(self) -> TypeSpec:
+    def packet_types(self) -> PythonSchema:
         return self.types()[1]
 
     @property
@@ -882,7 +884,9 @@ class KernelStream(StreamBase):
         )
         return tuple(tag_types.keys()), tuple(packet_types.keys())
 
-    def types(self, include_system_tags: bool = False) -> tuple[TypeSpec, TypeSpec]:
+    def types(
+        self, include_system_tags: bool = False
+    ) -> tuple[PythonSchema, PythonSchema]:
         """
         Returns the types of the tag and packet columns in the stream.
         This is useful for accessing the types of the columns in the stream.
@@ -1089,7 +1093,9 @@ class LazyPodResultStream(StreamBase):
         packet_keys = tuple(self.pod.output_packet_types().keys())
         return tag_keys, packet_keys
 
-    def types(self, include_system_tags: bool = False) -> tuple[TypeSpec, TypeSpec]:
+    def types(
+        self, include_system_tags: bool = False
+    ) -> tuple[PythonSchema, PythonSchema]:
         tag_typespec, _ = self.prepared_stream.types(
             include_system_tags=include_system_tags
         )
@@ -1428,7 +1434,9 @@ class EfficientPodResultStream(StreamBase):
         packet_keys = tuple(self.pod.output_packet_types().keys())
         return tag_keys, packet_keys
 
-    def types(self, include_system_tags: bool = False) -> tuple[TypeSpec, TypeSpec]:
+    def types(
+        self, include_system_tags: bool = False
+    ) -> tuple[PythonSchema, PythonSchema]:
         tag_typespec, _ = self.input_stream.types(
             include_system_tags=include_system_tags
         )
@@ -1554,7 +1562,9 @@ class WrappedStream(StreamBase):
         """
         return self._stream.keys(include_system_tags=include_system_tags)
 
-    def types(self, include_system_tags: bool = False) -> tuple[TypeSpec, TypeSpec]:
+    def types(
+        self, include_system_tags: bool = False
+    ) -> tuple[PythonSchema, PythonSchema]:
         """
         Returns the types of the tag and packet columns in the stream.
         This is useful for accessing the types of the columns in the stream.

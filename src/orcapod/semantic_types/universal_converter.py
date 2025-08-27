@@ -17,7 +17,7 @@ import hashlib
 import logging
 from orcapod.contexts import DataContext, resolve_context
 from orcapod.semantic_types.semantic_registry import SemanticTypeRegistry
-from orcapod.semantic_types.type_inference import infer_schema_from_pylist_data
+from orcapod.semantic_types.type_inference import infer_python_schema_from_pylist_data
 
 # Handle generic types
 from typing import get_origin, get_args
@@ -182,7 +182,7 @@ class UniversalTypeConverter:
         This uses the main conversion logic and caches results for performance.
         """
         if python_schema is None:
-            python_schema = infer_schema_from_pylist_data(python_dicts)
+            python_schema = infer_python_schema_from_pylist_data(python_dicts)
 
         converters = {
             field_name: self.get_python_to_arrow_converter(python_type)
@@ -246,7 +246,7 @@ class UniversalTypeConverter:
             )
         if python_schema is None and arrow_schema is None:
             # Infer schema from data if not provided
-            python_schema = infer_schema_from_pylist_data(python_dicts)
+            python_schema = infer_python_schema_from_pylist_data(python_dicts)
 
         if arrow_schema is None:
             # Convert to Arrow schema

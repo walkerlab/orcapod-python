@@ -2,7 +2,7 @@ from orcapod.data.kernels import KernelStream, WrappedKernel
 from orcapod.data.sources import SourceBase
 from orcapod.data.pods import ArrowDataStore, CachedPod
 from orcapod.protocols import data_protocols as dp
-from orcapod.types import TypeSpec
+from orcapod.types import PythonSchema
 from orcapod.utils.lazy_module import LazyModule
 from typing import TYPE_CHECKING, Any
 from orcapod.data.system_constants import constants
@@ -78,7 +78,7 @@ class NodeBase(
 
     def source_output_types(
         self, include_system_tags: bool = False
-    ) -> tuple[TypeSpec, TypeSpec]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         """
         Return the output types of the node.
         This is used to determine the types of the output streams.

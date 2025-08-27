@@ -1,7 +1,7 @@
 from orcapod.protocols import data_protocols as dp
 from orcapod.data.streams import TableStream
 from orcapod.utils import types_utils
-from orcapod.types import TypeSpec
+from orcapod.types import PythonSchema
 from typing import Any, TYPE_CHECKING
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.errors import InputValidationError
@@ -101,7 +101,7 @@ class SemiJoin(BinaryOperator):
         left_stream: dp.Stream,
         right_stream: dp.Stream,
         include_system_tags: bool = False,
-    ) -> tuple[TypeSpec, TypeSpec]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         """
         Returns the output types for the semi-join operation.
         The output preserves the exact schema of the left stream.

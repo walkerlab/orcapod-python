@@ -1,3 +1,4 @@
+from types import UnionType
 from typing import TypeAlias
 import os
 from collections.abc import Collection, Mapping
@@ -6,9 +7,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-DataType: TypeAlias = type
+DataType: TypeAlias = type | UnionType
 
-TypeSpec: TypeAlias = Mapping[
+PythonSchema: TypeAlias = dict[
     str, DataType
 ]  # Mapping of parameter names to their types
 

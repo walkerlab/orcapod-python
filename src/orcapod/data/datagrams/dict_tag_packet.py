@@ -8,7 +8,7 @@ from orcapod.data.system_constants import constants
 from orcapod import contexts
 from orcapod.data.datagrams.dict_datagram import DictDatagram
 from orcapod.utils import arrow_utils
-from orcapod.semantic_types import infer_schema_from_pylist_data
+from orcapod.semantic_types import infer_python_schema_from_pylist_data
 from orcapod.types import DataValue
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ class DictTag(DictDatagram):
 
         self._system_tags = {**extracted_system_tags, **(system_tags or {})}
         self._system_tags_python_schema: dict[str, type] = (
-            infer_schema_from_pylist_data([self._system_tags])
+            infer_python_schema_from_pylist_data([self._system_tags])
         )
         self._cached_system_tags_table: pa.Table | None = None
         self._cached_system_tags_schema: pa.Schema | None = None

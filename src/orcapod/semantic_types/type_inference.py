@@ -1,10 +1,13 @@
-from typing import Any, Union, Optional, get_origin, get_args
+from types import UnionType
+from typing import Any, Union, get_origin, get_args
+
+from orcapod.types import PythonSchema
 
 
-def infer_schema_from_pylist_data(
+def infer_python_schema_from_pylist_data(
     data: list[dict],
     default_type: type = str,
-) -> dict[str, type]:
+) -> PythonSchema:
     """
     Infer schema from sample data (best effort).
 
@@ -21,7 +24,7 @@ def infer_schema_from_pylist_data(
     if not data:
         return {}
 
-    schema = {}
+    schema: PythonSchema = {}
 
     # Get all possible field names
     all_fields = []
@@ -54,14 +57,69 @@ def infer_schema_from_pylist_data(
             schema[field_name] = default_type | None
         elif has_none:
             # Wrap with Optional if None values present
-            schema[field_name] = inferred_type | None if inferred_type != Any else Any
+            # TODO: consider the case of Any
+            schema[field_name] = inferred_type | None
         else:
             schema[field_name] = inferred_type
 
     return schema
 
 
-def _infer_type_from_values(values: list) -> type | None:
+def infer_python_schema_from_pydict_data(
+    data: dict[str, list[Any]],
+    default_type: type = str,
+) -> PythonSchema:
+    """
+    Infer schema from columnar sample data (best effort).
+
+    Args:
+        data: Dictionary mapping field names to lists of values
+        default_type: Default type to use for fields with no values
+
+    Returns:
+        Dictionary mapping field names to inferred Python types
+
+    Note: This is best-effort inference and may not handle all edge cases.
+    For production use, explicit schemas are recommended.
+    """
+    if not data:
+        return {}
+
+    schema: PythonSchema = {}
+
+    # Infer type for each field
+    for field_name, field_values in data.items():
+        if not field_values:
+            # Handle case where field has empty list
+            schema[field_name] = default_type | None
+            continue
+
+        # Separate None and non-None values
+        non_none_values = [v for v in field_values if v is not None]
+        has_none = len(non_none_values) < len(field_values)
+
+        if not non_none_values:
+            # Handle case where all values are None
+            schema[field_name] = default_type | None
+            continue
+
+        # Infer type from non-None values
+        inferred_type = _infer_type_from_values(non_none_values)
+
+        if inferred_type is None:
+            schema[field_name] = default_type | None
+        elif has_none:
+            # Wrap with Optional if None values present
+            # TODO: consider the case of Any
+            schema[field_name] = inferred_type | None
+        else:
+            schema[field_name] = inferred_type
+
+    return schema
+
+
+# TODO: reconsider this type hint -- use of Any effectively renders this type hint useless
+def _infer_type_from_values(values: list) -> type | UnionType | Any | None:
     """Infer type from a list of non-None values."""
     if not values:
         return None
@@ -171,20 +229,20 @@ def _infer_dict_type(dicts: list[dict]) -> type:
     return dict[key_type, value_type]
 
 
-def _handle_mixed_types(value_types: set, values: list) -> type:
+def _handle_mixed_types(value_types: set, values: list) -> UnionType | Any:
     """Handle mixed types by creating appropriate Union types."""
 
     # Handle common int/float mixing
     if value_types == {int, float}:
-        return Union[int, float]
+        return int | float
 
     # Handle numeric types with broader compatibility
     numeric_types = {int, float, complex}
     if value_types.issubset(numeric_types):
         if complex in value_types:
-            return Union[int, float, complex]
+            return int | float | complex
         else:
-            return Union[int, float]
+            return int | float
 
     # For small number of types, create Union
     if len(value_types) <= 4:  # Arbitrary limit to avoid huge unions
@@ -238,7 +296,7 @@ def test_schema_inference():
         },
     ]
 
-    schema = infer_schema_from_pylist_data(test_data)
+    schema = infer_python_schema_from_pylist_data(test_data)
 
     print("Inferred Schema:")
     for field, field_type in sorted(schema.items()):

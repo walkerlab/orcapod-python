@@ -6,7 +6,7 @@ from orcapod.utils.lazy_module import LazyModule
 from orcapod.data.system_constants import constants
 from orcapod import contexts
 from orcapod.data.datagrams.base import BaseDatagram
-from orcapod.semantic_types import infer_schema_from_pylist_data
+from orcapod.semantic_types import infer_python_schema_from_pylist_data
 from orcapod.types import DataValue
 from orcapod.utils import arrow_utils
 from orcapod.protocols.hashing_protocols import ContentHash
@@ -106,7 +106,9 @@ class DictDatagram(BaseDatagram):
 
         # Combine provided typespec info with inferred typespec from content
         # If the column value is None and no type spec is provided, defaults to str.
-        inferred_schema = infer_schema_from_pylist_data([self._data], default_type=str)
+        inferred_schema = infer_python_schema_from_pylist_data(
+            [self._data], default_type=str
+        )
 
         self._data_python_schema = (
             {k: python_schema.get(k, v) for k, v in inferred_schema.items()}
@@ -115,7 +117,7 @@ class DictDatagram(BaseDatagram):
         )
 
         # Create schema for meta data
-        inferred_meta_schema = infer_schema_from_pylist_data(
+        inferred_meta_schema = infer_python_schema_from_pylist_data(
             [self._meta_data], default_type=str
         )
         self._meta_python_schema = (
@@ -752,7 +754,7 @@ class DictDatagram(BaseDatagram):
         if column_types is not None:
             python_schema.update(column_types)
 
-        new_python_schema = infer_schema_from_pylist_data([new_data])
+        new_python_schema = infer_python_schema_from_pylist_data([new_data])
         new_python_schema = {
             k: python_schema.get(k, v) for k, v in new_python_schema.items()
         }

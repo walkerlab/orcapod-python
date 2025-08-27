@@ -1,6 +1,6 @@
 from orcapod.protocols import data_protocols as dp
 from orcapod.data.streams import TableStream
-from orcapod.types import TypeSpec
+from orcapod.types import PythonSchema
 from typing import Any, TYPE_CHECKING
 from orcapod.utils.lazy_module import LazyModule
 from collections.abc import Mapping
@@ -79,7 +79,7 @@ class MapPackets(UnaryOperator):
                 message += f"overlapping tag columns: {overlapping_tag_columns}."
             raise InputValidationError(message)
 
-    def op_output_types(self, stream: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def op_output_types(self, stream: dp.Stream) -> tuple[PythonSchema, PythonSchema]:
         tag_typespec, packet_typespec = stream.types()
 
         # Create new packet typespec with renamed keys
@@ -157,7 +157,7 @@ class MapTags(UnaryOperator):
                 message += f"overlapping packet columns: {overlapping_packet_columns}."
             raise InputValidationError(message)
 
-    def op_output_types(self, stream: dp.Stream) -> tuple[TypeSpec, TypeSpec]:
+    def op_output_types(self, stream: dp.Stream) -> tuple[PythonSchema, PythonSchema]:
         tag_typespec, packet_typespec = stream.types()
 
         # Create new packet typespec with renamed keys

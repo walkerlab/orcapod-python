@@ -5,12 +5,12 @@
     "semantic_registry": {
         "_class": "orcapod.semantic_types.semantic_registry.SemanticTypeRegistry",
         "_config": {
-            "converters": [
-                {
+            "converters": {
+                "path": {
                     "_class": "orcapod.semantic_types.semantic_struct_converters.PathStructConverter",
                     "_config": {}
                 }
-            ]
+            }
         }
     },
     "arrow_hasher": {

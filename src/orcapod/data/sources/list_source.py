@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from deltalake import DeltaTable, write_deltalake
-from deltalake.exceptions import TableNotFoundError
 from pyarrow.lib import Table
 
 from orcapod.data.datagrams import DictTag
@@ -15,11 +14,11 @@ from orcapod.data.streams import (
 )
 from orcapod.errors import DuplicateTagError
 from orcapod.protocols import data_protocols as dp
-from orcapod.types import DataValue, TypeSpec
+from orcapod.types import DataValue, PythonSchema
 from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.data.system_constants import constants
-from orcapod.semantic_types import infer_schema_from_pylist_data
+from orcapod.semantic_types import infer_python_schema_from_pylist_data
 
 if TYPE_CHECKING:
     import pandas as pd

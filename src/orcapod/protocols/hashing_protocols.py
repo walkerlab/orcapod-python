@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
-from orcapod.types import PathLike, TypeSpec
+from orcapod.types import PathLike, PythonSchema
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -180,8 +180,8 @@ class FunctionInfoExtractor(Protocol):
         self,
         func: Callable[..., Any],
         function_name: str | None = None,
-        input_typespec: TypeSpec | None = None,
-        output_typespec: TypeSpec | None = None,
+        input_typespec: PythonSchema | None = None,
+        output_typespec: PythonSchema | None = None,
         exclude_function_signature: bool = False,
         exclude_function_body: bool = False,
     ) -> dict[str, Any]: ...

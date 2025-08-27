@@ -2,7 +2,7 @@ from collections.abc import Collection
 from datetime import datetime
 from typing import Any, Protocol, runtime_checkable
 from orcapod.protocols.hashing_protocols import ContentIdentifiable
-from orcapod.types import TypeSpec
+from orcapod.types import PythonSchema
 from orcapod.protocols.data_protocols.base import Labelable
 from orcapod.protocols.data_protocols.streams import Stream, LiveStream
 
@@ -127,7 +127,7 @@ class Kernel(ContentIdentifiable, Labelable, Protocol):
 
     def output_types(
         self, *streams: Stream, include_system_tags: bool = False
-    ) -> tuple[TypeSpec, TypeSpec]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         """
         Determine output types without triggering computation.
 

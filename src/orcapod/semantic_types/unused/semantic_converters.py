@@ -3,7 +3,7 @@ from typing import get_origin, get_args, Any
 import typing
 from collections.abc import Collection, Sequence, Mapping, Iterable, Set
 from orcapod.semantic_types.semantic_registry import SemanticTypeRegistry
-from orcapod.types import TypeSpec
+from orcapod.types import PythonSchema
 
 
 # Basic type mapping for Python -> Arrow conversion
@@ -217,7 +217,7 @@ def python_type_to_arrow(
 
 
 def python_schema_to_arrow(
-    python_schema: TypeSpec, semantic_registry: SemanticTypeRegistry | None = None
+    python_schema: PythonSchema, semantic_registry: SemanticTypeRegistry | None = None
 ) -> pa.Schema:
     """
     Convert a Python schema (TypeSpec) to a PyArrow schema.
@@ -387,7 +387,7 @@ def arrow_type_to_python(
 
 def arrow_schema_to_python(
     arrow_schema: pa.Schema, semantic_registry: SemanticTypeRegistry | None = None
-) -> TypeSpec:
+) -> PythonSchema:
     """
     Convert a PyArrow schema to a Python schema (TypeSpec).
 

@@ -7,9 +7,9 @@ import pyarrow as pa
 
 from orcapod.data.system_constants import constants
 from orcapod import contexts
-from orcapod.semantic_types import infer_schema_from_pylist_data
+from orcapod.semantic_types import infer_python_schema_from_pylist_data
 
-from orcapod.types import DataValue, TypeSpec
+from orcapod.types import DataValue, PythonSchema
 from orcapod.utils import arrow_utils
 
 from orcapod.data.datagrams.arrow_datagram import ArrowDatagram
@@ -59,7 +59,7 @@ class ArrowTag(ArrowDatagram):
             )[0]
         )
         self._system_tags_dict.update(system_tags or {})
-        self._system_tags_python_schema = infer_schema_from_pylist_data(
+        self._system_tags_python_schema = infer_python_schema_from_pylist_data(
             [self._system_tags_dict]
         )
         self._system_tags_table = (
@@ -279,7 +279,7 @@ class ArrowPacket(ArrowDatagram):
         self._source_info_table = prefixed_tables[constants.SOURCE_PREFIX]
 
         self._cached_source_info: dict[str, str | None] | None = None
-        self._cached_python_schema: TypeSpec | None = None
+        self._cached_python_schema: PythonSchema | None = None
 
     def keys(
         self,

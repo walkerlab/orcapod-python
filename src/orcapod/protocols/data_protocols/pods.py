@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 from orcapod.protocols.data_protocols.base import ExecutionEngine
 from orcapod.protocols.data_protocols.datagrams import Packet, Tag
 from orcapod.protocols.data_protocols.kernel import Kernel
-from orcapod.types import TypeSpec
+from orcapod.types import PythonSchema
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -51,7 +51,7 @@ class Pod(Kernel, Protocol):
         """
         ...
 
-    def input_packet_types(self) -> TypeSpec:
+    def input_packet_types(self) -> PythonSchema:
         """
         TypeSpec for input packets that this Pod can process.
 
@@ -71,7 +71,7 @@ class Pod(Kernel, Protocol):
         """
         ...
 
-    def output_packet_types(self) -> TypeSpec:
+    def output_packet_types(self) -> PythonSchema:
         """
         TypeSpec for output packets that this Pod produces.
 

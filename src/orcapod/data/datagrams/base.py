@@ -26,7 +26,7 @@ from orcapod.protocols.hashing_protocols import ContentHash
 
 import pyarrow as pa
 
-from orcapod.types import DataValue, TypeSpec
+from orcapod.types import DataValue, PythonSchema
 
 logger = logging.getLogger(__name__)
 
@@ -178,7 +178,7 @@ class BaseDatagram(ContentIdentifiableBase):
         include_all_info: bool = False,
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
-    ) -> TypeSpec:
+    ) -> PythonSchema:
         """Return type specification for the datagram."""
         ...
 

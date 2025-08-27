@@ -6,7 +6,6 @@ from collections.abc import Mapping, Collection
 from typing import Any
 
 
-
 from typing import TYPE_CHECKING
 from orcapod.utils.lazy_module import LazyModule
 
@@ -604,7 +603,9 @@ def prepare_prefixed_columns(
                 # TODO: clean up the logic here
                 if not isinstance(value, str) and isinstance(value, Collection):
                     # TODO: this won't work other data types!!!
-                    column_values = pa.array([value] * num_rows, type=pa.list_(pa.large_string()))
+                    column_values = pa.array(
+                        [value] * num_rows, type=pa.list_(pa.large_string())
+                    )
                 else:
                     column_values = pa.array([value] * num_rows, type=pa.large_string())
             # if col_name is in existing_source_info, use that column

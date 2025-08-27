@@ -1,7 +1,7 @@
 from collections.abc import Collection, Iterator, Mapping
 from typing import Any, Protocol, Self, TYPE_CHECKING, runtime_checkable
 from orcapod.protocols.hashing_protocols import ContentIdentifiable
-from orcapod.types import DataValue, TypeSpec
+from orcapod.types import DataValue, PythonSchema
 
 
 if TYPE_CHECKING:
@@ -178,7 +178,7 @@ class Datagram(ContentIdentifiable, Protocol):
         include_all_info: bool = False,
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
-    ) -> TypeSpec:
+    ) -> PythonSchema:
         """
         Return type specification mapping field names to Python types.
 
@@ -658,7 +658,7 @@ class Tag(Datagram, Protocol):
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
         include_system_tags: bool = False,
-    ) -> TypeSpec:
+    ) -> PythonSchema:
         """
         Return type specification mapping field names to Python types.
 
@@ -901,7 +901,7 @@ class Packet(Datagram, Protocol):
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
         include_source: bool = False,
-    ) -> TypeSpec:
+    ) -> PythonSchema:
         """
         Return type specification mapping field names to Python types.
 

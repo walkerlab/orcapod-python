@@ -7,7 +7,7 @@ import logging
 from orcapod.data.streams import KernelStream
 from orcapod.data.base import LabeledContentIdentifiableBase
 from orcapod.data.trackers import DEFAULT_TRACKER_MANAGER
-from orcapod.types import TypeSpec
+from orcapod.types import PythonSchema
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +76,7 @@ class TrackedKernelBase(LabeledContentIdentifiableBase):
     @abstractmethod
     def kernel_output_types(
         self, *streams: dp.Stream, include_system_tags: bool = False
-    ) -> tuple[TypeSpec, TypeSpec]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         """
         Return the output types of the kernel given the input streams.
         """
@@ -84,7 +84,7 @@ class TrackedKernelBase(LabeledContentIdentifiableBase):
 
     def output_types(
         self, *streams: dp.Stream, include_system_tags: bool = False
-    ) -> tuple[TypeSpec, TypeSpec]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         processed_streams = self.pre_kernel_processing(*streams)
         self.validate_inputs(*processed_streams)
         return self.kernel_output_types(
@@ -207,7 +207,7 @@ class WrappedKernel(TrackedKernelBase):
 
     def kernel_output_types(
         self, *streams: dp.Stream, include_system_tags: bool = False
-    ) -> tuple[TypeSpec, TypeSpec]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         return self.kernel.output_types(
             *streams, include_system_tags=include_system_tags
         )

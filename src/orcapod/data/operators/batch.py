@@ -1,9 +1,10 @@
 from orcapod.data.operators.base import UnaryOperator
-from collections.abc import Collection, Mapping
+from collections.abc import Collection
 from orcapod.protocols import data_protocols as dp
 from typing import Any, TYPE_CHECKING
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.data.streams import TableStream
+
 if TYPE_CHECKING:
     import pyarrow as pa
     import polars as pl
@@ -11,19 +12,20 @@ else:
     pa = LazyModule("pyarrow")
     pl = LazyModule("polars")
 
-from orcapod.types import TypeSpec
+from orcapod.types import PythonSchema
+
 
 class Batch(UnaryOperator):
     """
     Base class for all operators.
     """
 
-    def __init__(self, batch_size:int = 0, drop_last_batch:bool=False, **kwargs):
+    def __init__(self, batch_size: int = 0, drop_last_batch: bool = False, **kwargs):
         if batch_size < 0:
             raise ValueError("Batch size must be non-negative.")
-        
+
         super().__init__(**kwargs)
-        
+
         self.batch_size = batch_size
         self.drop_last_batch = drop_last_batch
 
@@ -42,14 +44,12 @@ class Batch(UnaryOperator):
         stream = streams[0]
         return self.op_validate_inputs(stream)
 
-
     def op_validate_inputs(self, stream: dp.Stream) -> None:
         """
         This method should be implemented by subclasses to validate the inputs to the operator.
         It takes two streams as input and raises an error if the inputs are not valid.
         """
         return None
-
 
     def op_forward(self, stream: dp.Stream) -> dp.Stream:
         """
@@ -83,23 +83,22 @@ class Batch(UnaryOperator):
         batched_table = pa.Table.from_pylist(batched_data)
         return TableStream(batched_table, tag_columns=tag_columns)
 
-        
-
     def op_output_types(
         self, stream: dp.Stream, include_system_tags: bool = False
-    ) -> tuple[TypeSpec, TypeSpec]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         """
         This method should be implemented by subclasses to return the typespecs of the input and output streams.
         It takes two streams as input and returns a tuple of typespecs.
         """
-        tag_types, packet_types  = stream.types()
+        tag_types, packet_types = stream.types()
         batched_tag_types = {k: list[v] for k, v in tag_types.items()}
         batched_packet_types = {k: list[v] for k, v in packet_types.items()}
 
         return batched_tag_types, batched_packet_types
 
-
     def op_identity_structure(self, stream: dp.Stream | None = None) -> Any:
         return (
-            (self.__class__.__name__, self.batch_size, self.drop_last_batch) + (stream,) if stream is not None else ()
+            (self.__class__.__name__, self.batch_size, self.drop_last_batch) + (stream,)
+            if stream is not None
+            else ()
         )

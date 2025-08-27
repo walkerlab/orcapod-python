@@ -9,7 +9,7 @@ from orcapod.data.streams import (
     StatefulStreamBase,
 )
 from orcapod.protocols import data_protocols as dp
-from orcapod.types import TypeSpec
+from orcapod.types import PythonSchema
 from orcapod.utils.lazy_module import LazyModule
 
 if TYPE_CHECKING:
@@ -120,7 +120,9 @@ class SourceBase(TrackedKernelBase, StatefulStreamBase):
         """Delegate to the cached KernelStream."""
         return self().keys()
 
-    def types(self, include_system_tags: bool = False) -> tuple[TypeSpec, TypeSpec]:
+    def types(
+        self, include_system_tags: bool = False
+    ) -> tuple[PythonSchema, PythonSchema]:
         """Delegate to the cached KernelStream."""
         return self().types(include_system_tags=include_system_tags)
 
@@ -247,7 +249,7 @@ class StreamSource(SourceBase):
 
     def source_output_types(
         self, include_system_tags: bool = False
-    ) -> tuple[TypeSpec, TypeSpec]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         """
         Returns the types of the tag and packet columns in the stream.
         This is useful for accessing the types of the columns in the stream.

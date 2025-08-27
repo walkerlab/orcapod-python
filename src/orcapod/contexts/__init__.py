@@ -28,7 +28,7 @@ Example usage:
 from .core import DataContext, ContextValidationError, ContextResolutionError
 from .registry import JSONDataContextRegistry
 from typing import Any
-from orcapod.protocols import hashing_protocols as hp, semantic_protocols as sp
+from orcapod.protocols import hashing_protocols as hp, semantic_types_protocols as sp
 
 # Global registry instance (lazily initialized)
 _registry: JSONDataContextRegistry | None = None

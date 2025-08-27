@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Collection, Sequence, Mapping
 from typing import get_origin, get_args, Any
-from orcapod.types import TypeSpec
+from orcapod.types import PythonSchema
 import inspect
 import logging
 
@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def verify_against_typespec(packet: dict, typespec: TypeSpec) -> bool:
+def verify_against_typespec(packet: dict, typespec: PythonSchema) -> bool:
     """Verify that the dictionary's types match the expected types in the typespec."""
     from beartype.door import is_bearable
 
@@ -36,7 +36,7 @@ def verify_against_typespec(packet: dict, typespec: TypeSpec) -> bool:
 # TODO: is_subhint does not handle invariance properly
 # so when working with mutable types, we have to make sure to perform deep copy
 def check_typespec_compatibility(
-    incoming_types: TypeSpec, receiving_types: TypeSpec
+    incoming_types: PythonSchema, receiving_types: PythonSchema
 ) -> bool:
     from beartype.door import is_subhint
 
@@ -55,9 +55,9 @@ def check_typespec_compatibility(
 def extract_function_typespecs(
     func: Callable,
     output_keys: Collection[str],
-    input_typespec: TypeSpec | None = None,
-    output_typespec: TypeSpec | Sequence[type] | None = None,
-) -> tuple[TypeSpec, TypeSpec]:
+    input_typespec: PythonSchema | None = None,
+    output_typespec: PythonSchema | Sequence[type] | None = None,
+) -> tuple[PythonSchema, PythonSchema]:
     """
     Extract input and output data types from a function signature.
 
@@ -136,7 +136,7 @@ def extract_function_typespecs(
         >>> output_types
         {'count': <class 'int'>, 'total': <class 'float'>, 'repr': <class 'str'>}
     """
-    verified_output_types: TypeSpec = {}
+    verified_output_types: PythonSchema = {}
     if output_typespec is not None:
         if isinstance(output_typespec, dict):
             verified_output_types = output_typespec
@@ -150,7 +150,7 @@ def extract_function_typespecs(
 
     signature = inspect.signature(func)
 
-    param_info: TypeSpec = {}
+    param_info: PythonSchema = {}
     for name, param in signature.parameters.items():
         if input_typespec and name in input_typespec:
             param_info[name] = input_typespec[name]
@@ -164,7 +164,7 @@ def extract_function_typespecs(
                 )
 
     return_annot = signature.return_annotation
-    inferred_output_types: TypeSpec = {}
+    inferred_output_types: PythonSchema = {}
     if return_annot is not inspect.Signature.empty and return_annot is not None:
         output_item_types = []
         if len(output_keys) == 0:
@@ -215,8 +215,8 @@ def extract_function_typespecs(
 
 
 def get_typespec_from_dict(
-    data: Mapping, typespec: TypeSpec | None = None, default=str
-) -> TypeSpec:
+    data: Mapping, typespec: PythonSchema | None = None, default=str
+) -> PythonSchema:
     """
     Returns a TypeSpec for the given dictionary.
     The TypeSpec is a mapping from field name to Python type. If typespec is provided, then
@@ -240,7 +240,7 @@ def get_compatible_type(type1: Any, type2: Any) -> Any:
     raise TypeError(f"Types {type1} and {type2} are not compatible")
 
 
-def union_typespecs(*typespecs: TypeSpec) -> TypeSpec:
+def union_typespecs(*typespecs: PythonSchema) -> PythonSchema:
     # Merge the two TypeSpecs but raise an error if conflicts in types are found
     merged = dict(typespecs[0])
     for typespec in typespecs[1:]:
@@ -253,7 +253,7 @@ def union_typespecs(*typespecs: TypeSpec) -> TypeSpec:
     return merged
 
 
-def intersection_typespecs(*typespecs: TypeSpec) -> TypeSpec:
+def intersection_typespecs(*typespecs: PythonSchema) -> PythonSchema:
     """
     Returns the intersection of all TypeSpecs, only returning keys that are present in all typespecs.
     If a key is present in both TypeSpecs, the type must be the same.

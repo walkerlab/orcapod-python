@@ -17,7 +17,7 @@ from orcapod.data.system_constants import constants
 from orcapod.protocols import data_protocols as dp
 from orcapod.protocols import hashing_protocols as hp
 from orcapod.protocols.store_protocols import ArrowDataStore
-from orcapod.types import DataValue, TypeSpec
+from orcapod.types import DataValue, PythonSchema
 from orcapod.utils import types_utils
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.hashing.hash_utils import get_function_signature, get_function_components
@@ -60,14 +60,14 @@ class ActivatablePodBase(TrackedKernelBase):
     """
 
     @abstractmethod
-    def input_packet_types(self) -> TypeSpec:
+    def input_packet_types(self) -> PythonSchema:
         """
         Return the input typespec for the pod. This is used to validate the input streams.
         """
         ...
 
     @abstractmethod
-    def output_packet_types(self) -> TypeSpec:
+    def output_packet_types(self) -> PythonSchema:
         """
         Return the output typespec for the pod. This is used to validate the output streams.
         """
@@ -122,7 +122,7 @@ class ActivatablePodBase(TrackedKernelBase):
 
     def kernel_output_types(
         self, *streams: dp.Stream, include_system_tags: bool = False
-    ) -> tuple[TypeSpec, TypeSpec]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         """
         Return the input and output typespecs for the pod.
         This is used to validate the input and output streams.
@@ -558,14 +558,14 @@ class WrappedPod(ActivatablePodBase):
     def computed_label(self) -> str | None:
         return self.pod.label
 
-    def input_packet_types(self) -> TypeSpec:
+    def input_packet_types(self) -> PythonSchema:
         """
         Return the input typespec for the stored pod.
         This is used to validate the input streams.
         """
         return self.pod.input_packet_types()
 
-    def output_packet_types(self) -> TypeSpec:
+    def output_packet_types(self) -> PythonSchema:
         """
         Return the output typespec for the stored pod.
         This is used to validate the output streams.

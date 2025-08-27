@@ -14,11 +14,11 @@ from orcapod.data.streams import (
 )
 from orcapod.errors import DuplicateTagError
 from orcapod.protocols import data_protocols as dp
-from orcapod.types import DataValue, TypeSpec
+from orcapod.types import DataValue, PythonSchema
 from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.data.system_constants import constants
-from orcapod.semantic_types import infer_schema_from_pylist_data
+from orcapod.semantic_types import infer_python_schema_from_pylist_data
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -141,11 +141,11 @@ class ManualDeltaTableSource(SourceBase):
 
     def source_output_types(
         self, include_system_tags: bool = False
-    ) -> tuple[TypeSpec, TypeSpec]:
+    ) -> tuple[PythonSchema, PythonSchema]:
         """Return tag and packet types based on schema and tag columns."""
         # TODO: auto add system entry tag
-        tag_types: TypeSpec = {}
-        packet_types: TypeSpec = {}
+        tag_types: PythonSchema = {}
+        packet_types: PythonSchema = {}
         for field, field_type in self.python_schema.items():
             if field in self.tag_columns:
                 tag_types[field] = field_type

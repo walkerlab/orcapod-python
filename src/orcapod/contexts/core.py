@@ -7,7 +7,7 @@ the context management system.
 
 from dataclasses import dataclass
 
-from orcapod.protocols import hashing_protocols as hp, semantic_protocols as sp
+from orcapod.protocols import hashing_protocols as hp, semantic_types_protocols as sp
 
 
 @dataclass
