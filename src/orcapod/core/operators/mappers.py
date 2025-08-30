@@ -1,12 +1,12 @@
 from orcapod.protocols import data_protocols as dp
-from orcapod.data.streams import TableStream
+from orcapod.core.streams import TableStream
 from orcapod.types import PythonSchema
 from typing import Any, TYPE_CHECKING
 from orcapod.utils.lazy_module import LazyModule
 from collections.abc import Mapping
 from orcapod.errors import InputValidationError
-from orcapod.data.system_constants import constants
-from orcapod.data.operators.base import UnaryOperator
+from orcapod.core.system_constants import constants
+from orcapod.core.operators.base import UnaryOperator
 
 if TYPE_CHECKING:
     import pyarrow as pa

@@ -2,15 +2,15 @@ from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
 
 
-from orcapod.data.streams import TableStream
+from orcapod.core.streams import TableStream
 from orcapod.protocols import data_protocols as dp
 from orcapod.types import PathLike, PythonSchema
 from orcapod.utils.lazy_module import LazyModule
 from pathlib import Path
 
 
-from orcapod.data.sources.base import SourceBase
-from orcapod.data.sources.source_registry import GLOBAL_SOURCE_REGISTRY, SourceRegistry
+from orcapod.core.sources.base import SourceBase
+from orcapod.core.sources.source_registry import GLOBAL_SOURCE_REGISTRY, SourceRegistry
 from deltalake import DeltaTable
 from deltalake.exceptions import TableNotFoundError
 

@@ -5,8 +5,8 @@ from typing import Self
 import pyarrow as pa
 
 from orcapod import contexts
-from orcapod.data.datagrams.base import BaseDatagram
-from orcapod.data.system_constants import constants
+from orcapod.core.datagrams.base import BaseDatagram
+from orcapod.core.system_constants import constants
 from orcapod.types import DataValue, PythonSchema
 from orcapod.protocols.hashing_protocols import ContentHash
 from orcapod.utils import arrow_utils

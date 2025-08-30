@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from deltalake import DeltaTable, write_deltalake
 from pyarrow.lib import Table
 
-from orcapod.data.datagrams import DictTag
-from orcapod.data.kernels import TrackedKernelBase
-from orcapod.data.streams import (
+from orcapod.core.datagrams import DictTag
+from orcapod.core.kernels import TrackedKernelBase
+from orcapod.core.streams import (
     TableStream,
     KernelStream,
     StatefulStreamBase,
@@ -17,7 +17,7 @@ from orcapod.protocols import data_protocols as dp
 from orcapod.types import DataValue, PythonSchema
 from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule
-from orcapod.data.system_constants import constants
+from orcapod.core.system_constants import constants
 from orcapod.semantic_types import infer_python_schema_from_pylist_data
 
 if TYPE_CHECKING:
@@ -29,7 +29,7 @@ else:
     pd = LazyModule("pandas")
     pa = LazyModule("pyarrow")
 
-from orcapod.data.sources.base import SourceBase
+from orcapod.core.sources.base import SourceBase
 
 
 class ListSource(SourceBase):

@@ -5,15 +5,15 @@ from typing import TYPE_CHECKING, Any
 from orcapod.protocols import data_protocols as dp
 from orcapod.types import DataValue, PythonSchema, PythonSchemaLike
 from orcapod.utils.lazy_module import LazyModule
-from orcapod.data.system_constants import constants
-from orcapod.data.sources.arrow_table_source import ArrowTableSource
+from orcapod.core.system_constants import constants
+from orcapod.core.sources.arrow_table_source import ArrowTableSource
 
 if TYPE_CHECKING:
     import pyarrow as pa
 else:
     pa = LazyModule("pyarrow")
 
-from orcapod.data.sources.base import SourceBase
+from orcapod.core.sources.base import SourceBase
 
 
 def add_source_field(

@@ -3,15 +3,15 @@ from re import S
 from typing import TYPE_CHECKING, Any
 
 
-from orcapod.data.streams import TableStream
+from orcapod.core.streams import TableStream
 from orcapod.protocols import data_protocols as dp
 from orcapod.types import PythonSchema
 from orcapod.utils.lazy_module import LazyModule
-from orcapod.data.system_constants import constants
-from orcapod.data import arrow_data_utils
-from orcapod.data.sources.source_registry import GLOBAL_SOURCE_REGISTRY, SourceRegistry
+from orcapod.core.system_constants import constants
+from orcapod.core import arrow_data_utils
+from orcapod.core.sources.source_registry import GLOBAL_SOURCE_REGISTRY, SourceRegistry
 
-from orcapod.data.sources.base import SourceBase
+from orcapod.core.sources.base import SourceBase
 
 if TYPE_CHECKING:
     import pyarrow as pa

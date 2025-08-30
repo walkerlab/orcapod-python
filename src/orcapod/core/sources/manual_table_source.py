@@ -6,18 +6,19 @@ from deltalake import DeltaTable, write_deltalake
 from deltalake.exceptions import TableNotFoundError
 from pyarrow.lib import Table
 
-from orcapod.data.kernels import TrackedKernelBase
-from orcapod.data.streams import (
+from orcapod.core.kernels import TrackedKernelBase
+from orcapod.core.streams import (
     TableStream,
     KernelStream,
     StatefulStreamBase,
 )
+from orcapod.core.sources.source_registry import GLOBAL_SOURCE_REGISTRY, SourceRegistry
 from orcapod.errors import DuplicateTagError
 from orcapod.protocols import data_protocols as dp
-from orcapod.types import DataValue, PythonSchema
+from orcapod.types import DataValue, PythonSchema, PythonSchemaLike
 from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule
-from orcapod.data.system_constants import constants
+from orcapod.core.system_constants import constants
 from orcapod.semantic_types import infer_python_schema_from_pylist_data
 
 if TYPE_CHECKING:
@@ -29,7 +30,7 @@ else:
     pd = LazyModule("pandas")
     pa = LazyModule("pyarrow")
 
-from orcapod.data.sources.base import SourceBase
+from orcapod.core.sources.base import SourceBase
 
 
 class ManualDeltaTableSource(SourceBase):
@@ -45,14 +46,21 @@ class ManualDeltaTableSource(SourceBase):
     def __init__(
         self,
         table_path: str | Path,
-        python_schema: dict[str, type] | None = None,
+        python_schema: PythonSchemaLike | None = None,
         tag_columns: Collection[str] | None = None,
+        source_name: str | None = None,
+        source_registry: SourceRegistry | None = None,
         **kwargs,
     ) -> None:
         """
         Initialize the ManualDeltaTableSource with a label and optional data context.
         """
         super().__init__(**kwargs)
+
+        if source_name is None:
+            source_name = Path(table_path).name
+
+        self._source_name = source_name
 
         self.table_path = Path(table_path)
         self._delta_table: DeltaTable | None = None
@@ -69,7 +77,7 @@ class ManualDeltaTableSource(SourceBase):
                     "At least one tag column must be provided when creating a new Delta table."
                 )
             arrow_schema = (
-                self._data_context.type_converter.python_schema_to_arrow_schema(
+                self.data_context.type_converter.python_schema_to_arrow_schema(
                     python_schema
                 )
             )
@@ -84,7 +92,7 @@ class ManualDeltaTableSource(SourceBase):
         else:
             arrow_schema = pa.schema(self._delta_table.schema().to_arrow())
             python_schema = (
-                self._data_context.type_converter.arrow_schema_to_python_schema(
+                self.data_context.type_converter.arrow_schema_to_python_schema(
                     arrow_schema
                 )
             )
@@ -103,8 +111,8 @@ class ManualDeltaTableSource(SourceBase):
         self.tag_columns = list(tag_columns) if tag_columns else []
 
     @property
-    def kernel_id(self) -> tuple[str, ...]:
-        return (self.__class__.__name__, str(self.table_path))
+    def reference(self) -> tuple[str, ...]:
+        return ("manual_delta", self._source_name)
 
     @property
     def delta_table_version(self) -> int | None:

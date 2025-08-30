@@ -1,9 +1,9 @@
-from orcapod.data.operators.base import UnaryOperator
+from orcapod.core.operators.base import UnaryOperator
 from collections.abc import Collection
 from orcapod.protocols import data_protocols as dp
 from typing import Any, TYPE_CHECKING
 from orcapod.utils.lazy_module import LazyModule
-from orcapod.data.streams import TableStream
+from orcapod.core.streams import TableStream
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -94,7 +94,8 @@ class Batch(UnaryOperator):
         batched_tag_types = {k: list[v] for k, v in tag_types.items()}
         batched_packet_types = {k: list[v] for k, v in packet_types.items()}
 
-        return batched_tag_types, batched_packet_types
+        # TODO: check if this is really necessary
+        return PythonSchema(batched_tag_types), PythonSchema(batched_packet_types)
 
     def op_identity_structure(self, stream: dp.Stream | None = None) -> Any:
         return (

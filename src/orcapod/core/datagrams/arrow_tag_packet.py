@@ -5,14 +5,14 @@ from typing import Self
 
 import pyarrow as pa
 
-from orcapod.data.system_constants import constants
+from orcapod.core.system_constants import constants
 from orcapod import contexts
 from orcapod.semantic_types import infer_python_schema_from_pylist_data
 
 from orcapod.types import DataValue, PythonSchema
 from orcapod.utils import arrow_utils
 
-from orcapod.data.datagrams.arrow_datagram import ArrowDatagram
+from orcapod.core.datagrams.arrow_datagram import ArrowDatagram
 
 logger = logging.getLogger(__name__)
 

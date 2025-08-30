@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING, Any
 
 
-from orcapod.data.streams import (
+from orcapod.core.streams import (
     TableStream,
 )
 from orcapod.protocols import data_protocols as dp
@@ -17,7 +17,7 @@ else:
     pd = LazyModule("pandas")
     pa = LazyModule("pyarrow")
 
-from orcapod.data.sources.base import SourceBase
+from orcapod.core.sources.base import SourceBase
 
 
 class CSVSource(SourceBase):
@@ -35,7 +35,6 @@ class CSVSource(SourceBase):
         self.tag_columns = tag_columns or []
         if source_id is None:
             source_id = self.file_path
-        self.source_id = source_id
 
     def source_identity_structure(self) -> Any:
         return (self.__class__.__name__, self.source_id, tuple(self.tag_columns))

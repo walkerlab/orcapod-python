@@ -1,4 +1,4 @@
-from orcapod.data.base import LabeledContentIdentifiableBase
+from orcapod.core.base import LabeledContentIdentifiableBase
 from orcapod.protocols import data_protocols as dp
 from collections import defaultdict
 from collections.abc import Generator
@@ -156,7 +156,7 @@ class Invocation(LabeledContentIdentifiableBase):
                 parent_invoctions.append(Invocation(stream.source, stream.upstreams))
             else:
                 # import JIT to avoid circular imports
-                from orcapod.data.sources.base import StreamSource
+                from orcapod.core.sources.base import StreamSource
 
                 source = StreamSource(stream)
                 parent_invoctions.append(Invocation(source))

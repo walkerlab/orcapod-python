@@ -7,13 +7,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from orcapod import contexts
-from orcapod.data.base import LabeledContentIdentifiableBase
-from orcapod.data.datagrams import (
+from orcapod.core.base import LabeledContentIdentifiableBase
+from orcapod.core.datagrams import (
     ArrowPacket,
     ArrowTag,
     DictTag,
 )
-from orcapod.data.system_constants import constants
+from orcapod.core.system_constants import constants
 from orcapod.protocols import data_protocols as dp
 from orcapod.types import PythonSchema
 from orcapod.utils import arrow_utils
@@ -70,7 +70,7 @@ class OperatorStreamBaseMixin:
         Joins this stream with another stream, returning a new stream that contains
         the combined data from both streams.
         """
-        from orcapod.data.operators import Join
+        from orcapod.core.operators import Join
 
         return Join()(self, other_stream, label=label)  # type: ignore
 
@@ -83,7 +83,7 @@ class OperatorStreamBaseMixin:
         Performs a semi-join with another stream, returning a new stream that contains
         only the packets from this stream that have matching tags in the other stream.
         """
-        from orcapod.data.operators import SemiJoin
+        from orcapod.core.operators import SemiJoin
 
         return SemiJoin()(self, other_stream, label=label)  # type: ignore
 
@@ -97,7 +97,7 @@ class OperatorStreamBaseMixin:
         Maps the tags in this stream according to the provided name_map.
         If drop_unmapped is True, any tags that are not in the name_map will be dropped.
         """
-        from orcapod.data.operators import MapTags
+        from orcapod.core.operators import MapTags
 
         return MapTags(name_map, drop_unmapped)(self, label=label)  # type: ignore
 
@@ -111,7 +111,7 @@ class OperatorStreamBaseMixin:
         Maps the packets in this stream according to the provided packet_map.
         If drop_unmapped is True, any packets that are not in the packet_map will be dropped.
         """
-        from orcapod.data.operators import MapPackets
+        from orcapod.core.operators import MapPackets
 
         return MapPackets(name_map, drop_unmapped)(self, label=label)  # type: ignore
 
@@ -125,7 +125,7 @@ class OperatorStreamBaseMixin:
         Batch stream into fixed-size chunks, each of size batch_size.
         If drop_last is True, any remaining elements that don't fit into a full batch will be dropped.
         """
-        from orcapod.data.operators import Batch
+        from orcapod.core.operators import Batch
 
         return Batch(batch_size=batch_size, drop_last=drop_last)(self, label=label)  # type: ignore
 

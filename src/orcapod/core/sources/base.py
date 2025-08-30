@@ -3,8 +3,8 @@ from collections.abc import Collection, Iterator
 from typing import TYPE_CHECKING, Any
 
 
-from orcapod.data.kernels import TrackedKernelBase
-from orcapod.data.streams import (
+from orcapod.core.kernels import TrackedKernelBase
+from orcapod.core.streams import (
     KernelStream,
     StatefulStreamBase,
 )

@@ -1,5 +1,5 @@
 from ast import Not
-from orcapod.data.kernels import TrackedKernelBase
+from orcapod.core.kernels import TrackedKernelBase
 from orcapod.protocols import data_protocols as dp
 from orcapod.types import PythonSchema
 from abc import abstractmethod

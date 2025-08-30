@@ -3,9 +3,9 @@ from collections.abc import Collection, Iterator, Mapping
 from typing import Self, cast, TYPE_CHECKING
 
 from orcapod.utils.lazy_module import LazyModule
-from orcapod.data.system_constants import constants
+from orcapod.core.system_constants import constants
 from orcapod import contexts
-from orcapod.data.datagrams.base import BaseDatagram
+from orcapod.core.datagrams.base import BaseDatagram
 from orcapod.semantic_types import infer_python_schema_from_pylist_data
 from orcapod.types import DataValue, PythonSchema, PythonSchemaLike
 from orcapod.utils import arrow_utils

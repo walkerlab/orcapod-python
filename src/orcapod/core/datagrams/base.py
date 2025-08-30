@@ -21,7 +21,7 @@ from abc import abstractmethod
 from collections.abc import Collection, Iterator, Mapping
 from typing import Self, TypeAlias
 from orcapod import contexts
-from orcapod.data.base import ContentIdentifiableBase
+from orcapod.core.base import ContentIdentifiableBase
 from orcapod.protocols.hashing_protocols import ContentHash
 
 import pyarrow as pa

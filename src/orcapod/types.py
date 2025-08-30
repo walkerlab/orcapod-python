@@ -7,7 +7,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-DataType: TypeAlias = type | UnionType
+DataType: TypeAlias = type | UnionType | list[type] | tuple[type, ...]
 
 PythonSchema: TypeAlias = dict[str, DataType]  # dict of parameter names to their types
 

@@ -7,14 +7,14 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
 
 from orcapod import contexts
-from orcapod.data.datagrams import (
+from orcapod.core.datagrams import (
     ArrowPacket,
     DictPacket,
 )
-from orcapod.data.kernels import KernelStream, TrackedKernelBase
-from orcapod.data.operators import Join
-from orcapod.data.streams import EfficientPodResultStream, LazyPodResultStream
-from orcapod.data.system_constants import constants
+from orcapod.core.kernels import KernelStream, TrackedKernelBase
+from orcapod.core.operators import Join
+from orcapod.core.streams import EfficientPodResultStream, LazyPodResultStream
+from orcapod.core.system_constants import constants
 from orcapod.hashing.hash_utils import get_function_components, get_function_signature
 from orcapod.protocols import data_protocols as dp
 from orcapod.protocols import hashing_protocols as hp
