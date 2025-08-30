@@ -14,7 +14,7 @@ from orcapod.core.streams import (
 )
 from orcapod.core.sources.source_registry import GLOBAL_SOURCE_REGISTRY, SourceRegistry
 from orcapod.errors import DuplicateTagError
-from orcapod.protocols import data_protocols as dp
+from orcapod.protocols import core_protocols as dp
 from orcapod.types import DataValue, PythonSchema, PythonSchemaLike
 from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule

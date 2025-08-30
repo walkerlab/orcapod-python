@@ -1,6 +1,6 @@
 from orcapod.core.operators.base import UnaryOperator
 from collections.abc import Collection
-from orcapod.protocols import data_protocols as dp
+from orcapod.protocols import core_protocols as dp
 from typing import Any, TYPE_CHECKING
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.core.streams import TableStream

@@ -14,7 +14,7 @@ from orcapod.core.datagrams import (
     DictTag,
 )
 from orcapod.core.system_constants import constants
-from orcapod.protocols import data_protocols as dp
+from orcapod.protocols import core_protocols as dp
 from orcapod.types import PythonSchema
 from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule

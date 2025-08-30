@@ -18,9 +18,9 @@ import pytest
 import pyarrow as pa
 from datetime import datetime, date
 
-from orcapod.data.datagrams import ArrowDatagram
-from orcapod.data.system_constants import constants
-from orcapod.protocols.data_protocols import Datagram
+from orcapod.core.datagrams import ArrowDatagram
+from orcapod.core.system_constants import constants
+from orcapod.protocols.core_protocols import Datagram
 from orcapod.protocols.hashing_protocols import ContentHash
 
 

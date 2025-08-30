@@ -13,8 +13,8 @@ import pytest
 import pyarrow as pa
 from datetime import datetime, date
 
-from orcapod.data.datagrams import ArrowTag, ArrowPacket
-from orcapod.data.system_constants import constants
+from orcapod.core.datagrams import ArrowTag, ArrowPacket
+from orcapod.core.system_constants import constants
 
 
 class TestArrowTagInitialization:

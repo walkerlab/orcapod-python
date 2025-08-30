@@ -1,13 +1,13 @@
 from abc import abstractmethod
 from einops import pack
-from orcapod.data.kernels import KernelStream, WrappedKernel
-from orcapod.data.sources import SourceBase
-from orcapod.data.pods import CachedPod
-from orcapod.protocols import data_protocols as dp, database_protocols as dbp
+from orcapod.core.kernels import KernelStream, WrappedKernel
+from orcapod.core.sources import SourceBase
+from orcapod.core.pods import CachedPod
+from orcapod.protocols import core_protocols as dp, database_protocols as dbp
 from orcapod.types import PythonSchema
 from orcapod.utils.lazy_module import LazyModule
 from typing import TYPE_CHECKING, Any
-from orcapod.data.system_constants import constants
+from orcapod.core.system_constants import constants
 from orcapod.utils import arrow_utils
 from collections.abc import Collection
 

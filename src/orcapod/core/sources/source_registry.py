@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Iterator
-from orcapod.protocols.data_protocols import Source
+from orcapod.protocols.core_protocols import Source
 
 
 logger = logging.getLogger(__name__)

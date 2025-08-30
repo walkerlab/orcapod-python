@@ -2,8 +2,8 @@ from collections.abc import Collection, Iterator, Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
-from orcapod.protocols.data_protocols.base import ExecutionEngine, Labelable
-from orcapod.protocols.data_protocols.datagrams import Packet, Tag
+from orcapod.protocols.core_protocols.base import ExecutionEngine, Labelable
+from orcapod.protocols.core_protocols.datagrams import Packet, Tag
 from orcapod.protocols.hashing_protocols import ContentIdentifiable
 from orcapod.types import PythonSchema
 
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     import polars as pl
     import pyarrow as pa
     import pandas as pd
-    from orcapod.protocols.data_protocols.kernel import Kernel
+    from orcapod.protocols.core_protocols.kernel import Kernel
 
 
 @runtime_checkable

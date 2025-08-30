@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from deltalake import DeltaTable, write_deltalake
 from deltalake.exceptions import TableNotFoundError
 
-from orcapod.data import constants
+from orcapod.core import constants
 from orcapod.utils.lazy_module import LazyModule
 
 if TYPE_CHECKING:

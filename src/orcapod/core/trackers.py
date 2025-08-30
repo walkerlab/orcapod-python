@@ -1,5 +1,5 @@
 from orcapod.core.base import LabeledContentIdentifiableBase
-from orcapod.protocols import data_protocols as dp
+from orcapod.protocols import core_protocols as dp
 from collections import defaultdict
 from collections.abc import Generator
 from abc import ABC, abstractmethod

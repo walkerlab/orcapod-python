@@ -1,7 +1,7 @@
 from typing import Protocol, runtime_checkable
 
-from orcapod.protocols.data_protocols.kernel import Kernel
-from orcapod.protocols.data_protocols.streams import Stream
+from orcapod.protocols.core_protocols.kernel import Kernel
+from orcapod.protocols.core_protocols.streams import Stream
 
 
 @runtime_checkable

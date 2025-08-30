@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any
 from orcapod.core.streams import (
     TableStream,
 )
-from orcapod.protocols import data_protocols as dp
+from orcapod.protocols import core_protocols as dp
 from orcapod.types import PythonSchema
 from orcapod.utils.lazy_module import LazyModule
 

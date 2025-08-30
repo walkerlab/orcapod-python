@@ -11,7 +11,7 @@ This module tests:
 import pytest
 import pyarrow as pa
 
-from orcapod.data.datagrams import (
+from orcapod.core.datagrams import (
     DictDatagram,
     ArrowDatagram,
     DictTag,
@@ -19,12 +19,12 @@ from orcapod.data.datagrams import (
     ArrowTag,
     ArrowPacket,
 )
-from orcapod.data.datagrams.base import (
+from orcapod.core.datagrams.base import (
     BaseDatagram,
     ImmutableDict,
     contains_prefix_from,
 )
-from orcapod.data.system_constants import constants
+from orcapod.core.system_constants import constants
 
 
 class TestImmutableDict:

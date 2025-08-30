@@ -1,9 +1,9 @@
 from typing import Protocol, runtime_checkable
 from contextlib import AbstractContextManager
-from orcapod.protocols.data_protocols.kernel import Kernel
-from orcapod.protocols.data_protocols.pods import Pod
-from orcapod.protocols.data_protocols.source import Source
-from orcapod.protocols.data_protocols.streams import Stream
+from orcapod.protocols.core_protocols.kernel import Kernel
+from orcapod.protocols.core_protocols.pods import Pod
+from orcapod.protocols.core_protocols.source import Source
+from orcapod.protocols.core_protocols.streams import Stream
 
 
 @runtime_checkable

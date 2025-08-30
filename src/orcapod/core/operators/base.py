@@ -1,6 +1,6 @@
 from ast import Not
 from orcapod.core.kernels import TrackedKernelBase
-from orcapod.protocols import data_protocols as dp
+from orcapod.protocols import core_protocols as dp
 from orcapod.types import PythonSchema
 from abc import abstractmethod
 from typing import Any

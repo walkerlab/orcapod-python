@@ -15,8 +15,8 @@ This module tests all functionality of the DictDatagram class including:
 import pytest
 import pyarrow as pa
 
-from orcapod.data.datagrams import DictDatagram
-from orcapod.data.system_constants import constants
+from orcapod.core.datagrams import DictDatagram
+from orcapod.core.system_constants import constants
 
 
 class TestDictDatagramInitialization:

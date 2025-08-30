@@ -1,7 +1,7 @@
 # Protocols for pipeline and nodes
 from typing import Protocol, runtime_checkable, TYPE_CHECKING
-from orcapod.protocols.data_protocols.source import Source
-from orcapod.protocols.data_protocols.pods import CachedPod
+from orcapod.protocols.core_protocols.source import Source
+from orcapod.protocols.core_protocols.pods import CachedPod
 
 
 if TYPE_CHECKING:

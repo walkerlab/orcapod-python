@@ -2,7 +2,7 @@ from abc import abstractmethod
 from collections.abc import Collection
 from datetime import datetime, timezone
 from typing import Any
-from orcapod.protocols import data_protocols as dp
+from orcapod.protocols import core_protocols as dp
 import logging
 from orcapod.core.streams import KernelStream
 from orcapod.core.base import LabeledContentIdentifiableBase

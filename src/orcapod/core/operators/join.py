@@ -1,4 +1,4 @@
-from orcapod.protocols import data_protocols as dp
+from orcapod.protocols import core_protocols as dp
 from orcapod.core.streams import TableStream
 from orcapod.types import PythonSchema
 from orcapod.utils import types_utils

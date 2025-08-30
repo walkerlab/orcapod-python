@@ -10,8 +10,8 @@ This module tests all functionality of the dictionary-based tag and packet class
 
 import pytest
 
-from orcapod.data.datagrams import DictTag, DictPacket
-from orcapod.data.system_constants import constants
+from orcapod.core.datagrams import DictTag, DictPacket
+from orcapod.core.system_constants import constants
 
 
 class TestDictTagInitialization:
