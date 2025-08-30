@@ -36,7 +36,7 @@ def drop_system_columns(
 
 def add_source_info(
     table: "pa.Table",
-    source_info: str | None,
+    source_info: str | Collection[str] | None,
     exclude_prefixes: Collection[str] = (
         constants.META_PREFIX,
         constants.DATAGRAM_PREFIX,
@@ -45,7 +45,14 @@ def add_source_info(
 ) -> "pa.Table":
     """Add source information to an Arrow table."""
     # Create a new column with the source information
-    source_column = pa.array([source_info] * table.num_rows)
+    if source_info is None or isinstance(source_info, str):
+        source_column = [source_info] * table.num_rows
+    elif isinstance(source_info, Collection):
+        if len(source_info) != table.num_rows:
+            raise ValueError(
+                "Length of source_info collection must match number of rows in the table."
+            )
+        source_column = source_info
 
     # identify columns for which source columns should be created
 
@@ -53,7 +60,8 @@ def add_source_info(
         if col.startswith(tuple(exclude_prefixes)) or col in exclude_columns:
             continue
         source_column = pa.array(
-            [f"{source_info}:{col}"] * table.num_rows, type=pa.large_string()
+            [f"{source_val}::{col}" for source_val in source_column],
+            type=pa.large_string(),
         )
         table = table.append_column(f"{constants.SOURCE_PREFIX}{col}", source_column)
 

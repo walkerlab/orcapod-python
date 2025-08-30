@@ -1,3 +1,5 @@
+from abc import abstractmethod
+from einops import pack
 from orcapod.data.kernels import KernelStream, WrappedKernel
 from orcapod.data.sources import SourceBase
 from orcapod.data.pods import CachedPod
@@ -39,12 +41,15 @@ class NodeBase(
         self.pipeline_path_prefix = pipeline_path_prefix
         # compute invocation hash - note that empty () is passed into identity_structure to signify
         # identity structure of invocation with no input streams
-        self.invocation_hash = self.data_context.object_hasher.hash_object(
+        self.pipeline_node_hash = self.data_context.object_hasher.hash_object(
             self.identity_structure(())
         ).to_string()
-        tag_types, _ = self.types(include_system_tags=True)
+        tag_types, packet_types = self.types(include_system_tags=True)
         self.tag_schema_hash = self.data_context.object_hasher.hash_object(
             tag_types
+        ).to_string()
+        self.packet_schema_hash = self.data_context.object_hasher.hash_object(
+            packet_types
         ).to_string()
         self.pipeline_database = pipeline_database
 
@@ -55,17 +60,17 @@ class NodeBase(
         )
 
     @property
+    def reference(self) -> tuple[str, ...]:
+        return self.contained_kernel.reference
+
+    @property
+    @abstractmethod
     def pipeline_path(self) -> tuple[str, ...]:
         """
         Return the path to the pipeline run records.
         This is used to store the run-associated tag info.
         """
-        # TODO: include output tag hash!
-        return (
-            self.pipeline_path_prefix
-            + self.reference
-            + (self.invocation_hash, self.tag_schema_hash)
-        )
+        ...
 
     def forward(self, *streams: dp.Stream) -> dp.Stream:
         if len(streams) > 0:
@@ -160,6 +165,22 @@ class KernelNode(NodeBase, WrappedKernel):
             skip_duplicates=True,
         )
 
+    @property
+    def pipeline_path(self) -> tuple[str, ...]:
+        """
+        Return the path to the pipeline run records.
+        This is used to store the run-associated tag info.
+        """
+        return (
+            self.pipeline_path_prefix  # pipeline ID
+            + self.reference  # node ID
+            + (
+                self.pipeline_node_hash,  # pipeline node ID
+                self.packet_schema_hash,  # packet schema ID
+                self.tag_schema_hash,  # tag schema ID
+            )
+        )
+
     def get_all_records(
         self, include_system_columns: bool = False
     ) -> "pa.Table | None":
@@ -200,11 +221,25 @@ class PodNode(NodeBase, CachedPod):
             pipeline_path_prefix=pipeline_path_prefix,
             **kwargs,
         )
-        self.pipeline_store = pipeline_database
 
     @property
     def contained_kernel(self) -> dp.Kernel:
         return self.pod
+
+    @property
+    def pipeline_path(self) -> tuple[str, ...]:
+        """
+        Return the path to the pipeline run records.
+        This is used to store the run-associated tag info.
+        """
+        return (
+            self.pipeline_path_prefix  # pipeline ID
+            + self.reference  # node ID
+            + (
+                self.pipeline_node_hash,  # pipeline node ID
+                self.tag_schema_hash,  # tag schema ID
+            )
+        )
 
     def __repr__(self):
         return f"PodNode(pod={self.pod!r})"
@@ -302,11 +337,13 @@ class PodNode(NodeBase, CachedPod):
             pa.array([input_packet.content_hash().to_string()], type=pa.large_string()),
         )
 
+        # unique entry ID is determined by the combination of tags, system_tags, and input_packet hash
         entry_id = self.data_context.arrow_hasher.hash_table(tag_with_hash).to_string()
-        # FIXME: consider and implement more robust cache lookup logic
+
+        # check presence of an existing entry with the same entry_id
         existing_record = None
         if not skip_cache_lookup:
-            existing_record = self.pipeline_store.get_record_by_id(
+            existing_record = self.pipeline_database.get_record_by_id(
                 self.pipeline_path,
                 entry_id,
             )
@@ -340,7 +377,7 @@ class PodNode(NodeBase, CachedPod):
             tag.as_table(include_system_tags=True), input_packet_info
         )
 
-        self.pipeline_store.add_record(
+        self.pipeline_database.add_record(
             self.pipeline_path,
             entry_id,
             combined_record,
@@ -354,11 +391,11 @@ class PodNode(NodeBase, CachedPod):
             self.record_path, record_id_column=constants.PACKET_RECORD_ID
         )
 
-        if self.pipeline_store is None:
+        if self.pipeline_database is None:
             raise ValueError(
-                "Pipeline store is not configured, cannot retrieve tag info"
+                "Pipeline database is not configured, cannot retrieve tag info"
             )
-        taginfo = self.pipeline_store.get_all_records(
+        taginfo = self.pipeline_database.get_all_records(
             self.pipeline_path,
         )
 

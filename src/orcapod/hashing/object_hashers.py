@@ -1,13 +1,14 @@
-from collections.abc import Collection, Mapping
 import hashlib
 import json
-from orcapod.protocols import hashing_protocols as hp
-from typing import Any
+import logging
 import uuid
 from abc import ABC, abstractmethod
-import logging
+from collections.abc import Collection, Mapping
 from pathlib import Path
+from typing import Any
 from uuid import UUID
+
+from orcapod.protocols import hashing_protocols as hp
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +111,10 @@ class BasicObjectHasher(ObjectHasherBase):
                 f"Detected circular reference for object of type {type(obj).__name__}"
             )
             return "CircularRef"  # Don't include the actual id in hash output
+
+        # TODO: revisit the hashing of the ContentHash
+        if isinstance(obj, hp.ContentHash):
+            return (obj.method, obj.digest.hex())
 
         # For objects that could contain circular references, add to visited
         if isinstance(obj, (dict, list, tuple, set)) or not isinstance(

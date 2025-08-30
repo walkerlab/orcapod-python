@@ -49,11 +49,16 @@ class SourceBase(TrackedKernelBase, StatefulStreamBase):
         # otherwise, return the identity structure of the stream
         return self.source_identity_structure()
 
-    # @property
-    # @abstractmethod
-    # def reference(self) -> tuple[str, ...]:
-    #     """Return the unique identifier for the kernel."""
-    #     ...
+    @property
+    def source_id(self) -> str:
+        return ":".join(self.reference)
+
+    # Redefine the reference to ensure subclass would provide a concrete implementation
+    @property
+    @abstractmethod
+    def reference(self) -> tuple[str, ...]:
+        """Return the unique identifier for the kernel."""
+        ...
 
     def kernel_output_types(
         self, *streams: dp.Stream, include_system_tags: bool = False
@@ -246,8 +251,8 @@ class StreamSource(SourceBase):
         return self.stream.types(include_system_tags=include_system_tags)
 
     @property
-    def kernel_id(self) -> tuple[str, ...]:
-        return (self.stream.__class__.__name__,)
+    def reference(self) -> tuple[str, ...]:
+        return ("stream", self.stream.content_hash().to_string())
 
     def forward(self, *args: Any, **kwargs: Any) -> dp.Stream:
         """

@@ -1,4 +1,4 @@
-from collections.abc import Collection
+from collections.abc import Collection, Mapping
 from typing import TYPE_CHECKING, Any
 
 
@@ -62,19 +62,28 @@ class DictSource(SourceBase):
 
     def __init__(
         self,
-        data: Collection[dict[str, DataValue]],
+        data: Collection[Mapping[str, DataValue]],
         tag_columns: Collection[str] = (),
         system_tag_columns: Collection[str] = (),
+        source_name: str | None = None,
         data_schema: PythonSchemaLike | None = None,
         **kwargs,
     ):
         super().__init__(**kwargs)
         arrow_table = self.data_context.type_converter.python_dicts_to_arrow_table(
-            list(data), python_schema=data_schema
+            [dict(e) for e in data], python_schema=data_schema
         )
         self._table_source = ArrowTableSource(
-            arrow_table, tag_columns=tag_columns, system_tag_columns=system_tag_columns
+            arrow_table,
+            tag_columns=tag_columns,
+            source_name=source_name,
+            system_tag_columns=system_tag_columns,
         )
+
+    @property
+    def reference(self) -> tuple[str, ...]:
+        # TODO: provide more thorough implementation
+        return ("dict",) + self._table_source.reference[1:]
 
     def source_identity_structure(self) -> Any:
         return self._table_source.source_identity_structure()

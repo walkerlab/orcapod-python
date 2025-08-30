@@ -574,12 +574,13 @@ class TableStream(ImmutableStream):
             raise ValueError(
                 "Table must contain at least one column to be used as a stream."
             )
+        table = data_table
 
         if data_context_table is None:
             data_context_table = pa.table(
                 {
                     constants.CONTEXT_KEY: pa.array(
-                        [contexts.get_default_context_key()] * len(data_table),
+                        [contexts.get_default_context_key()] * len(table),
                         pa.large_string(),
                     )
                 }
@@ -1326,6 +1327,8 @@ class EfficientPodResultStream(StreamBase):
 
             # identify all entries in the input stream for which we still have not computed packets
             target_entries = self.input_stream.as_table(
+                include_system_tags=True,
+                include_source=True,
                 include_content_hash=constants.INPUT_PACKET_HASH,
                 execution_engine=execution_engine,
             )

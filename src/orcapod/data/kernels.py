@@ -59,6 +59,7 @@ class TrackedKernelBase(LabeledContentIdentifiableBase):
         """
         return self._last_modified
 
+    # TODO: reconsider making this a public method
     def _set_modified_time(
         self, timestamp: datetime | None = None, invalidate: bool = False
     ) -> None:
@@ -97,23 +98,30 @@ class TrackedKernelBase(LabeledContentIdentifiableBase):
     @abstractmethod
     def kernel_identity_structure(
         self, streams: Collection[dp.Stream] | None = None
-    ) -> Any: ...
+    ) -> Any:
+        """
+        Identity structure for this kernel. Input stream(s), if present, have already been preprocessed
+        and validated.
+        """
+        ...
 
     def identity_structure(self, streams: Collection[dp.Stream] | None = None) -> Any:
-        # Default implementation of identity_structure for the kernel only
-        # concerns the kernel class and the streams if present. Subclasses of
-        # Kernels should override this method to provide a more meaningful
-        # representation of the kernel. Note that kernel must provide the notion
-        # of identity under possibly two distinct contexts:
-        # 1) identity of the kernel in itself when invoked without any stream
-        # 2) identity of the specific invocation of the kernel with a collection of streams
-        # While the latter technically corresponds to the identity of the invocation and not
-        # the kernel, only kernel can provide meaningful information as to the uniqueness of
-        # the invocation as only kernel would know if / how the input stream(s) alter the identity
-        # of the invocation. For example, if the kernel corresponds to an commutative computation
-        # and therefore kernel K(x, y) == K(y, x), then the identity structure must reflect the
-        # equivalence of the two by returning the same identity structure for both invocations.
-        # This can be achieved, for example, by returning a set over the streams instead of a tuple.
+        """
+        Default implementation of identity_structure for the kernel only
+        concerns the kernel class and the streams if present. Subclasses of
+        Kernels should override this method to provide a more meaningful
+        representation of the kernel. Note that kernel must provide the notion
+        of identity under possibly two distinct contexts:
+        1) identity of the kernel in itself when invoked without any stream
+        2) identity of the specific invocation of the kernel with a collection of streams
+        While the latter technically corresponds to the identity of the invocation and not
+        the kernel, only kernel can provide meaningful information as to the uniqueness of
+        the invocation as only kernel would know if / how the input stream(s) alter the identity
+        of the invocation. For example, if the kernel corresponds to an commutative computation
+        and therefore kernel K(x, y) == K(y, x), then the identity structure must reflect the
+        equivalence of the two by returning the same identity structure for both invocations.
+        This can be achieved, for example, by returning a set over the streams instead of a tuple.
+        """
         if streams is not None:
             streams = self.pre_kernel_processing(*streams)
             self.validate_inputs(*streams)

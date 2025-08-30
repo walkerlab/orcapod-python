@@ -67,7 +67,7 @@ class Batch(UnaryOperator):
         next_batch = {}
 
         i = 0
-        for i, entry in enumerate(data_list):
+        for entry in data_list:
             i += 1
             for c in entry:
                 next_batch.setdefault(c, []).append(entry[c])

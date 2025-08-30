@@ -1,18 +1,19 @@
-from pathlib import Path
-from typing import Any, Literal, TYPE_CHECKING, cast
 import logging
-from deltalake import DeltaTable, write_deltalake
-from deltalake.exceptions import TableNotFoundError
 from collections import defaultdict
 from collections.abc import Collection, Mapping
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal, cast
+
+from deltalake import DeltaTable, write_deltalake
+from deltalake.exceptions import TableNotFoundError
 
 from orcapod.data import constants
 from orcapod.utils.lazy_module import LazyModule
 
 if TYPE_CHECKING:
+    import polars as pl
     import pyarrow as pa
     import pyarrow.compute as pc
-    import polars as pl
 else:
     pa = LazyModule("pyarrow")
     pl = LazyModule("polars")

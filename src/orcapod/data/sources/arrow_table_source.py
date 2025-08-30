@@ -1,4 +1,5 @@
 from collections.abc import Collection
+from re import S
 from typing import TYPE_CHECKING, Any
 
 
@@ -8,13 +9,14 @@ from orcapod.types import PythonSchema
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.data.system_constants import constants
 from orcapod.data import arrow_data_utils
+from orcapod.data.sources.source_registry import GLOBAL_SOURCE_REGISTRY, SourceRegistry
+
+from orcapod.data.sources.base import SourceBase
 
 if TYPE_CHECKING:
     import pyarrow as pa
 else:
     pa = LazyModule("pyarrow")
-
-from orcapod.data.sources.base import SourceBase
 
 
 class ArrowTableSource(SourceBase):
@@ -24,30 +26,48 @@ class ArrowTableSource(SourceBase):
 
     def __init__(
         self,
-        table: "pa.Table",
+        arrow_table: "pa.Table",
         tag_columns: Collection[str] = (),
+        source_name: str | None = None,
+        source_registry: SourceRegistry | None = None,
+        auto_register: bool = True,
+        preserve_system_columns: bool = False,
         **kwargs,
     ):
         super().__init__(**kwargs)
 
         # clean the table, dropping any system columns
         # TODO: consider special treatment of system columns if provided
-        table = arrow_data_utils.drop_system_columns(table)
-        self.table_hash = self.data_context.arrow_hasher.hash_table(table)
+        if not preserve_system_columns:
+            arrow_table = arrow_data_utils.drop_system_columns(arrow_table)
 
-        self.tag_columns = [col for col in tag_columns if col in table.column_names]
+        self.tag_columns = [
+            col for col in tag_columns if col in arrow_table.column_names
+        ]
 
-        # add system tag column, indexing into the array
-        system_tag_column = pa.array(list(range(table.num_rows)), pa.int64())
+        self.table_hash = self.data_context.arrow_hasher.hash_table(arrow_table)
 
-        table = table.add_column(
-            0, f"{constants.SYSTEM_TAG_PREFIX}{self.source_info}", system_tag_column
-        )
+        if source_name is None:
+            source_name = self.content_hash().to_hex()
+
+        self._source_name = source_name
+
+        row_index = list(range(arrow_table.num_rows))
+
+        source_info = [f"{self.source_id}::row_{i}" for i in row_index]
 
         # add source info
-        self._table = arrow_data_utils.add_source_info(
-            table, self.source_info, exclude_columns=tag_columns
+        arrow_table = arrow_data_utils.add_source_info(
+            arrow_table, source_info, exclude_columns=tag_columns
         )
+
+        arrow_table = arrow_table.add_column(
+            0,
+            f"{constants.SYSTEM_TAG_PREFIX}{self.source_id}::row_index",
+            pa.array(row_index, pa.int64()),
+        )
+
+        self._table = arrow_table
 
         self._table_stream = TableStream(
             table=self._table,
@@ -56,16 +76,21 @@ class ArrowTableSource(SourceBase):
             upstreams=(),
         )
 
+        # Auto-register with global registry
+        if auto_register:
+            registry = source_registry or GLOBAL_SOURCE_REGISTRY
+            registry.register(self.source_id, self)
+
     @property
     def reference(self) -> tuple[str, ...]:
-        return (self.SOURCE_ID, self.table_hash.to_hex())
+        return ("arrow_table", self._source_name)
 
     @property
     def table(self) -> "pa.Table":
         return self._table
 
     def source_identity_structure(self) -> Any:
-        return (self.__class__.__name__, self.source_info, self.table_hash)
+        return (self.__class__.__name__, self.tag_columns, self.table_hash)
 
     def get_all_records(
         self, include_system_columns: bool = False

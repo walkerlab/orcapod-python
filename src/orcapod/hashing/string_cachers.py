@@ -4,7 +4,7 @@ import random
 import sqlite3
 import threading
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from orcapod.protocols.hashing_protocols import StringCacher
 
@@ -12,16 +12,6 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     import redis
-
-
-def _get_redis():
-    """Lazy import for Redis to avoid circular dependencies."""
-    try:
-        import redis
-
-        return redis
-    except ImportError as e:
-        return None
 
 
 class TransferCacher(StringCacher):
@@ -615,11 +605,14 @@ class RedisCacher(StringCacher):
             socket_timeout: Socket timeout in seconds
         """
         # TODO: cleanup the redis use pattern
-        self._redis_module = _get_redis()
-        if self._redis_module is None:
+        try:
+            import redis
+        except ImportError as e:
             raise ImportError(
                 "Could not import Redis module. redis package is required for RedisCacher"
-            )
+            ) from e
+
+        self._redis_module = redis
         self.key_prefix = key_prefix
         self._connection_failed = False
         self._lock = threading.RLock()

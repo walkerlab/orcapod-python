@@ -1,11 +1,13 @@
+import hashlib
+import os
+
+import pyarrow as pa
+
 from orcapod.protocols.hashing_protocols import (
-    SemanticTypeHasher,
     FileContentHasher,
+    SemanticTypeHasher,
     StringCacher,
 )
-import os
-import hashlib
-import pyarrow as pa
 
 
 class PathHasher(SemanticTypeHasher):

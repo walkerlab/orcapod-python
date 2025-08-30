@@ -1,7 +1,8 @@
+import hashlib
 import logging
 import sys
 from abc import abstractmethod
-from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Sequence
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -12,20 +13,23 @@ from orcapod.data.datagrams import (
 )
 from orcapod.data.kernels import KernelStream, TrackedKernelBase
 from orcapod.data.operators import Join
-from orcapod.data.streams import LazyPodResultStream, EfficientPodResultStream
+from orcapod.data.streams import EfficientPodResultStream, LazyPodResultStream
 from orcapod.data.system_constants import constants
+from orcapod.hashing.hash_utils import get_function_components, get_function_signature
 from orcapod.protocols import data_protocols as dp
 from orcapod.protocols import hashing_protocols as hp
 from orcapod.protocols.database_protocols import ArrowDatabase
 from orcapod.types import DataValue, PythonSchema, PythonSchemaLike
 from orcapod.utils import types_utils
 from orcapod.utils.lazy_module import LazyModule
-from orcapod.hashing.hash_utils import get_function_signature, get_function_components
-import hashlib
 
 
+# TODO: extract default char count as config
 def combine_hashes(
-    *hashes: str, order: bool = False, prefix_hasher_id: bool = False
+    *hashes: str,
+    order: bool = False,
+    prefix_hasher_id: bool = False,
+    hex_char_count: int | None = 20,
 ) -> str:
     """Combine hashes into a single hash string."""
 
@@ -36,6 +40,8 @@ def combine_hashes(
         prepared_hashes = list(hashes)
     combined = "".join(prepared_hashes)
     combined_hash = hashlib.sha256(combined.encode()).hexdigest()
+    if hex_char_count is not None:
+        combined_hash = combined_hash[:hex_char_count]
     if prefix_hasher_id:
         return "sha256@" + combined_hash
     return combined_hash
@@ -416,11 +422,16 @@ class FunctionPod(ActivatablePodBase):
 
         output_data = self.process_function_output(values)
 
+        # TODO: extract out this function
+        def combine(*components: tuple[str, ...]) -> str:
+            inner_parsed = [":".join(component) for component in components]
+            return "::".join(inner_parsed)
+
         if record_id is None:
             # if record_id is not provided, generate it from the packet
             record_id = self.get_record_id(packet, execution_engine_hash)
         source_info = {
-            k: ":".join(self.reference + (record_id, k)) for k in output_data
+            k: combine(self.reference, (record_id,), (k,)) for k in output_data
         }
 
         output_packet = DictPacket(
@@ -466,11 +477,16 @@ class FunctionPod(ActivatablePodBase):
 
         output_data = self.process_function_output(values)
 
+        # TODO: extract out this function
+        def combine(*components: tuple[str, ...]) -> str:
+            inner_parsed = [":".join(component) for component in components]
+            return "::".join(inner_parsed)
+
         if record_id is None:
             # if record_id is not provided, generate it from the packet
             record_id = self.get_record_id(packet, execution_engine_hash)
         source_info = {
-            k: ":".join(self.reference + (record_id, k)) for k in output_data
+            k: combine(self.reference, (record_id,), (k,)) for k in output_data
         }
 
         output_packet = DictPacket(

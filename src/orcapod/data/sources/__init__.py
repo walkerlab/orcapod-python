@@ -1,5 +1,14 @@
 from .base import SourceBase
 from .arrow_table_source import ArrowTableSource
+from .delta_table_source import DeltaTableSource
 from .dict_source import DictSource
+from .source_registry import SourceRegistry, GLOBAL_SOURCE_REGISTRY
 
-__all__ = ["SourceBase", "ArrowTableSource", "DictSource"]
+__all__ = [
+    "SourceBase",
+    "ArrowTableSource",
+    "DeltaTableSource",
+    "DictSource",
+    "SourceRegistry",
+    "GLOBAL_SOURCE_REGISTRY",
+]

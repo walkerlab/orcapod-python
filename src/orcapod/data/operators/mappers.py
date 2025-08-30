@@ -22,7 +22,7 @@ class MapPackets(UnaryOperator):
     """
 
     def __init__(
-        self, name_map: Mapping[str, str], drop_unmapped: bool = True, **kwargs
+        self, name_map: Mapping[str, str], drop_unmapped: bool = False, **kwargs
     ):
         self.name_map = dict(name_map)
         self.drop_unmapped = drop_unmapped
@@ -30,14 +30,26 @@ class MapPackets(UnaryOperator):
 
     def op_forward(self, stream: dp.Stream) -> dp.Stream:
         tag_columns, packet_columns = stream.keys()
+        unmapped_columns = set(packet_columns) - set(self.name_map.keys())
 
         if not any(n in packet_columns for n in self.name_map):
             # nothing to rename in the packet, return stream as is
             return stream
 
-        table = stream.as_table(include_source=True)
+        table = stream.as_table(
+            include_source=True, include_system_tags=True, sort_by_tags=False
+        )
 
-        name_map = {tc: tc for tc in tag_columns}  # no renaming on tag columns
+        name_map = {
+            c: c
+            for c in table.column_names
+            if c not in packet_columns and not c.startswith("")
+        }
+        name_map = {
+            tc: tc
+            for tc in table.column_names
+            if tc not in packet_columns and not tc.startswith(constants.SOURCE_PREFIX)
+        }  # no renaming on tag columns
         for c in packet_columns:
             if c in self.name_map:
                 name_map[c] = self.name_map[c]
@@ -48,6 +60,10 @@ class MapPackets(UnaryOperator):
                 name_map[c] = c
 
         renamed_table = table.rename_columns(name_map)
+
+        if self.drop_unmapped and unmapped_columns:
+            renamed_table = renamed_table.drop_columns(list(unmapped_columns))
+
         return TableStream(
             renamed_table, tag_columns=tag_columns, source=self, upstreams=(stream,)
         )
@@ -79,8 +95,12 @@ class MapPackets(UnaryOperator):
                 message += f"overlapping tag columns: {overlapping_tag_columns}."
             raise InputValidationError(message)
 
-    def op_output_types(self, stream: dp.Stream) -> tuple[PythonSchema, PythonSchema]:
-        tag_typespec, packet_typespec = stream.types()
+    def op_output_types(
+        self, stream: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[PythonSchema, PythonSchema]:
+        tag_typespec, packet_typespec = stream.types(
+            include_system_tags=include_system_tags
+        )
 
         # Create new packet typespec with renamed keys
         new_packet_typespec = {
@@ -105,7 +125,7 @@ class MapTags(UnaryOperator):
     """
 
     def __init__(
-        self, name_map: Mapping[str, str], drop_unmapped: bool = True, **kwargs
+        self, name_map: Mapping[str, str], drop_unmapped: bool = False, **kwargs
     ):
         self.name_map = dict(name_map)
         self.drop_unmapped = drop_unmapped
@@ -113,12 +133,13 @@ class MapTags(UnaryOperator):
 
     def op_forward(self, stream: dp.Stream) -> dp.Stream:
         tag_columns, packet_columns = stream.keys()
+        missing_tags = set(tag_columns) - set(self.name_map.keys())
 
         if not any(n in tag_columns for n in self.name_map):
             # nothing to rename in the tags, return stream as is
             return stream
 
-        table = stream.as_table(include_source=True)
+        table = stream.as_table(include_source=True, include_system_tags=True)
 
         name_map = {
             tc: self.name_map.get(tc, tc) for tc in tag_columns
@@ -128,6 +149,11 @@ class MapTags(UnaryOperator):
             name_map[c] = c  # no renaming on packet columns
 
         renamed_table = table.rename_columns(name_map)
+
+        if missing_tags and self.drop_unmapped:
+            # drop any tags that are not in the name map
+            renamed_table = renamed_table.drop_columns(list(missing_tags))
+
         return TableStream(
             renamed_table, tag_columns=new_tag_columns, source=self, upstreams=(stream,)
         )
@@ -157,8 +183,12 @@ class MapTags(UnaryOperator):
                 message += f"overlapping packet columns: {overlapping_packet_columns}."
             raise InputValidationError(message)
 
-    def op_output_types(self, stream: dp.Stream) -> tuple[PythonSchema, PythonSchema]:
-        tag_typespec, packet_typespec = stream.types()
+    def op_output_types(
+        self, stream: dp.Stream, include_system_tags: bool = False
+    ) -> tuple[PythonSchema, PythonSchema]:
+        tag_typespec, packet_typespec = stream.types(
+            include_system_tags=include_system_tags
+        )
 
         # Create new packet typespec with renamed keys
         new_tag_typespec = {self.name_map.get(k, k): v for k, v in tag_typespec.items()}
