@@ -2,7 +2,7 @@ from abc import abstractmethod
 from collections.abc import Collection
 from datetime import datetime, timezone
 from typing import Any
-from orcapod.protocols import core_protocols as dp
+from orcapod.protocols import core_protocols as cp
 import logging
 from orcapod.core.streams import KernelStream
 from orcapod.core.base import LabeledContentIdentifiableBase
@@ -28,7 +28,7 @@ class TrackedKernelBase(LabeledContentIdentifiableBase):
         self,
         label: str | None = None,
         skip_tracking: bool = False,
-        tracker_manager: dp.TrackerManager | None = None,
+        tracker_manager: cp.TrackerManager | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -79,7 +79,7 @@ class TrackedKernelBase(LabeledContentIdentifiableBase):
 
     @abstractmethod
     def kernel_output_types(
-        self, *streams: dp.Stream, include_system_tags: bool = False
+        self, *streams: cp.Stream, include_system_tags: bool = False
     ) -> tuple[PythonSchema, PythonSchema]:
         """
         Return the output types of the kernel given the input streams.
@@ -87,7 +87,7 @@ class TrackedKernelBase(LabeledContentIdentifiableBase):
         ...
 
     def output_types(
-        self, *streams: dp.Stream, include_system_tags: bool = False
+        self, *streams: cp.Stream, include_system_tags: bool = False
     ) -> tuple[PythonSchema, PythonSchema]:
         processed_streams = self.pre_kernel_processing(*streams)
         self.validate_inputs(*processed_streams)
@@ -97,7 +97,7 @@ class TrackedKernelBase(LabeledContentIdentifiableBase):
 
     @abstractmethod
     def kernel_identity_structure(
-        self, streams: Collection[dp.Stream] | None = None
+        self, streams: Collection[cp.Stream] | None = None
     ) -> Any:
         """
         Identity structure for this kernel. Input stream(s), if present, have already been preprocessed
@@ -105,7 +105,7 @@ class TrackedKernelBase(LabeledContentIdentifiableBase):
         """
         ...
 
-    def identity_structure(self, streams: Collection[dp.Stream] | None = None) -> Any:
+    def identity_structure(self, streams: Collection[cp.Stream] | None = None) -> Any:
         """
         Default implementation of identity_structure for the kernel only
         concerns the kernel class and the streams if present. Subclasses of
@@ -128,14 +128,14 @@ class TrackedKernelBase(LabeledContentIdentifiableBase):
         return self.kernel_identity_structure(streams)
 
     @abstractmethod
-    def forward(self, *streams: dp.Stream) -> dp.Stream:
+    def forward(self, *streams: cp.Stream) -> cp.Stream:
         """
         Trigger the main computation of the kernel on a collection of streams.
         This method is called when the kernel is invoked with a collection of streams.
         Subclasses should override this method to provide the kernel with its unique behavior
         """
 
-    def pre_kernel_processing(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
+    def pre_kernel_processing(self, *streams: cp.Stream) -> tuple[cp.Stream, ...]:
         """
         Pre-processing step that can be overridden by subclasses to perform any necessary pre-processing
         on the input streams before the main computation. This is useful if you need to modify the input streams
@@ -146,14 +146,14 @@ class TrackedKernelBase(LabeledContentIdentifiableBase):
         return streams
 
     @abstractmethod
-    def validate_inputs(self, *streams: dp.Stream) -> None:
+    def validate_inputs(self, *streams: cp.Stream) -> None:
         """
         Validate the input streams before the main computation but after the pre-kernel processing
         """
         ...
 
     def prepare_output_stream(
-        self, *streams: dp.Stream, label: str | None = None
+        self, *streams: cp.Stream, label: str | None = None
     ) -> KernelStream:
         """
         Prepare the output stream for the kernel invocation.
@@ -162,7 +162,7 @@ class TrackedKernelBase(LabeledContentIdentifiableBase):
         """
         return KernelStream(source=self, upstreams=streams, label=label)
 
-    def track_invocation(self, *streams: dp.Stream, label: str | None = None) -> None:
+    def track_invocation(self, *streams: cp.Stream, label: str | None = None) -> None:
         """
         Track the invocation of the kernel with the provided streams.
         This is a convenience method that calls record_kernel_invocation.
@@ -171,7 +171,7 @@ class TrackedKernelBase(LabeledContentIdentifiableBase):
             self._tracker_manager.record_kernel_invocation(self, streams, label=label)
 
     def __call__(
-        self, *streams: dp.Stream, label: str | None = None, **kwargs
+        self, *streams: cp.Stream, label: str | None = None, **kwargs
     ) -> KernelStream:
         processed_streams = self.pre_kernel_processing(*streams)
         self.validate_inputs(*processed_streams)
@@ -199,7 +199,7 @@ class WrappedKernel(TrackedKernelBase):
     `Kernel` protocol. Refer to `orcapod.protocols.data_protocols.Kernel` for more details.
     """
 
-    def __init__(self, kernel: dp.Kernel, **kwargs) -> None:
+    def __init__(self, kernel: cp.Kernel, **kwargs) -> None:
         # TODO: handle fixed input stream already set on the kernel
         super().__init__(**kwargs)
         self.kernel = kernel
@@ -217,21 +217,21 @@ class WrappedKernel(TrackedKernelBase):
         return self.kernel.reference
 
     def kernel_output_types(
-        self, *streams: dp.Stream, include_system_tags: bool = False
+        self, *streams: cp.Stream, include_system_tags: bool = False
     ) -> tuple[PythonSchema, PythonSchema]:
         return self.kernel.output_types(
             *streams, include_system_tags=include_system_tags
         )
 
     def kernel_identity_structure(
-        self, streams: Collection[dp.Stream] | None = None
+        self, streams: Collection[cp.Stream] | None = None
     ) -> Any:
         return self.kernel.identity_structure(streams)
 
-    def validate_inputs(self, *streams: dp.Stream) -> None:
+    def validate_inputs(self, *streams: cp.Stream) -> None:
         return self.kernel.validate_inputs(*streams)
 
-    def forward(self, *streams: dp.Stream) -> dp.Stream:
+    def forward(self, *streams: cp.Stream) -> cp.Stream:
         return self.kernel.forward(*streams)
 
     def __repr__(self):

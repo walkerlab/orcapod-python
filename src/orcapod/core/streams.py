@@ -14,7 +14,7 @@ from orcapod.core.datagrams import (
     DictTag,
 )
 from orcapod.core.system_constants import constants
-from orcapod.protocols import core_protocols as dp
+from orcapod.protocols import core_protocols as cp
 from orcapod.types import PythonSchema
 from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule
@@ -40,32 +40,8 @@ else:
 logger = logging.getLogger(__name__)
 
 
-def synchronous_run(async_func, *args, **kwargs):
-    """
-    Use existing event loop if available.
-
-    Pros: Reuses existing loop, more efficient
-    Cons: More complex, need to handle loop detection
-    """
-    try:
-        # Check if we're already in an event loop
-        _ = asyncio.get_running_loop()
-
-        def run_in_thread():
-            return asyncio.run(async_func(*args, **kwargs))
-
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            future = executor.submit(run_in_thread)
-            return future.result()
-    except RuntimeError:
-        # No event loop running, safe to use asyncio.run()
-        return asyncio.run(async_func(*args, **kwargs))
-
-
 class OperatorStreamBaseMixin:
-    def join(self, other_stream: dp.Stream, label: str | None = None) -> dp.Stream:
+    def join(self, other_stream: cp.Stream, label: str | None = None) -> cp.Stream:
         """
         Joins this stream with another stream, returning a new stream that contains
         the combined data from both streams.
@@ -76,9 +52,9 @@ class OperatorStreamBaseMixin:
 
     def semi_join(
         self,
-        other_stream: dp.Stream,
+        other_stream: cp.Stream,
         label: str | None = None,
-    ) -> dp.Stream:
+    ) -> cp.Stream:
         """
         Performs a semi-join with another stream, returning a new stream that contains
         only the packets from this stream that have matching tags in the other stream.
@@ -92,7 +68,7 @@ class OperatorStreamBaseMixin:
         name_map: Mapping[str, str],
         drop_unmapped: bool = True,
         label: str | None = None,
-    ) -> dp.Stream:
+    ) -> cp.Stream:
         """
         Maps the tags in this stream according to the provided name_map.
         If drop_unmapped is True, any tags that are not in the name_map will be dropped.
@@ -106,7 +82,7 @@ class OperatorStreamBaseMixin:
         name_map: Mapping[str, str],
         drop_unmapped: bool = True,
         label: str | None = None,
-    ) -> dp.Stream:
+    ) -> cp.Stream:
         """
         Maps the packets in this stream according to the provided packet_map.
         If drop_unmapped is True, any packets that are not in the packet_map will be dropped.
@@ -120,7 +96,7 @@ class OperatorStreamBaseMixin:
         batch_size: int = 0,
         drop_last: bool = False,
         label: str | None = None,
-    ) -> dp.Stream:
+    ) -> cp.Stream:
         """
         Batch stream into fixed-size chunks, each of size batch_size.
         If drop_last is True, any remaining elements that don't fit into a full batch will be dropped.
@@ -137,7 +113,7 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
 
     def __init__(
         self,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -156,7 +132,7 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
         return (self.content_hash().to_hex(),)
 
     @property
-    def execution_engine(self) -> dp.ExecutionEngine | None:
+    def execution_engine(self) -> cp.ExecutionEngine | None:
         """
         Returns the execution engine that is used to execute this stream.
         This is typically used to track the execution context of the stream.
@@ -164,14 +140,14 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
         return self._execution_engine
 
     @execution_engine.setter
-    def execution_engine(self, engine: dp.ExecutionEngine | None) -> None:
+    def execution_engine(self, engine: cp.ExecutionEngine | None) -> None:
         """
         Sets the execution engine for the stream.
         This is typically used to track the execution context of the stream.
         """
         self._execution_engine = engine
 
-    def get_substream(self, substream_id: str) -> dp.Stream:
+    def get_substream(self, substream_id: str) -> cp.Stream:
         """
         Returns the substream with the given substream_id.
         This is used to retrieve a specific substream from the stream.
@@ -183,7 +159,7 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
 
     @property
     @abstractmethod
-    def source(self) -> dp.Kernel | None:
+    def source(self) -> cp.Kernel | None:
         """
         The source of the stream, which is the kernel that generated the stream.
         This is typically used to track the origin of the stream in the computational graph.
@@ -192,7 +168,7 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
 
     @property
     @abstractmethod
-    def upstreams(self) -> tuple[dp.Stream, ...]:
+    def upstreams(self) -> tuple[cp.Stream, ...]:
         """
         The upstream streams that are used to generate this stream.
         This is typically used to track the origin of the stream in the computational graph.
@@ -279,25 +255,25 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
 
     def __iter__(
         self,
-    ) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+    ) -> Iterator[tuple[cp.Tag, cp.Packet]]:
         return self.iter_packets()
 
     @abstractmethod
     def iter_packets(
         self,
-        execution_engine: dp.ExecutionEngine | None = None,
-    ) -> Iterator[tuple[dp.Tag, dp.Packet]]: ...
+        execution_engine: cp.ExecutionEngine | None = None,
+    ) -> Iterator[tuple[cp.Tag, cp.Packet]]: ...
 
     @abstractmethod
     def run(
         self,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
     ) -> None: ...
 
     @abstractmethod
     async def run_async(
         self,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
     ) -> None: ...
 
     @abstractmethod
@@ -308,7 +284,7 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
         sort_by_tags: bool = True,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
     ) -> "pa.Table": ...
 
     def as_polars_df(
@@ -318,7 +294,7 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
         sort_by_tags: bool = True,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
     ) -> "pl.DataFrame | None":
         """
         Convert the entire stream to a Polars DataFrame.
@@ -341,7 +317,7 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
         sort_by_tags: bool = True,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
     ) -> "pl.DataFrame | None":
         """
         Convert the entire stream to a Polars DataFrame.
@@ -362,7 +338,7 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
         sort_by_tags: bool = True,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
     ) -> "pl.LazyFrame | None":
         """
         Convert the entire stream to a Polars LazyFrame.
@@ -387,7 +363,7 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
         include_content_hash: bool | str = False,
         sort_by_tags: bool = True,
         index_by_tags: bool = True,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
     ) -> "pd.DataFrame | None":
         df = self.as_polars_df(
             include_data_context=include_data_context,
@@ -406,8 +382,8 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
         return pdf
 
     def flow(
-        self, execution_engine: dp.ExecutionEngine | None = None
-    ) -> Collection[tuple[dp.Tag, dp.Packet]]:
+        self, execution_engine: cp.ExecutionEngine | None = None
+    ) -> Collection[tuple[cp.Tag, cp.Packet]]:
         """
         Flow everything through the stream, returning the entire collection of
         (Tag, Packet) as a collection. This will tigger any upstream computation of the stream.
@@ -435,8 +411,8 @@ class StreamBase(StatefulStreamBase):
 
     def __init__(
         self,
-        source: dp.Kernel | None = None,
-        upstreams: tuple[dp.Stream, ...] = (),
+        source: cp.Kernel | None = None,
+        upstreams: tuple[cp.Stream, ...] = (),
         data_context: str | contexts.DataContext | None = None,
         **kwargs,
     ) -> None:
@@ -451,7 +427,7 @@ class StreamBase(StatefulStreamBase):
         super().__init__(data_context=data_context, **kwargs)
 
     @property
-    def source(self) -> dp.Kernel | None:
+    def source(self) -> cp.Kernel | None:
         """
         The source of the stream, which is the kernel that generated the stream.
         This is typically used to track the origin of the stream in the computational graph.
@@ -459,7 +435,7 @@ class StreamBase(StatefulStreamBase):
         return self._source
 
     @property
-    def upstreams(self) -> tuple[dp.Stream, ...]:
+    def upstreams(self) -> tuple[cp.Stream, ...]:
         """
         The upstream streams that are used to generate this stream.
         This is typically used to track the origin of the stream in the computational graph.
@@ -560,8 +536,8 @@ class TableStream(ImmutableStream):
         tag_columns: Collection[str] = (),
         system_tag_columns: Collection[str] = (),
         source_info: dict[str, str | None] | None = None,
-        source: dp.Kernel | None = None,
-        upstreams: tuple[dp.Stream, ...] = (),
+        source: cp.Kernel | None = None,
+        upstreams: tuple[cp.Stream, ...] = (),
         **kwargs,
     ) -> None:
         super().__init__(source=source, upstreams=upstreams, **kwargs)
@@ -655,7 +631,7 @@ class TableStream(ImmutableStream):
         #     )
         # )
 
-        self._cached_elements: list[tuple[dp.Tag, ArrowPacket]] | None = None
+        self._cached_elements: list[tuple[cp.Tag, ArrowPacket]] | None = None
         self._set_modified_time()  # set modified time to now
 
     def data_content_identity_structure(self) -> Any:
@@ -711,7 +687,7 @@ class TableStream(ImmutableStream):
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
         sort_by_tags: bool = True,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
     ) -> "pa.Table":
         """
         Returns the underlying table representation of the stream.
@@ -762,8 +738,8 @@ class TableStream(ImmutableStream):
         self._cached_elements = None
 
     def iter_packets(
-        self, execution_engine: dp.ExecutionEngine | None = None
-    ) -> Iterator[tuple[dp.Tag, ArrowPacket]]:
+        self, execution_engine: cp.ExecutionEngine | None = None
+    ) -> Iterator[tuple[cp.Tag, ArrowPacket]]:
         """
         Iterates over the packets in the stream.
         Each packet is represented as a tuple of (Tag, Packet).
@@ -806,7 +782,7 @@ class TableStream(ImmutableStream):
                     )
         yield from self._cached_elements
 
-    def run(self, execution_engine: dp.ExecutionEngine | None = None) -> None:
+    def run(self, execution_engine: cp.ExecutionEngine | None = None) -> None:
         """
         Runs the stream, which in this case is a no-op since the stream is immutable.
         This is typically used to trigger any upstream computation of the stream.
@@ -815,7 +791,7 @@ class TableStream(ImmutableStream):
         pass
 
     async def run_async(
-        self, execution_engine: dp.ExecutionEngine | None = None
+        self, execution_engine: cp.ExecutionEngine | None = None
     ) -> None:
         """
         Runs the stream asynchronously, which in this case is a no-op since the stream is immutable.
@@ -842,10 +818,10 @@ class KernelStream(StreamBase):
 
     def __init__(
         self,
-        output_stream: dp.Stream | None = None,
-        source: dp.Kernel | None = None,
+        output_stream: cp.Stream | None = None,
+        source: cp.Kernel | None = None,
         upstreams: tuple[
-            dp.Stream, ...
+            cp.Stream, ...
         ] = (),  # if provided, this will override the upstreams of the output_stream
         **kwargs,
     ) -> None:
@@ -939,7 +915,7 @@ class KernelStream(StreamBase):
             return None
         return self._cached_stream.last_modified
 
-    def run(self, execution_engine: dp.ExecutionEngine | None = None) -> None:
+    def run(self, execution_engine: cp.ExecutionEngine | None = None) -> None:
         self.refresh()
         assert self._cached_stream is not None, (
             "Stream has not been updated or is empty."
@@ -947,7 +923,7 @@ class KernelStream(StreamBase):
         self._cached_stream.run(execution_engine=execution_engine)
 
     async def run_async(
-        self, execution_engine: dp.ExecutionEngine | None = None
+        self, execution_engine: cp.ExecutionEngine | None = None
     ) -> None:
         self.refresh()
         assert self._cached_stream is not None, (
@@ -962,7 +938,7 @@ class KernelStream(StreamBase):
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
         sort_by_tags: bool = True,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
     ) -> "pa.Table":
         self.refresh()
         assert self._cached_stream is not None, (
@@ -979,8 +955,8 @@ class KernelStream(StreamBase):
 
     def iter_packets(
         self,
-        execution_engine: dp.ExecutionEngine | None = None,
-    ) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+        execution_engine: cp.ExecutionEngine | None = None,
+    ) -> Iterator[tuple[cp.Tag, cp.Packet]]:
         self.refresh()
         assert self._cached_stream is not None, (
             "Stream has not been updated or is empty."
@@ -997,7 +973,7 @@ class LazyPodResultStream(StreamBase):
     This is what Pod.process() returns - it's static/fixed but efficient.
     """
 
-    def __init__(self, pod: dp.Pod, prepared_stream: dp.Stream, **kwargs):
+    def __init__(self, pod: cp.Pod, prepared_stream: cp.Stream, **kwargs):
         super().__init__(source=pod, upstreams=(prepared_stream,), **kwargs)
         self.pod = pod
         self.prepared_stream = prepared_stream
@@ -1006,13 +982,13 @@ class LazyPodResultStream(StreamBase):
         self._prepared_stream_iterator = prepared_stream.iter_packets()
 
         # Packet-level caching (from your PodStream)
-        self._cached_output_packets: dict[int, tuple[dp.Tag, dp.Packet | None]] = {}
+        self._cached_output_packets: dict[int, tuple[cp.Tag, cp.Packet | None]] = {}
         self._cached_output_table: pa.Table | None = None
         self._cached_content_hash_column: pa.Array | None = None
 
     def iter_packets(
-        self, execution_engine: dp.ExecutionEngine | None = None
-    ) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+        self, execution_engine: cp.ExecutionEngine | None = None
+    ) -> Iterator[tuple[cp.Tag, cp.Packet]]:
         if self._prepared_stream_iterator is not None:
             for i, (tag, packet) in enumerate(self._prepared_stream_iterator):
                 if i in self._cached_output_packets:
@@ -1042,7 +1018,7 @@ class LazyPodResultStream(StreamBase):
                     yield tag, packet
 
     async def run_async(
-        self, execution_engine: dp.ExecutionEngine | None = None
+        self, execution_engine: cp.ExecutionEngine | None = None
     ) -> None:
         if self._prepared_stream_iterator is not None:
             pending_call_lut = {}
@@ -1065,21 +1041,9 @@ class LazyPodResultStream(StreamBase):
 
     def run(
         self,
-        execution_engine: dp.ExecutionEngine | None = None,
-        try_async_backend: bool = True,
+        execution_engine: cp.ExecutionEngine | None = None,
     ) -> None:
-        if try_async_backend:
-            # Use async run if requested
-            try:
-                return synchronous_run(
-                    self.run_async, execution_engine=execution_engine
-                )
-            except RuntimeError as e:
-                logger.warning(
-                    "Failed to run async stream synchronously, falling back to sync run: %s",
-                    e,
-                )
-                # Fallback to synchronous run
+        # Fallback to synchronous run
         self.flow(execution_engine=execution_engine)
 
     def keys(
@@ -1111,7 +1075,7 @@ class LazyPodResultStream(StreamBase):
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
         sort_by_tags: bool = True,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
     ) -> "pa.Table":
         if self._cached_output_table is None:
             all_tags = []
@@ -1175,7 +1139,7 @@ class LazyPodResultStream(StreamBase):
                 content_hashes = []
                 # TODO: verify that order will be preserved
                 for tag, packet in self.iter_packets():
-                    content_hashes.append(packet.content_hash())
+                    content_hashes.append(packet.content_hash().to_string())
                 self._cached_content_hash_column = pa.array(
                     content_hashes, type=pa.large_string()
                 )
@@ -1205,7 +1169,7 @@ class EfficientPodResultStream(StreamBase):
     """
 
     # TODO: define interface for storage or pod storage
-    def __init__(self, pod: dp.CachedPod, input_stream: dp.Stream, **kwargs):
+    def __init__(self, pod: cp.CachedPod, input_stream: cp.Stream, **kwargs):
         super().__init__(source=pod, upstreams=(input_stream,), **kwargs)
         self.pod = pod
         self.input_stream = input_stream
@@ -1215,12 +1179,12 @@ class EfficientPodResultStream(StreamBase):
         self._prepared_stream_iterator = input_stream.iter_packets()
 
         # Packet-level caching (from your PodStream)
-        self._cached_output_packets: list[tuple[dp.Tag, dp.Packet | None]] | None = None
+        self._cached_output_packets: list[tuple[cp.Tag, cp.Packet | None]] | None = None
         self._cached_output_table: pa.Table | None = None
         self._cached_content_hash_column: pa.Array | None = None
 
     async def run_async(
-        self, execution_engine: dp.ExecutionEngine | None = None
+        self, execution_engine: cp.ExecutionEngine | None = None
     ) -> None:
         """
         Runs the stream, processing the input stream and preparing the output stream.
@@ -1298,26 +1262,13 @@ class EfficientPodResultStream(StreamBase):
 
     def run(
         self,
-        execution_engine: dp.ExecutionEngine | None = None,
-        try_async_backend: bool = False,
+        execution_engine: cp.ExecutionEngine | None = None,
     ) -> None:
-        if try_async_backend:
-            # Use async run if requested
-            try:
-                return synchronous_run(
-                    self.run_async, execution_engine=execution_engine
-                )
-            except RuntimeError as e:
-                logger.warning(
-                    "Failed to run async stream synchronously, falling back to sync run: %s",
-                    e,
-                )
-                # Fallback to synchronous run
         self.flow(execution_engine=execution_engine)
 
     def iter_packets(
-        self, execution_engine: dp.ExecutionEngine | None = None
-    ) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+        self, execution_engine: cp.ExecutionEngine | None = None
+    ) -> Iterator[tuple[cp.Tag, cp.Packet]]:
         """
         Processes the input stream and prepares the output stream.
         This is typically called before iterating over the packets.
@@ -1454,7 +1405,7 @@ class EfficientPodResultStream(StreamBase):
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
         sort_by_tags: bool = True,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
     ) -> "pa.Table":
         if self._cached_output_table is None:
             all_tags = []
@@ -1547,9 +1498,9 @@ class EfficientPodResultStream(StreamBase):
 class WrappedStream(StreamBase):
     def __init__(
         self,
-        stream: dp.Stream,
-        source: dp.Kernel,
-        input_streams: tuple[dp.Stream, ...],
+        stream: cp.Stream,
+        source: cp.Kernel,
+        input_streams: tuple[cp.Stream, ...],
         label: str | None = None,
         **kwargs,
     ) -> None:
@@ -1581,7 +1532,7 @@ class WrappedStream(StreamBase):
         include_system_tags: bool = False,
         include_content_hash: bool | str = False,
         sort_by_tags: bool = True,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
     ) -> "pa.Table":
         """
         Returns the underlying table representation of the stream.
@@ -1598,8 +1549,8 @@ class WrappedStream(StreamBase):
 
     def iter_packets(
         self,
-        execution_engine: dp.ExecutionEngine | None = None,
-    ) -> Iterator[tuple[dp.Tag, dp.Packet]]:
+        execution_engine: cp.ExecutionEngine | None = None,
+    ) -> Iterator[tuple[cp.Tag, cp.Packet]]:
         """
         Iterates over the packets in the stream.
         Each packet is represented as a tuple of (Tag, Packet).

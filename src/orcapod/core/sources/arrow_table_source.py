@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any
 
 
 from orcapod.core.streams import TableStream
-from orcapod.protocols import core_protocols as dp
+from orcapod.protocols import core_protocols as cp
 from orcapod.types import PythonSchema
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.core.system_constants import constants
@@ -41,6 +41,26 @@ class ArrowTableSource(SourceBase):
         if not preserve_system_columns:
             arrow_table = arrow_data_utils.drop_system_columns(arrow_table)
 
+        N_CHAR = 12
+
+        non_system_columns = arrow_data_utils.drop_system_columns(arrow_table)
+        tag_schema = non_system_columns.select(tag_columns).schema
+        # FIXME: ensure tag_columns are found among non system columns
+        packet_schema = non_system_columns.drop(list(tag_columns)).schema
+
+        tag_python_schema = (
+            self.data_context.type_converter.arrow_schema_to_python_schema(tag_schema)
+        )
+        packet_python_schema = (
+            self.data_context.type_converter.arrow_schema_to_python_schema(
+                packet_schema
+            )
+        )
+
+        schema_hash = self.data_context.object_hasher.hash_object(
+            (tag_python_schema, packet_python_schema)
+        ).to_hex(char_count=N_CHAR)
+
         self.tag_columns = [
             col for col in tag_columns if col in arrow_table.column_names
         ]
@@ -48,23 +68,24 @@ class ArrowTableSource(SourceBase):
         self.table_hash = self.data_context.arrow_hasher.hash_table(arrow_table)
 
         if source_name is None:
-            source_name = self.content_hash().to_hex()
+            # TODO: extract this from system config
+            source_name = self.content_hash().to_hex(char_count=12)
 
         self._source_name = source_name
 
         row_index = list(range(arrow_table.num_rows))
 
-        source_info = [f"{self.source_id}::row_{i}" for i in row_index]
+        source_info = [
+            f"{self.source_id}{constants.BLOCK_SEPARATOR}row_{i}" for i in row_index
+        ]
 
         # add source info
         arrow_table = arrow_data_utils.add_source_info(
             arrow_table, source_info, exclude_columns=tag_columns
         )
 
-        arrow_table = arrow_table.add_column(
-            0,
-            f"{constants.SYSTEM_TAG_PREFIX}{self.source_id}::row_index",
-            pa.array(row_index, pa.int64()),
+        arrow_table = arrow_data_utils.add_system_tag_column(
+            arrow_table, f"source{constants.FIELD_SEPARATOR}{schema_hash}", source_info
         )
 
         self._table = arrow_table
@@ -83,7 +104,7 @@ class ArrowTableSource(SourceBase):
 
     @property
     def reference(self) -> tuple[str, ...]:
-        return ("arrow_table", self._source_name)
+        return ("arrow_table", f"source_{self._source_name}")
 
     @property
     def table(self) -> "pa.Table":
@@ -97,7 +118,7 @@ class ArrowTableSource(SourceBase):
     ) -> "pa.Table | None":
         return self().as_table(include_source=include_system_columns)
 
-    def forward(self, *streams: dp.Stream) -> dp.Stream:
+    def forward(self, *streams: cp.Stream) -> cp.Stream:
         """
         Load data from file and return a static stream.
 

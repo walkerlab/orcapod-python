@@ -6,15 +6,25 @@ POD_ID_PREFIX = "pod_id_"
 DATA_CONTEXT_KEY = "context_key"
 INPUT_PACKET_HASH = "input_packet_hash"
 PACKET_RECORD_ID = "packet_id"
-SYSTEM_TAG_PREFIX = "system_tag_"
+SYSTEM_TAG_PREFIX = "tag"
 POD_VERSION = "pod_version"
 EXECUTION_ENGINE = "execution_engine"
 POD_TIMESTAMP = "pod_ts"
+FIELD_SEPARATOR = ":"
+BLOCK_SEPARATOR = "::"
 
 
 class SystemConstant:
     def __init__(self, global_prefix: str = ""):
         self._global_prefix = global_prefix
+
+    @property
+    def BLOCK_SEPARATOR(self) -> str:
+        return BLOCK_SEPARATOR
+
+    @property
+    def FIELD_SEPARATOR(self) -> str:
+        return FIELD_SEPARATOR
 
     @property
     def META_PREFIX(self) -> str:
@@ -46,7 +56,7 @@ class SystemConstant:
 
     @property
     def SYSTEM_TAG_PREFIX(self) -> str:
-        return f"{self._global_prefix}{DATAGRAM_PREFIX}{SYSTEM_TAG_PREFIX}"
+        return f"{self._global_prefix}{DATAGRAM_PREFIX}{SYSTEM_TAG_PREFIX}{self.BLOCK_SEPARATOR}"
 
     @property
     def POD_VERSION(self) -> str:

@@ -1,25 +1,16 @@
-from collections.abc import Collection, Iterator
+from collections.abc import Collection
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from deltalake import DeltaTable, write_deltalake
 from deltalake.exceptions import TableNotFoundError
-from pyarrow.lib import Table
 
-from orcapod.core.kernels import TrackedKernelBase
-from orcapod.core.streams import (
-    TableStream,
-    KernelStream,
-    StatefulStreamBase,
-)
-from orcapod.core.sources.source_registry import GLOBAL_SOURCE_REGISTRY, SourceRegistry
+from orcapod.core.sources.source_registry import SourceRegistry
+from orcapod.core.streams import TableStream
 from orcapod.errors import DuplicateTagError
-from orcapod.protocols import core_protocols as dp
-from orcapod.types import DataValue, PythonSchema, PythonSchemaLike
-from orcapod.utils import arrow_utils
+from orcapod.protocols import core_protocols as cp
+from orcapod.types import PythonSchema, PythonSchemaLike
 from orcapod.utils.lazy_module import LazyModule
-from orcapod.core.system_constants import constants
-from orcapod.semantic_types import infer_python_schema_from_pylist_data
 
 if TYPE_CHECKING:
     import pandas as pd
@@ -124,7 +115,7 @@ class ManualDeltaTableSource(SourceBase):
             return self._delta_table.version()
         return None
 
-    def forward(self, *streams: dp.Stream) -> dp.Stream:
+    def forward(self, *streams: cp.Stream) -> cp.Stream:
         """Load current delta table data as a stream."""
         if len(streams) > 0:
             raise ValueError("ManualDeltaTableSource takes no input streams")

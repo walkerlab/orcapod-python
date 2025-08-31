@@ -1,9 +1,8 @@
 from abc import abstractmethod
-from einops import pack
 from orcapod.core.kernels import KernelStream, WrappedKernel
 from orcapod.core.sources import SourceBase
 from orcapod.core.pods import CachedPod
-from orcapod.protocols import core_protocols as dp, database_protocols as dbp
+from orcapod.protocols import core_protocols as cp, database_protocols as dbp
 from orcapod.types import PythonSchema
 from orcapod.utils.lazy_module import LazyModule
 from typing import TYPE_CHECKING, Any
@@ -30,7 +29,7 @@ class NodeBase(
 
     def __init__(
         self,
-        input_streams: Collection[dp.Stream],
+        input_streams: Collection[cp.Stream],
         pipeline_database: dbp.ArrowDatabase,
         pipeline_path_prefix: tuple[str, ...] = (),
         **kwargs,
@@ -54,7 +53,7 @@ class NodeBase(
         self.pipeline_database = pipeline_database
 
     @property
-    def contained_kernel(self) -> dp.Kernel:
+    def contained_kernel(self) -> cp.Kernel:
         raise NotImplementedError(
             "This property should be implemented by subclasses to return the contained kernel."
         )
@@ -72,7 +71,7 @@ class NodeBase(
         """
         ...
 
-    def forward(self, *streams: dp.Stream) -> dp.Stream:
+    def forward(self, *streams: cp.Stream) -> cp.Stream:
         if len(streams) > 0:
             raise NotImplementedError(
                 "At this moment, Node does not yet support handling additional input streams."
@@ -120,8 +119,8 @@ class KernelNode(NodeBase, WrappedKernel):
 
     def __init__(
         self,
-        kernel: dp.Kernel,
-        input_streams: Collection[dp.Stream],
+        kernel: cp.Kernel,
+        input_streams: Collection[cp.Stream],
         pipeline_database: dbp.ArrowDatabase,
         pipeline_path_prefix: tuple[str, ...] = (),
         **kwargs,
@@ -135,7 +134,7 @@ class KernelNode(NodeBase, WrappedKernel):
         )
 
     @property
-    def contained_kernel(self) -> dp.Kernel:
+    def contained_kernel(self) -> cp.Kernel:
         return self.kernel
 
     def __repr__(self):
@@ -144,13 +143,13 @@ class KernelNode(NodeBase, WrappedKernel):
     def __str__(self):
         return f"KernelNode:{self.kernel!s}"
 
-    def forward(self, *streams: dp.Stream) -> dp.Stream:
+    def forward(self, *streams: cp.Stream) -> cp.Stream:
         output_stream = super().forward(*streams)
 
         self.record_pipeline_output(output_stream)
         return output_stream
 
-    def record_pipeline_output(self, output_stream: dp.Stream) -> None:
+    def record_pipeline_output(self, output_stream: cp.Stream) -> None:
         key_column_name = self.HASH_COLUMN_NAME
         output_table = output_stream.as_table(
             include_data_context=True,
@@ -204,8 +203,8 @@ class KernelNode(NodeBase, WrappedKernel):
 class PodNode(NodeBase, CachedPod):
     def __init__(
         self,
-        pod: dp.Pod,
-        input_streams: Collection[dp.Stream],
+        pod: cp.Pod,
+        input_streams: Collection[cp.Stream],
         pipeline_database: dbp.ArrowDatabase,
         result_database: dbp.ArrowDatabase | None = None,
         record_path_prefix: tuple[str, ...] = (),
@@ -223,7 +222,7 @@ class PodNode(NodeBase, CachedPod):
         )
 
     @property
-    def contained_kernel(self) -> dp.Kernel:
+    def contained_kernel(self) -> cp.Kernel:
         return self.pod
 
     @property
@@ -249,13 +248,13 @@ class PodNode(NodeBase, CachedPod):
 
     def call(
         self,
-        tag: dp.Tag,
-        packet: dp.Packet,
+        tag: cp.Tag,
+        packet: cp.Packet,
         record_id: str | None = None,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
         skip_cache_lookup: bool = False,
         skip_cache_insert: bool = False,
-    ) -> tuple[dp.Tag, dp.Packet | None]:
+    ) -> tuple[cp.Tag, cp.Packet | None]:
         execution_engine_hash = execution_engine.name if execution_engine else "default"
         if record_id is None:
             record_id = self.get_record_id(packet, execution_engine_hash)
@@ -286,13 +285,13 @@ class PodNode(NodeBase, CachedPod):
 
     async def async_call(
         self,
-        tag: dp.Tag,
-        packet: dp.Packet,
+        tag: cp.Tag,
+        packet: cp.Packet,
         record_id: str | None = None,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
         skip_cache_lookup: bool = False,
         skip_cache_insert: bool = False,
-    ) -> tuple[dp.Tag, dp.Packet | None]:
+    ) -> tuple[cp.Tag, cp.Packet | None]:
         execution_engine_hash = execution_engine.name if execution_engine else "default"
         if record_id is None:
             record_id = self.get_record_id(packet, execution_engine_hash)
@@ -323,8 +322,8 @@ class PodNode(NodeBase, CachedPod):
 
     def add_pipeline_record(
         self,
-        tag: dp.Tag,
-        input_packet: dp.Packet,
+        tag: cp.Tag,
+        input_packet: cp.Packet,
         packet_record_id: str,
         retrieved: bool | None = None,
         skip_cache_lookup: bool = False,

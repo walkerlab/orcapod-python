@@ -13,7 +13,7 @@ from orcapod.core.streams import (
     StatefulStreamBase,
 )
 from orcapod.errors import DuplicateTagError
-from orcapod.protocols import core_protocols as dp
+from orcapod.protocols import core_protocols as cp
 from orcapod.types import DataValue, PythonSchema
 from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule
@@ -78,14 +78,14 @@ class ListSource(SourceBase):
     """
 
     @staticmethod
-    def default_tag_function(element: Any, idx: int) -> dp.Tag:
+    def default_tag_function(element: Any, idx: int) -> cp.Tag:
         return DictTag({"element_index": idx})
 
     def __init__(
         self,
         name: str,
         data: list[Any],
-        tag_function: Callable[[Any, int], dp.Tag] | None = None,
+        tag_function: Callable[[Any, int], cp.Tag] | None = None,
         label: str | None = None,
         tag_function_hash_mode: Literal["content", "signature", "name"] = "name",
         expected_tag_keys: Collection[str] | None = None,

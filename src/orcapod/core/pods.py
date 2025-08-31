@@ -16,7 +16,7 @@ from orcapod.core.operators import Join
 from orcapod.core.streams import EfficientPodResultStream, LazyPodResultStream
 from orcapod.core.system_constants import constants
 from orcapod.hashing.hash_utils import get_function_components, get_function_signature
-from orcapod.protocols import core_protocols as dp
+from orcapod.protocols import core_protocols as cp
 from orcapod.protocols import hashing_protocols as hp
 from orcapod.protocols.database_protocols import ArrowDatabase
 from orcapod.types import DataValue, PythonSchema, PythonSchemaLike
@@ -84,7 +84,7 @@ class ActivatablePodBase(TrackedKernelBase):
         return self._version
 
     @abstractmethod
-    def get_record_id(self, packet: dp.Packet, execution_engine_hash: str) -> str:
+    def get_record_id(self, packet: cp.Packet, execution_engine_hash: str) -> str:
         """
         Return the record ID for the input packet. This is used to identify the pod in the system.
         """
@@ -127,7 +127,7 @@ class ActivatablePodBase(TrackedKernelBase):
         return self._major_version
 
     def kernel_output_types(
-        self, *streams: dp.Stream, include_system_tags: bool = False
+        self, *streams: cp.Stream, include_system_tags: bool = False
     ) -> tuple[PythonSchema, PythonSchema]:
         """
         Return the input and output typespecs for the pod.
@@ -149,7 +149,7 @@ class ActivatablePodBase(TrackedKernelBase):
         self._active = active
 
     @staticmethod
-    def _join_streams(*streams: dp.Stream) -> dp.Stream:
+    def _join_streams(*streams: cp.Stream) -> cp.Stream:
         if not streams:
             raise ValueError("No streams provided for joining")
         # Join the streams using a suitable join strategy
@@ -161,7 +161,7 @@ class ActivatablePodBase(TrackedKernelBase):
             joined_stream = Join()(joined_stream, next_stream)
         return joined_stream
 
-    def pre_kernel_processing(self, *streams: dp.Stream) -> tuple[dp.Stream, ...]:
+    def pre_kernel_processing(self, *streams: cp.Stream) -> tuple[cp.Stream, ...]:
         """
         Prepare the incoming streams for execution in the pod. At least one stream must be present.
         If more than one stream is present, the join of the provided streams will be returned.
@@ -174,7 +174,7 @@ class ActivatablePodBase(TrackedKernelBase):
         output_stream = self._join_streams(*streams)
         return (output_stream,)
 
-    def validate_inputs(self, *streams: dp.Stream) -> None:
+    def validate_inputs(self, *streams: cp.Stream) -> None:
         if len(streams) != 1:
             raise ValueError(
                 f"{self.__class__.__name__} expects exactly one input stream, got {len(streams)}"
@@ -190,33 +190,33 @@ class ActivatablePodBase(TrackedKernelBase):
             )
 
     def prepare_output_stream(
-        self, *streams: dp.Stream, label: str | None = None
+        self, *streams: cp.Stream, label: str | None = None
     ) -> KernelStream:
         return KernelStream(source=self, upstreams=streams, label=label)
 
-    def forward(self, *streams: dp.Stream) -> dp.Stream:
+    def forward(self, *streams: cp.Stream) -> cp.Stream:
         assert len(streams) == 1, "PodBase.forward expects exactly one input stream"
         return LazyPodResultStream(pod=self, prepared_stream=streams[0])
 
     @abstractmethod
     def call(
         self,
-        tag: dp.Tag,
-        packet: dp.Packet,
+        tag: cp.Tag,
+        packet: cp.Packet,
         record_id: str | None = None,
-        execution_engine: dp.ExecutionEngine | None = None,
-    ) -> tuple[dp.Tag, dp.Packet | None]: ...
+        execution_engine: cp.ExecutionEngine | None = None,
+    ) -> tuple[cp.Tag, cp.Packet | None]: ...
 
     @abstractmethod
     async def async_call(
         self,
-        tag: dp.Tag,
-        packet: dp.Packet,
+        tag: cp.Tag,
+        packet: cp.Packet,
         record_id: str | None = None,
-        execution_engine: dp.ExecutionEngine | None = None,
-    ) -> tuple[dp.Tag, dp.Packet | None]: ...
+        execution_engine: cp.ExecutionEngine | None = None,
+    ) -> tuple[cp.Tag, cp.Packet | None]: ...
 
-    def track_invocation(self, *streams: dp.Stream, label: str | None = None) -> None:
+    def track_invocation(self, *streams: cp.Stream, label: str | None = None) -> None:
         if not self._skip_tracking and self._tracker_manager is not None:
             self._tracker_manager.record_pod_invocation(self, streams, label=label)
 
@@ -276,7 +276,7 @@ def function_pod(
 class FunctionPod(ActivatablePodBase):
     def __init__(
         self,
-        function: dp.PodFunction,
+        function: cp.PodFunction,
         output_keys: str | Collection[str] | None = None,
         function_name=None,
         version: str = "v0.0",
@@ -356,7 +356,7 @@ class FunctionPod(ActivatablePodBase):
 
     def get_record_id(
         self,
-        packet: dp.Packet,
+        packet: cp.Packet,
         execution_engine_hash: str,
     ) -> str:
         return combine_hashes(
@@ -394,11 +394,11 @@ class FunctionPod(ActivatablePodBase):
 
     def call(
         self,
-        tag: dp.Tag,
-        packet: dp.Packet,
+        tag: cp.Tag,
+        packet: cp.Packet,
         record_id: str | None = None,
-        execution_engine: dp.ExecutionEngine | None = None,
-    ) -> tuple[dp.Tag, DictPacket | None]:
+        execution_engine: cp.ExecutionEngine | None = None,
+    ) -> tuple[cp.Tag, DictPacket | None]:
         if not self.is_active():
             logger.info(
                 f"Pod is not active: skipping computation on input packet {packet}"
@@ -444,11 +444,11 @@ class FunctionPod(ActivatablePodBase):
 
     async def async_call(
         self,
-        tag: dp.Tag,
-        packet: dp.Packet,
+        tag: cp.Tag,
+        packet: cp.Packet,
         record_id: str | None = None,
-        execution_engine: dp.ExecutionEngine | None = None,
-    ) -> tuple[dp.Tag, dp.Packet | None]:
+        execution_engine: cp.ExecutionEngine | None = None,
+    ) -> tuple[cp.Tag, cp.Packet | None]:
         """
         Asynchronous call to the function pod. This is a placeholder for future implementation.
         Currently, it behaves like the synchronous call.
@@ -518,7 +518,7 @@ class FunctionPod(ActivatablePodBase):
         return {k: v for k, v in zip(self.output_keys, output_values)}
 
     def kernel_identity_structure(
-        self, streams: Collection[dp.Stream] | None = None
+        self, streams: Collection[cp.Stream] | None = None
     ) -> Any:
         id_struct = (self.__class__.__name__,) + self.reference
         # if streams are provided, perform pre-processing step, validate, and add the
@@ -538,7 +538,7 @@ class WrappedPod(ActivatablePodBase):
 
     def __init__(
         self,
-        pod: dp.Pod,
+        pod: cp.Pod,
         label: str | None = None,
         data_context: str | contexts.DataContext | None = None,
         **kwargs,
@@ -561,7 +561,7 @@ class WrappedPod(ActivatablePodBase):
         """
         return self.pod.reference
 
-    def get_record_id(self, packet: dp.Packet, execution_engine_hash: str) -> str:
+    def get_record_id(self, packet: cp.Packet, execution_engine_hash: str) -> str:
         return self.pod.get_record_id(packet, execution_engine_hash)
 
     @property
@@ -588,33 +588,33 @@ class WrappedPod(ActivatablePodBase):
         """
         return self.pod.output_packet_types()
 
-    def validate_inputs(self, *streams: dp.Stream) -> None:
+    def validate_inputs(self, *streams: cp.Stream) -> None:
         self.pod.validate_inputs(*streams)
 
     def call(
         self,
-        tag: dp.Tag,
-        packet: dp.Packet,
+        tag: cp.Tag,
+        packet: cp.Packet,
         record_id: str | None = None,
-        execution_engine: dp.ExecutionEngine | None = None,
-    ) -> tuple[dp.Tag, dp.Packet | None]:
+        execution_engine: cp.ExecutionEngine | None = None,
+    ) -> tuple[cp.Tag, cp.Packet | None]:
         return self.pod.call(
             tag, packet, record_id=record_id, execution_engine=execution_engine
         )
 
     async def async_call(
         self,
-        tag: dp.Tag,
-        packet: dp.Packet,
+        tag: cp.Tag,
+        packet: cp.Packet,
         record_id: str | None = None,
-        execution_engine: dp.ExecutionEngine | None = None,
-    ) -> tuple[dp.Tag, dp.Packet | None]:
+        execution_engine: cp.ExecutionEngine | None = None,
+    ) -> tuple[cp.Tag, cp.Packet | None]:
         return await self.pod.async_call(
             tag, packet, record_id=record_id, execution_engine=execution_engine
         )
 
     def kernel_identity_structure(
-        self, streams: Collection[dp.Stream] | None = None
+        self, streams: Collection[cp.Stream] | None = None
     ) -> Any:
         return self.pod.identity_structure(streams)
 
@@ -636,7 +636,7 @@ class CachedPod(WrappedPod):
 
     def __init__(
         self,
-        pod: dp.Pod,
+        pod: cp.Pod,
         result_database: ArrowDatabase,
         record_path_prefix: tuple[str, ...] = (),
         match_tier: str | None = None,
@@ -663,13 +663,13 @@ class CachedPod(WrappedPod):
 
     def call(
         self,
-        tag: dp.Tag,
-        packet: dp.Packet,
+        tag: cp.Tag,
+        packet: cp.Packet,
         record_id: str | None = None,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
         skip_cache_lookup: bool = False,
         skip_cache_insert: bool = False,
-    ) -> tuple[dp.Tag, dp.Packet | None]:
+    ) -> tuple[cp.Tag, cp.Packet | None]:
         # TODO: consider logic for overwriting existing records
         execution_engine_hash = execution_engine.name if execution_engine else "default"
         if record_id is None:
@@ -690,13 +690,13 @@ class CachedPod(WrappedPod):
 
     async def async_call(
         self,
-        tag: dp.Tag,
-        packet: dp.Packet,
+        tag: cp.Tag,
+        packet: cp.Packet,
         record_id: str | None = None,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
         skip_cache_lookup: bool = False,
         skip_cache_insert: bool = False,
-    ) -> tuple[dp.Tag, dp.Packet | None]:
+    ) -> tuple[cp.Tag, cp.Packet | None]:
         # TODO: consider logic for overwriting existing records
         execution_engine_hash = execution_engine.name if execution_engine else "default"
 
@@ -721,18 +721,18 @@ class CachedPod(WrappedPod):
 
         return tag, output_packet
 
-    def forward(self, *streams: dp.Stream) -> dp.Stream:
+    def forward(self, *streams: cp.Stream) -> cp.Stream:
         assert len(streams) == 1, "PodBase.forward expects exactly one input stream"
         return EfficientPodResultStream(pod=self, input_stream=streams[0])
 
     def record_packet(
         self,
-        input_packet: dp.Packet,
-        output_packet: dp.Packet,
+        input_packet: cp.Packet,
+        output_packet: cp.Packet,
         record_id: str | None = None,
-        execution_engine: dp.ExecutionEngine | None = None,
+        execution_engine: cp.ExecutionEngine | None = None,
         skip_duplicates: bool = False,
-    ) -> dp.Packet:
+    ) -> cp.Packet:
         """
         Record the output packet against the input packet in the result store.
         """
@@ -784,7 +784,7 @@ class CachedPod(WrappedPod):
         # # TODO: make store return retrieved table
         return output_packet
 
-    def get_cached_output_for_packet(self, input_packet: dp.Packet) -> dp.Packet | None:
+    def get_cached_output_for_packet(self, input_packet: cp.Packet) -> cp.Packet | None:
         """
         Retrieve the output packet from the result store based on the input packet.
         If more than one output packet is found, conflict resolution strategy

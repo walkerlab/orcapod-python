@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING, Any
 from orcapod.core.streams import (
     TableStream,
 )
-from orcapod.protocols import core_protocols as dp
+from orcapod.protocols import core_protocols as cp
 from orcapod.types import PythonSchema
 from orcapod.utils.lazy_module import LazyModule
 
@@ -39,7 +39,7 @@ class CSVSource(SourceBase):
     def source_identity_structure(self) -> Any:
         return (self.__class__.__name__, self.source_id, tuple(self.tag_columns))
 
-    def forward(self, *streams: dp.Stream) -> dp.Stream:
+    def forward(self, *streams: cp.Stream) -> cp.Stream:
         """
         Load data from file and return a static stream.
 

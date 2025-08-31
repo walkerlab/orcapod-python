@@ -25,13 +25,60 @@ def drop_columns_with_prefix(
 
 
 def drop_system_columns(
-    table,
+    table: "pa.Table",
     system_column_prefix: tuple[str, ...] = (
         constants.META_PREFIX,
         constants.DATAGRAM_PREFIX,
     ),
 ) -> "pa.Table":
     return drop_columns_with_prefix(table, system_column_prefix)
+
+
+def get_system_columns(table: "pa.Table") -> "pa.Table":
+    """Get system columns from an Arrow table."""
+    return table.select(
+        [
+            col
+            for col in table.column_names
+            if col.startswith(constants.SYSTEM_TAG_PREFIX)
+        ]
+    )
+
+
+def add_system_tag_column(
+    table: "pa.Table",
+    system_tag_column_name: str,
+    system_tag_values: str | Collection[str],
+) -> "pa.Table":
+    """Add a system tags column to an Arrow table."""
+    if not table.column_names:
+        raise ValueError("Table is empty")
+    if isinstance(system_tag_values, str):
+        system_tag_values = [system_tag_values] * table.num_rows
+    else:
+        system_tag_values = list(system_tag_values)
+        if len(system_tag_values) != table.num_rows:
+            raise ValueError(
+                "Length of system_tag_values must match number of rows in the table."
+            )
+    if not system_tag_column_name.startswith(constants.SYSTEM_TAG_PREFIX):
+        system_tag_column_name = (
+            f"{constants.SYSTEM_TAG_PREFIX}{system_tag_column_name}"
+        )
+    tags_column = pa.array(system_tag_values, type=pa.large_string())
+    return table.append_column(system_tag_column_name, tags_column)
+
+
+def append_to_system_tags(table: "pa.Table", value: str) -> "pa.Table":
+    """Append a value to the system tags column in an Arrow table."""
+    if not table.column_names:
+        raise ValueError("Table is empty")
+
+    column_name_map = {
+        c: f"{c}:{value}" if c.startswith(constants.SYSTEM_TAG_PREFIX) else c
+        for c in table.column_names
+    }
+    return table.rename_columns(column_name_map)
 
 
 def add_source_info(

@@ -1,4 +1,4 @@
-from orcapod.protocols import core_protocols as dp
+from orcapod.protocols import core_protocols as cp
 from orcapod.core.streams import TableStream
 from orcapod.types import PythonSchema
 from typing import Any, TYPE_CHECKING
@@ -28,7 +28,7 @@ class MapPackets(UnaryOperator):
         self.drop_unmapped = drop_unmapped
         super().__init__(**kwargs)
 
-    def op_forward(self, stream: dp.Stream) -> dp.Stream:
+    def op_forward(self, stream: cp.Stream) -> cp.Stream:
         tag_columns, packet_columns = stream.keys()
         unmapped_columns = set(packet_columns) - set(self.name_map.keys())
 
@@ -68,7 +68,7 @@ class MapPackets(UnaryOperator):
             renamed_table, tag_columns=tag_columns, source=self, upstreams=(stream,)
         )
 
-    def op_validate_inputs(self, stream: dp.Stream) -> None:
+    def op_validate_inputs(self, stream: cp.Stream) -> None:
         """
         This method should be implemented by subclasses to validate the inputs to the operator.
         It takes two streams as input and raises an error if the inputs are not valid.
@@ -96,7 +96,7 @@ class MapPackets(UnaryOperator):
             raise InputValidationError(message)
 
     def op_output_types(
-        self, stream: dp.Stream, include_system_tags: bool = False
+        self, stream: cp.Stream, include_system_tags: bool = False
     ) -> tuple[PythonSchema, PythonSchema]:
         tag_typespec, packet_typespec = stream.types(
             include_system_tags=include_system_tags
@@ -109,7 +109,7 @@ class MapPackets(UnaryOperator):
 
         return tag_typespec, new_packet_typespec
 
-    def op_identity_structure(self, stream: dp.Stream | None = None) -> Any:
+    def op_identity_structure(self, stream: cp.Stream | None = None) -> Any:
         return (
             self.__class__.__name__,
             self.name_map,
@@ -131,7 +131,7 @@ class MapTags(UnaryOperator):
         self.drop_unmapped = drop_unmapped
         super().__init__(**kwargs)
 
-    def op_forward(self, stream: dp.Stream) -> dp.Stream:
+    def op_forward(self, stream: cp.Stream) -> cp.Stream:
         tag_columns, packet_columns = stream.keys()
         missing_tags = set(tag_columns) - set(self.name_map.keys())
 
@@ -158,7 +158,7 @@ class MapTags(UnaryOperator):
             renamed_table, tag_columns=new_tag_columns, source=self, upstreams=(stream,)
         )
 
-    def op_validate_inputs(self, stream: dp.Stream) -> None:
+    def op_validate_inputs(self, stream: cp.Stream) -> None:
         """
         This method should be implemented by subclasses to validate the inputs to the operator.
         It takes two streams as input and raises an error if the inputs are not valid.
@@ -184,7 +184,7 @@ class MapTags(UnaryOperator):
             raise InputValidationError(message)
 
     def op_output_types(
-        self, stream: dp.Stream, include_system_tags: bool = False
+        self, stream: cp.Stream, include_system_tags: bool = False
     ) -> tuple[PythonSchema, PythonSchema]:
         tag_typespec, packet_typespec = stream.types(
             include_system_tags=include_system_tags
@@ -195,7 +195,7 @@ class MapTags(UnaryOperator):
 
         return new_tag_typespec, packet_typespec
 
-    def op_identity_structure(self, stream: dp.Stream | None = None) -> Any:
+    def op_identity_structure(self, stream: cp.Stream | None = None) -> Any:
         return (
             self.__class__.__name__,
             self.name_map,

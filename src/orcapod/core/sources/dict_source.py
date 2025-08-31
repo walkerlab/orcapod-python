@@ -2,7 +2,7 @@ from collections.abc import Collection, Mapping
 from typing import TYPE_CHECKING, Any
 
 
-from orcapod.protocols import core_protocols as dp
+from orcapod.protocols import core_protocols as cp
 from orcapod.types import DataValue, PythonSchema, PythonSchemaLike
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.core.system_constants import constants
@@ -95,7 +95,7 @@ class DictSource(SourceBase):
             include_system_columns=include_system_columns
         )
 
-    def forward(self, *streams: dp.Stream) -> dp.Stream:
+    def forward(self, *streams: cp.Stream) -> cp.Stream:
         """
         Load data from file and return a static stream.
 

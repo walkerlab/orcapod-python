@@ -2,11 +2,36 @@ from orcapod.core.trackers import GraphTracker, Invocation
 from orcapod.pipeline.nodes import KernelNode, PodNode
 from orcapod.protocols.pipeline_protocols import Node
 from orcapod import contexts
-from orcapod.protocols import core_protocols as dp
+from orcapod.protocols import core_protocols as cp
 from orcapod.protocols import database_protocols as dbp
 from typing import Any
 from collections.abc import Collection
 import logging
+import asyncio
+
+
+def synchronous_run(async_func, *args, **kwargs):
+    """
+    Use existing event loop if available.
+
+    Pros: Reuses existing loop, more efficient
+    Cons: More complex, need to handle loop detection
+    """
+    try:
+        # Check if we're already in an event loop
+        _ = asyncio.get_running_loop()
+
+        def run_in_thread():
+            return asyncio.run(async_func(*args, **kwargs))
+
+        import concurrent.futures
+
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(run_in_thread)
+            return future.result()
+    except RuntimeError:
+        # No event loop running, safe to use asyncio.run()
+        return asyncio.run(async_func(*args, **kwargs))
 
 
 logger = logging.getLogger(__name__)
@@ -23,7 +48,7 @@ class Pipeline(GraphTracker):
         name: str | tuple[str, ...],
         pipeline_database: dbp.ArrowDatabase,
         results_database: dbp.ArrowDatabase | None = None,
-        tracker_manager: dp.TrackerManager | None = None,
+        tracker_manager: cp.TrackerManager | None = None,
         data_context: str | contexts.DataContext | None = None,
         auto_compile: bool = True,
     ):
@@ -61,8 +86,8 @@ class Pipeline(GraphTracker):
 
     def record_kernel_invocation(
         self,
-        kernel: dp.Kernel,
-        upstreams: tuple[dp.Stream, ...],
+        kernel: cp.Kernel,
+        upstreams: tuple[cp.Stream, ...],
         label: str | None = None,
     ) -> None:
         super().record_kernel_invocation(kernel, upstreams, label)
@@ -70,8 +95,8 @@ class Pipeline(GraphTracker):
 
     def record_pod_invocation(
         self,
-        pod: dp.Pod,
-        upstreams: tuple[dp.Stream, ...],
+        pod: cp.Pod,
+        upstreams: tuple[cp.Stream, ...],
         label: str | None = None,
     ) -> None:
         super().record_pod_invocation(pod, upstreams, label)
@@ -102,17 +127,41 @@ class Pipeline(GraphTracker):
             else:
                 self.nodes[label] = nodes[0]
 
-    def run(self, execution_engine: dp.ExecutionEngine | None = None) -> None:
-        # FIXME: perform more efficient traversal through the graph!
+    def run(
+        self,
+        execution_engine: cp.ExecutionEngine | None = None,
+        run_async: bool | None = None,
+    ) -> None:
+        """Execute the pipeline by running all nodes in the graph.
+
+        This method traverses through all nodes in the graph and executes them sequentially
+        using the specified execution engine. After execution, flushes the pipeline.
+
+        Args:
+            execution_engine (dp.ExecutionEngine | None): The execution engine to use for running
+                the nodes. If None, creates a new default ExecutionEngine instance.
+            run_async (bool | None): Whether to run nodes asynchronously. If None, defaults to
+                the preferred mode based on the execution engine.
+
+        Returns:
+            None
+
+        Note:
+            Current implementation uses a simple traversal through all nodes. Future versions
+            may implement more efficient graph traversal algorithms.
+        """
         for node in self.nodes.values():
-            node.run(execution_engine=execution_engine)
+            if run_async:
+                synchronous_run(node.run_async, execution_engine=execution_engine)
+            else:
+                node.run(execution_engine=execution_engine)
 
         self.flush()
 
     def wrap_invocation(
         self,
         invocation: Invocation,
-        new_input_streams: Collection[dp.Stream],
+        new_input_streams: Collection[cp.Stream],
     ) -> Node:
         if invocation in self.invocation_to_pod_lut:
             pod = self.invocation_to_pod_lut[invocation]

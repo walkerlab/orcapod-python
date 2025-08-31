@@ -1,4 +1,4 @@
-from orcapod.protocols import core_protocols as dp
+from orcapod.protocols import core_protocols as cp
 from orcapod.core.streams import TableStream
 from orcapod.utils import types_utils
 from orcapod.types import PythonSchema
@@ -37,8 +37,8 @@ class SemiJoin(BinaryOperator):
 
     def op_identity_structure(
         self,
-        left_stream: dp.Stream | None = None,
-        right_stream: dp.Stream | None = None,
+        left_stream: cp.Stream | None = None,
+        right_stream: cp.Stream | None = None,
     ) -> Any:
         """
         Return a structure that represents the identity of this operator.
@@ -50,7 +50,7 @@ class SemiJoin(BinaryOperator):
             id_struct += (left_stream, right_stream)
         return id_struct
 
-    def op_forward(self, left_stream: dp.Stream, right_stream: dp.Stream) -> dp.Stream:
+    def op_forward(self, left_stream: cp.Stream, right_stream: cp.Stream) -> cp.Stream:
         """
         Performs a semi-join between left and right streams.
         Returns entries from left stream that have matching entries in right stream.
@@ -98,8 +98,8 @@ class SemiJoin(BinaryOperator):
 
     def op_output_types(
         self,
-        left_stream: dp.Stream,
-        right_stream: dp.Stream,
+        left_stream: cp.Stream,
+        right_stream: cp.Stream,
         include_system_tags: bool = False,
     ) -> tuple[PythonSchema, PythonSchema]:
         """
@@ -110,7 +110,7 @@ class SemiJoin(BinaryOperator):
         return left_stream.types(include_system_tags=include_system_tags)
 
     def op_validate_inputs(
-        self, left_stream: dp.Stream, right_stream: dp.Stream
+        self, left_stream: cp.Stream, right_stream: cp.Stream
     ) -> None:
         """
         Validates that the input streams are compatible for semi-join.

@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING, Any
 
 
 from orcapod.core.streams import TableStream
-from orcapod.protocols import core_protocols as dp
+from orcapod.protocols import core_protocols as cp
 from orcapod.types import PathLike, PythonSchema
 from orcapod.utils.lazy_module import LazyModule
 from pathlib import Path
@@ -85,7 +85,7 @@ class DeltaTableSource(SourceBase):
             "tag_columns": self._tag_columns,
         }
 
-    def validate_inputs(self, *streams: dp.Stream) -> None:
+    def validate_inputs(self, *streams: cp.Stream) -> None:
         """Delta table sources don't take input streams."""
         if len(streams) > 0:
             raise ValueError(
@@ -99,7 +99,7 @@ class DeltaTableSource(SourceBase):
         # Create a sample stream to get types
         return self.forward().types(include_system_tags=include_system_tags)
 
-    def forward(self, *streams: dp.Stream) -> dp.Stream:
+    def forward(self, *streams: cp.Stream) -> cp.Stream:
         """
         Generate stream from Delta table data.
 
