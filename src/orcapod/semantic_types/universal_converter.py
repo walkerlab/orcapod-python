@@ -11,8 +11,8 @@ This provides a comprehensive, self-contained system that:
 
 import types
 from typing import TypedDict, Any
-from collections.abc import Callable
-import pyarrow as pa
+import typing
+from collections.abc import Callable, Mapping
 import hashlib
 import logging
 from orcapod.contexts import DataContext, resolve_context
@@ -21,7 +21,16 @@ from orcapod.semantic_types.type_inference import infer_python_schema_from_pylis
 
 # Handle generic types
 from typing import get_origin, get_args
-import typing
+
+from typing import TYPE_CHECKING
+from orcapod.types import DataType, PythonSchemaLike
+from orcapod.utils.lazy_module import LazyModule
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+else:
+    pa = LazyModule("pyarrow")
+
 
 logger = logging.getLogger(__name__)
 
@@ -97,19 +106,19 @@ class UniversalTypeConverter:
         self.semantic_registry = semantic_registry
 
         # Cache for created TypedDict classes
-        self._struct_signature_to_typeddict: dict[pa.StructType, type] = {}
-        self._typeddict_to_struct_signature: dict[type, pa.StructType] = {}
+        self._struct_signature_to_typeddict: dict[pa.StructType, DataType] = {}
+        self._typeddict_to_struct_signature: dict[DataType, pa.StructType] = {}
         self._created_type_names: set[str] = set()
 
         # Cache for conversion functions
-        self._python_to_arrow_converters: dict[type, Callable] = {}
+        self._python_to_arrow_converters: dict[DataType, Callable] = {}
         self._arrow_to_python_converters: dict[pa.DataType, Callable] = {}
 
         # Cache for type mappings
-        self._python_to_arrow_types: dict[type, pa.DataType] = {}
-        self._arrow_to_python_types: dict[pa.DataType, type] = {}
+        self._python_to_arrow_types: dict[DataType, pa.DataType] = {}
+        self._arrow_to_python_types: dict[pa.DataType, DataType] = {}
 
-    def python_type_to_arrow_type(self, python_type: type) -> pa.DataType:
+    def python_type_to_arrow_type(self, python_type: DataType) -> pa.DataType:
         """
         Convert Python type hint to Arrow type with caching.
 
@@ -127,7 +136,7 @@ class UniversalTypeConverter:
         return arrow_type
 
     def python_schema_to_arrow_schema(
-        self, python_schema: dict[str, type]
+        self, python_schema: PythonSchemaLike
     ) -> pa.Schema:
         """
         Convert a Python schema (dict of field names to types) to an Arrow schema.
@@ -141,7 +150,7 @@ class UniversalTypeConverter:
 
         return pa.schema(fields)
 
-    def arrow_type_to_python_type(self, arrow_type: pa.DataType) -> type:
+    def arrow_type_to_python_type(self, arrow_type: pa.DataType) -> DataType:
         """
         Convert Arrow type to Python type hint with caching.
 
@@ -174,7 +183,7 @@ class UniversalTypeConverter:
     def python_dicts_to_struct_dicts(
         self,
         python_dicts: list[dict[str, Any]],
-        python_schema: dict[str, type] | None = None,
+        python_schema: PythonSchemaLike | None = None,
     ) -> list[dict[str, Any]]:
         """
         Convert a list of Python dictionaries to an Arrow table.
@@ -232,7 +241,7 @@ class UniversalTypeConverter:
     def python_dicts_to_arrow_table(
         self,
         python_dicts: list[dict[str, Any]],
-        python_schema: dict[str, type] | None = None,
+        python_schema: PythonSchemaLike | None = None,
         arrow_schema: "pa.Schema | None" = None,
     ) -> pa.Table:
         """
@@ -292,7 +301,9 @@ class UniversalTypeConverter:
 
         return python_dicts
 
-    def get_python_to_arrow_converter(self, python_type: type) -> Callable[[Any], Any]:
+    def get_python_to_arrow_converter(
+        self, python_type: DataType
+    ) -> Callable[[Any], Any]:
         """
         Get cached conversion function for Python value → Arrow value.
 
@@ -326,7 +337,7 @@ class UniversalTypeConverter:
 
         return converter
 
-    def _convert_python_to_arrow(self, python_type: type) -> pa.DataType:
+    def _convert_python_to_arrow(self, python_type: DataType) -> pa.DataType:
         """Core Python → Arrow type conversion logic."""
 
         if python_type in _PYTHON_TO_ARROW_MAP:
@@ -351,7 +362,7 @@ class UniversalTypeConverter:
         if origin is None:
             # Handle string type names
             if hasattr(python_type, "__name__"):
-                type_name = python_type.__name__
+                type_name = getattr(python_type, "__name__")
                 if type_name in _PYTHON_TO_ARROW_MAP:
                     return _PYTHON_TO_ARROW_MAP[type_name]
             raise ValueError(f"Unsupported Python type: {python_type}")
@@ -526,7 +537,9 @@ class UniversalTypeConverter:
             # Default case for unsupported types
             return Any
 
-    def _get_or_create_typeddict_for_struct(self, struct_type: pa.StructType) -> type:
+    def _get_or_create_typeddict_for_struct(
+        self, struct_type: pa.StructType
+    ) -> DataType:
         """Get or create a TypedDict class for an Arrow struct type."""
 
         # Check cache first
@@ -534,7 +547,7 @@ class UniversalTypeConverter:
             return self._struct_signature_to_typeddict[struct_type]
 
         # Create field specifications for TypedDict
-        field_specs: dict[str, type] = {}
+        field_specs: dict[str, DataType] = {}
         for field in struct_type:
             field_name = field.name
             python_type = self.arrow_type_to_python_type(field.type)
@@ -552,7 +565,8 @@ class UniversalTypeConverter:
 
         return typeddict_class
 
-    def _generate_unique_type_name(self, field_specs: dict[str, type]) -> str:
+    # TODO: consider setting type of field_specs to PythonSchema
+    def _generate_unique_type_name(self, field_specs: Mapping[str, DataType]) -> str:
         """Generate a unique name for TypedDict based on field specifications."""
 
         # Create deterministic signature that includes both names and types
@@ -591,7 +605,7 @@ class UniversalTypeConverter:
         return base_name
 
     def _create_python_to_arrow_converter(
-        self, python_type: type
+        self, python_type: DataType
     ) -> Callable[[Any], Any]:
         """Create a cached conversion function for Python → Arrow values."""
 

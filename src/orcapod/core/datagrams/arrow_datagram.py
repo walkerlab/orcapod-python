@@ -1,8 +1,7 @@
 import logging
 from collections.abc import Collection, Iterator, Mapping
-from typing import Self
+from typing import Self, TYPE_CHECKING
 
-import pyarrow as pa
 
 from orcapod import contexts
 from orcapod.core.datagrams.base import BaseDatagram
@@ -10,6 +9,12 @@ from orcapod.core.system_constants import constants
 from orcapod.types import DataValue, PythonSchema
 from orcapod.protocols.hashing_protocols import ContentHash
 from orcapod.utils import arrow_utils
+from orcapod.utils.lazy_module import LazyModule
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+else:
+    pa = LazyModule("pyarrow")
 
 logger = logging.getLogger(__name__)
 DEBUG = False
@@ -49,7 +54,7 @@ class ArrowDatagram(BaseDatagram):
 
     def __init__(
         self,
-        table: pa.Table,
+        table: "pa.Table",
         meta_info: Mapping[str, DataValue] | None = None,
         data_context: str | contexts.DataContext | None = None,
     ) -> None:
@@ -272,7 +277,7 @@ class ArrowDatagram(BaseDatagram):
         include_all_info: bool = False,
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
-    ) -> pa.Schema:
+    ) -> "pa.Schema":
         """
         Return the PyArrow schema for this datagram.
 
@@ -395,7 +400,7 @@ class ArrowDatagram(BaseDatagram):
         include_all_info: bool = False,
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
-    ) -> pa.Table:
+    ) -> "pa.Table":
         """
         Convert the datagram to an Arrow table.
 

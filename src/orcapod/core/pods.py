@@ -13,7 +13,7 @@ from orcapod.core.datagrams import (
 )
 from orcapod.core.kernels import KernelStream, TrackedKernelBase
 from orcapod.core.operators import Join
-from orcapod.core.streams import EfficientPodResultStream, LazyPodResultStream
+from orcapod.core.streams import CachedPodStream, LazyPodResultStream
 from orcapod.core.system_constants import constants
 from orcapod.hashing.hash_utils import get_function_components, get_function_signature
 from orcapod.protocols import core_protocols as cp
@@ -723,7 +723,7 @@ class CachedPod(WrappedPod):
 
     def forward(self, *streams: cp.Stream) -> cp.Stream:
         assert len(streams) == 1, "PodBase.forward expects exactly one input stream"
-        return EfficientPodResultStream(pod=self, input_stream=streams[0])
+        return CachedPodStream(pod=self, input_stream=streams[0])
 
     def record_packet(
         self,

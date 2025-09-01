@@ -19,16 +19,20 @@ and type conversions between semantic stores, Python stores, and Arrow tables.
 import logging
 from abc import abstractmethod
 from collections.abc import Collection, Iterator, Mapping
-from typing import Self, TypeAlias
+from typing import Self, TypeAlias, TYPE_CHECKING
 from orcapod import contexts
 from orcapod.core.base import ContentIdentifiableBase
 from orcapod.protocols.hashing_protocols import ContentHash
 
-import pyarrow as pa
-
+from orcapod.utils.lazy_module import LazyModule
 from orcapod.types import DataValue, PythonSchema
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+else:
+    pa = LazyModule("pyarrow")
 
 # A conveniece packet-like type that defines a value that can be
 # converted to a packet. It's broader than Packet and a simple mapping
@@ -188,7 +192,7 @@ class BaseDatagram(ContentIdentifiableBase):
         include_all_info: bool = False,
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
-    ) -> pa.Schema:
+    ) -> "pa.Schema":
         """Return the PyArrow schema for this datagram."""
         ...
 
@@ -214,7 +218,7 @@ class BaseDatagram(ContentIdentifiableBase):
         include_all_info: bool = False,
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
-    ) -> pa.Table:
+    ) -> "pa.Table":
         """Convert the datagram to an Arrow table."""
         ...
 

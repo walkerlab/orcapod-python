@@ -258,7 +258,7 @@ class DictDatagram(BaseDatagram):
         include_all_info: bool = False,
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
-    ) -> pa.Schema:
+    ) -> "pa.Schema":
         """
         Return the PyArrow schema for this datagram.
 
@@ -407,7 +407,7 @@ class DictDatagram(BaseDatagram):
             [python_dict], python_schema=python_schema
         )[0]
 
-    def _get_meta_arrow_table(self) -> pa.Table:
+    def _get_meta_arrow_table(self) -> "pa.Table":
         if self._cached_meta_table is None:
             arrow_schema = self._get_meta_arrow_schema()
             self._cached_meta_table = pa.Table.from_pylist(
@@ -419,7 +419,7 @@ class DictDatagram(BaseDatagram):
         )
         return self._cached_meta_table
 
-    def _get_meta_arrow_schema(self) -> pa.Schema:
+    def _get_meta_arrow_schema(self) -> "pa.Schema":
         if self._cached_meta_arrow_schema is None:
             self._cached_meta_arrow_schema = (
                 self._data_context.type_converter.python_schema_to_arrow_schema(
@@ -437,7 +437,7 @@ class DictDatagram(BaseDatagram):
         include_all_info: bool = False,
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
-    ) -> pa.Table:
+    ) -> "pa.Table":
         """
         Convert the datagram to an Arrow table.
 

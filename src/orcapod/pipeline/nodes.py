@@ -32,9 +32,11 @@ class NodeBase(
         input_streams: Collection[cp.Stream],
         pipeline_database: dbp.ArrowDatabase,
         pipeline_path_prefix: tuple[str, ...] = (),
+        kernel_type: str = "operator",
         **kwargs,
     ):
         super().__init__(**kwargs)
+        self.kernel_type = kernel_type
         self._cached_stream: KernelStream | None = None
         self._input_streams = tuple(input_streams)
         self._pipeline_path_prefix = pipeline_path_prefix
@@ -54,6 +56,10 @@ class NodeBase(
         ).to_string()
 
         self.pipeline_database = pipeline_database
+
+    @property
+    def id(self) -> str:
+        return self.content_hash().to_string()
 
     @property
     def upstreams(self) -> tuple[cp.Stream, ...]:

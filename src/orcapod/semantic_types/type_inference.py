@@ -1,11 +1,12 @@
 from types import UnionType
 from typing import Any, Union, get_origin, get_args
+from collections.abc import Collection, Mapping
 
 from orcapod.types import PythonSchema
 
 
 def infer_python_schema_from_pylist_data(
-    data: list[dict],
+    data: Collection[Mapping[str, Any]],
     default_type: type = str,
 ) -> PythonSchema:
     """

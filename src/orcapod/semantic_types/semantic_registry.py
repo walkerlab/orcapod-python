@@ -4,7 +4,7 @@ from orcapod.protocols.semantic_types_protocols import SemanticStructConverter
 from orcapod.utils.lazy_module import LazyModule
 
 # from orcapod.semantic_types.type_inference import infer_python_schema_from_pylist_data
-from orcapod.types import PythonSchema
+from orcapod.types import DataType, PythonSchema
 from orcapod.semantic_types import pydata_utils
 
 if TYPE_CHECKING:
@@ -38,8 +38,8 @@ class SemanticTypeRegistry:
 
     def __init__(self, converters: Mapping[str, SemanticStructConverter] | None = None):
         # Bidirectional mappings between Python types and struct signatures
-        self._python_to_struct: dict[type, "pa.StructType"] = {}
-        self._struct_to_python: dict["pa.StructType", type] = {}
+        self._python_to_struct: dict[DataType, "pa.StructType"] = {}
+        self._struct_to_python: dict["pa.StructType", DataType] = {}
         self._struct_to_converter: dict["pa.StructType", SemanticStructConverter] = {}
 
         # Name mapping for convenience
@@ -101,7 +101,7 @@ class SemanticTypeRegistry:
         self._struct_to_name[struct_signature] = semantic_type_name
 
     def get_converter_for_python_type(
-        self, python_type: type
+        self, python_type: DataType
     ) -> SemanticStructConverter | None:
         """Get converter registered to the Python type."""
         # Direct lookup first
@@ -140,7 +140,7 @@ class SemanticTypeRegistry:
 
     def get_python_type_for_semantic_struct_signature(
         self, struct_signature: "pa.StructType"
-    ) -> type | None:
+    ) -> DataType | None:
         """
         Get Python type registered to the Arrow struct signature.
         """
@@ -168,7 +168,7 @@ class SemanticTypeRegistry:
         """Get all registered semantic type names."""
         return list(self._name_to_converter.keys())
 
-    def list_python_types(self) -> list[type]:
+    def list_python_types(self) -> list[DataType]:
         """Get all registered Python types."""
         return list(self._python_to_struct.keys())
 

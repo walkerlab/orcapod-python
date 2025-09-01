@@ -398,6 +398,15 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
         """
         return [e for e in self.iter_packets(execution_engine=execution_engine)]
 
+    def _repr_html_(self) -> str:
+        df = self.as_polars_df()
+        if df is not None:
+            tag_map = {t: f"*{t}" for t in self.tag_keys()}
+            # TODO: construct repr html better
+            df = df.rename(tag_map)
+            return f"{self.__class__.__name__}[{self.label}]\n" + df._repr_html_()
+        return ""
+
     # def identity_structure(self) -> Any:
     #     """
     #     Identity structure of a stream is deferred to the identity structure

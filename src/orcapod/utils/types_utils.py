@@ -5,7 +5,7 @@ from typing import get_origin, get_args, Any
 from orcapod.types import PythonSchema, PythonSchemaLike
 import inspect
 import logging
-
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -230,14 +230,79 @@ def get_typespec_from_dict(
     }
 
 
+# def get_compatible_type(type1: Any, type2: Any) -> Any:
+#     if type1 is type2:
+#         return type1
+#     if issubclass(type1, type2):
+#         return type2
+#     if issubclass(type2, type1):
+#         return type1
+#     raise TypeError(f"Types {type1} and {type2} are not compatible")
+
+
 def get_compatible_type(type1: Any, type2: Any) -> Any:
+    # Handle identical types
     if type1 is type2:
         return type1
-    if issubclass(type1, type2):
-        return type2
-    if issubclass(type2, type1):
+
+    # Handle None/NoneType
+    if type1 is type(None) or type2 is type(None):
+        # You might want to handle Optional types here
+        if type1 is type(None):
+            return type2
         return type1
-    raise TypeError(f"Types {type1} and {type2} are not compatible")
+
+    # Get origins for generic types (e.g., list from list[int])
+    origin1 = get_origin(type1) or type1
+    origin2 = get_origin(type2) or type2
+
+    # If origins are different, check basic subclass relationship
+    if origin1 != origin2:
+        try:
+            if issubclass(origin1, origin2):
+                return type2
+            if issubclass(origin2, origin1):
+                return type1
+        except TypeError:
+            # issubclass fails on some special forms
+            pass
+        raise TypeError(f"Types {type1} and {type2} are not compatible")
+
+    # Same origin - check type arguments
+    args1 = get_args(type1)
+    args2 = get_args(type2)
+
+    # If no type arguments, return the origin
+    if not args1 and not args2:
+        return origin1
+
+    # If only one has type arguments, prefer the more specific one
+    if not args1:
+        return type2
+    if not args2:
+        return type1
+
+    # Both have type arguments - recursively check compatibility
+    if len(args1) != len(args2):
+        raise TypeError(f"Types {type1} and {type2} have incompatible argument counts")
+
+    compatible_args = []
+    for arg1, arg2 in zip(args1, args2):
+        try:
+            compatible_args.append(get_compatible_type(arg1, arg2))
+        except TypeError:
+            raise TypeError(
+                f"Types {type1} and {type2} have incompatible type arguments"
+            )
+
+    # Reconstruct the generic type
+    if sys.version_info >= (3, 9):
+        return origin1[tuple(compatible_args)]
+    else:
+        # For Python < 3.9, you might need to use typing._GenericAlias
+        from typing import _GenericAlias
+
+        return _GenericAlias(origin1, tuple(compatible_args))
 
 
 def union_typespecs(*typespecs: PythonSchema) -> PythonSchema:

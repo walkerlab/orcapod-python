@@ -1,7 +1,6 @@
 # TODO: move this to a separate module
 
 from collections import defaultdict
-import pyarrow as pa
 from collections.abc import Mapping, Collection
 from typing import Any
 
@@ -313,7 +312,7 @@ def pydict_to_pylist(pydict: dict) -> list[dict]:
     return result
 
 
-def join_arrow_schemas(*schemas: pa.Schema) -> pa.Schema:
+def join_arrow_schemas(*schemas: "pa.Schema") -> "pa.Schema":
     """Join multiple Arrow schemas into a single schema, ensuring compatibility of fields. In particular,
     no field names should collide."""
     merged_fields = []
@@ -323,8 +322,8 @@ def join_arrow_schemas(*schemas: pa.Schema) -> pa.Schema:
 
 
 def select_table_columns_with_prefixes(
-    table: pa.Table, prefix: str | Collection[str]
-) -> pa.Table:
+    table: "pa.Table", prefix: str | Collection[str]
+) -> "pa.Table":
     """
     Select columns from a PyArrow table that start with a specific prefix.
 
@@ -344,8 +343,8 @@ def select_table_columns_with_prefixes(
 
 
 def select_schema_columns_with_prefixes(
-    schema: pa.Schema, prefix: str | Collection[str]
-) -> pa.Schema:
+    schema: "pa.Schema", prefix: str | Collection[str]
+) -> "pa.Schema":
     """
     Select columns from an Arrow schema that start with a specific prefix.
 
@@ -364,7 +363,7 @@ def select_schema_columns_with_prefixes(
     return pa.schema(selected_fields)
 
 
-def select_arrow_schema(schema: pa.Schema, columns: Collection[str]) -> pa.Schema:
+def select_arrow_schema(schema: "pa.Schema", columns: Collection[str]) -> "pa.Schema":
     """
     Select specific columns from an Arrow schema.
 
@@ -379,7 +378,7 @@ def select_arrow_schema(schema: pa.Schema, columns: Collection[str]) -> pa.Schem
     return pa.schema(selected_fields)
 
 
-def hstack_tables(*tables: pa.Table) -> pa.Table:
+def hstack_tables(*tables: "pa.Table") -> "pa.Table":
     """
     Horizontally stack multiple PyArrow tables by concatenating their columns.
 
@@ -429,7 +428,7 @@ def hstack_tables(*tables: pa.Table) -> pa.Table:
 
 
 def check_arrow_schema_compatibility(
-    incoming_schema: pa.Schema, target_schema: pa.Schema, strict: bool = False
+    incoming_schema: "pa.Schema", target_schema: "pa.Schema", strict: bool = False
 ) -> tuple[bool, list[str]]:
     # TODO: add strict comparison
     """
@@ -501,7 +500,7 @@ def check_arrow_schema_compatibility(
 def split_by_column_groups(
     table,
     *column_groups: Collection[str],
-) -> tuple[pa.Table | None, ...]:
+) -> tuple["pa.Table | None", ...]:
     """
     Split the table into multiple tables based on the provided column groups.
     Each group is a collection of column names that should be included in the same table.
@@ -531,13 +530,13 @@ def split_by_column_groups(
 
 
 def prepare_prefixed_columns(
-    table: pa.Table | pa.RecordBatch,
+    table: "pa.Table | pa.RecordBatch",
     prefix_info: Collection[str]
     | Mapping[str, Any | None]
     | Mapping[str, Mapping[str, Any | None]],
     exclude_columns: Collection[str] = (),
     exclude_prefixes: Collection[str] = (),
-) -> tuple[pa.Table, dict[str, pa.Table]]:
+) -> tuple["pa.Table", dict[str, "pa.Table"]]:
     """ """
     all_prefix_info = {}
     if isinstance(prefix_info, Mapping):
@@ -636,7 +635,7 @@ def prepare_prefixed_columns(
     return data_table, result_tables
 
 
-def drop_schema_columns(schema: pa.Schema, columns: Collection[str]) -> pa.Schema:
+def drop_schema_columns(schema: "pa.Schema", columns: Collection[str]) -> "pa.Schema":
     """
     Drop specified columns from a PyArrow schema.
 

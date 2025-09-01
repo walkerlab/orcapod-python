@@ -1,9 +1,6 @@
 from collections.abc import Collection
 from typing import TYPE_CHECKING, Any
 
-import polars
-
-
 from orcapod.core.streams import TableStream
 from orcapod.protocols import core_protocols as cp
 from orcapod.types import PythonSchema

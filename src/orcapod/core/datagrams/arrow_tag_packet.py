@@ -1,9 +1,7 @@
 import logging
 from collections.abc import Collection, Mapping
-from typing import Self
+from typing import Self, TYPE_CHECKING
 
-
-import pyarrow as pa
 
 from orcapod.core.system_constants import constants
 from orcapod import contexts
@@ -13,8 +11,14 @@ from orcapod.types import DataValue, PythonSchema
 from orcapod.utils import arrow_utils
 
 from orcapod.core.datagrams.arrow_datagram import ArrowDatagram
+from orcapod.utils.lazy_module import LazyModule
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+else:
+    pa = LazyModule("pyarrow")
 
 
 class ArrowTag(ArrowDatagram):
@@ -35,7 +39,7 @@ class ArrowTag(ArrowDatagram):
 
     def __init__(
         self,
-        table: pa.Table,
+        table: "pa.Table",
         system_tags: Mapping[str, DataValue] | None = None,
         data_context: str | contexts.DataContext | None = None,
     ) -> None:
@@ -109,7 +113,7 @@ class ArrowTag(ArrowDatagram):
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
         include_system_tags: bool = False,
-    ) -> pa.Schema:
+    ) -> "pa.Schema":
         """
         Return the PyArrow schema for this datagram.
 
@@ -162,7 +166,7 @@ class ArrowTag(ArrowDatagram):
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
         include_system_tags: bool = False,
-    ) -> pa.Table:
+    ) -> "pa.Table":
         table = super().as_table(
             include_all_info=include_all_info,
             include_meta_columns=include_meta_columns,
@@ -239,7 +243,7 @@ class ArrowPacket(ArrowDatagram):
 
     def __init__(
         self,
-        table: pa.Table | pa.RecordBatch,
+        table: "pa.Table | pa.RecordBatch",
         meta_info: Mapping[str, DataValue] | None = None,
         source_info: Mapping[str, str | None] | None = None,
         data_context: str | contexts.DataContext | None = None,
@@ -321,7 +325,7 @@ class ArrowPacket(ArrowDatagram):
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
         include_source: bool = False,
-    ) -> pa.Schema:
+    ) -> "pa.Schema":
         """
         Return the PyArrow schema for this datagram.
 
@@ -379,7 +383,7 @@ class ArrowPacket(ArrowDatagram):
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
         include_source: bool = False,
-    ) -> pa.Table:
+    ) -> "pa.Table":
         table = super().as_table(
             include_all_info=include_all_info,
             include_meta_columns=include_meta_columns,

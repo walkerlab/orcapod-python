@@ -1,8 +1,7 @@
 import logging
 from collections.abc import Collection, Mapping
-from typing import Self
+from typing import Self, TYPE_CHECKING
 
-import pyarrow as pa
 
 from orcapod.core.system_constants import constants
 from orcapod import contexts
@@ -10,6 +9,12 @@ from orcapod.core.datagrams.dict_datagram import DictDatagram
 from orcapod.utils import arrow_utils
 from orcapod.semantic_types import infer_python_schema_from_pylist_data
 from orcapod.types import DataValue, PythonSchema, PythonSchemaLike
+from orcapod.utils.lazy_module import LazyModule
+
+if TYPE_CHECKING:
+    import pyarrow as pa
+else:
+    pa = LazyModule("pyarrow")
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +77,7 @@ class DictTag(DictDatagram):
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
         include_system_tags: bool = False,
-    ) -> pa.Table:
+    ) -> "pa.Table":
         """Convert the packet to an Arrow table."""
         table = super().as_table(
             include_all_info=include_all_info,
@@ -158,7 +163,7 @@ class DictTag(DictDatagram):
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
         include_system_tags: bool = False,
-    ) -> pa.Schema:
+    ) -> "pa.Schema":
         """
         Return the PyArrow schema for this datagram.
 
@@ -291,7 +296,7 @@ class DictPacket(DictDatagram):
         self._cached_source_info_schema: pa.Schema | None = None
 
     @property
-    def _source_info_arrow_schema(self) -> pa.Schema:
+    def _source_info_arrow_schema(self) -> "pa.Schema":
         if self._cached_source_info_schema is None:
             self._cached_source_info_schema = (
                 self._converter.python_schema_to_arrow_schema(
@@ -312,7 +317,7 @@ class DictPacket(DictDatagram):
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
         include_source: bool = False,
-    ) -> pa.Table:
+    ) -> "pa.Table":
         """Convert the packet to an Arrow table."""
         table = super().as_table(
             include_all_info=include_all_info,
@@ -441,7 +446,7 @@ class DictPacket(DictDatagram):
         include_meta_columns: bool | Collection[str] = False,
         include_context: bool = False,
         include_source: bool = False,
-    ) -> pa.Schema:
+    ) -> "pa.Schema":
         """
         Return the PyArrow schema for this datagram.
 

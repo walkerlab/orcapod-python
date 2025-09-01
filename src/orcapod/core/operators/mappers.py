@@ -144,9 +144,11 @@ class MapTags(UnaryOperator):
         table = stream.as_table(include_source=True, include_system_tags=True)
 
         name_map = {
-            tc: self.name_map.get(tc, tc) for tc in tag_columns
+            tc: self.name_map.get(tc, tc)
+            for tc in tag_columns
+            if tc in self.name_map or not self.drop_unmapped
         }  # rename the tag as necessary
-        new_tag_columns = [name_map[tc] for tc in tag_columns]
+        new_tag_columns = list(name_map.values())
         for c in packet_columns:
             name_map[c] = c  # no renaming on packet columns
 
@@ -194,6 +196,15 @@ class MapTags(UnaryOperator):
 
         # Create new packet typespec with renamed keys
         new_tag_typespec = {self.name_map.get(k, k): v for k, v in tag_typespec.items()}
+
+        # Create new packet typespec with renamed keys
+        new_tag_typespec = {
+            self.name_map.get(k, k): v
+            for k, v in tag_typespec.items()
+            if k in self.name_map or not self.drop_unmapped
+        }
+
+        return new_tag_typespec, packet_typespec
 
         return new_tag_typespec, packet_typespec
 
