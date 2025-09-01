@@ -18,6 +18,7 @@ dependencies = [
     "beartype>=0.21.0",
     "deltalake>=1.0.2",
     "selection-pipeline",
+    "graphviz>=0.21",
 ]
 readme = "README.md"
 requires-python = ">=3.11.0"

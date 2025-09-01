@@ -6,8 +6,17 @@ from orcapod.protocols import core_protocols as cp
 from orcapod.protocols import database_protocols as dbp
 from typing import Any
 from collections.abc import Collection
+import os
+import tempfile
 import logging
 import asyncio
+from typing import TYPE_CHECKING
+from orcapod.utils.lazy_module import LazyModule
+
+if TYPE_CHECKING:
+    import networkx as nx
+else:
+    nx = LazyModule("networkx")
 
 
 def synchronous_run(async_func, *args, **kwargs):
@@ -109,11 +118,16 @@ class Pipeline(GraphTracker):
 
         invocation_to_stream_lut = {}
         G = self.generate_graph()
+        node_graph = nx.DiGraph()
         for invocation in nx.topological_sort(G):
             input_streams = [
                 invocation_to_stream_lut[parent] for parent in invocation.parents()
             ]
+
             node = self.wrap_invocation(invocation, new_input_streams=input_streams)
+            for parent in node.upstreams:
+                node_graph.add_edge(parent.source, node)
+
             invocation_to_stream_lut[invocation] = node()
             name_candidates.setdefault(node.label, []).append(node)
 
@@ -126,6 +140,13 @@ class Pipeline(GraphTracker):
                     self.nodes[f"{label}_{i}"] = node
             else:
                 self.nodes[label] = nodes[0]
+
+        self.label_lut = {v: k for k, v in self.nodes.items()}
+
+        self.graph = node_graph
+
+    def show_graph(self, **kwargs) -> None:
+        render_graph(self.graph, self.label_lut, **kwargs)
 
     def run(
         self,
@@ -217,3 +238,199 @@ class Pipeline(GraphTracker):
         node.label = new_name
         self.nodes[new_name] = node
         logger.info(f"Node '{old_name}' renamed to '{new_name}'")
+
+
+# import networkx as nx
+# # import graphviz
+# import matplotlib.pyplot as plt
+# import matplotlib.image as mpimg
+# import tempfile
+# import os
+
+
+class GraphRenderer:
+    """Simple renderer for NetworkX graphs using Graphviz DOT format"""
+
+    def __init__(self):
+        """Initialize the renderer"""
+        pass
+
+    def _sanitize_node_id(self, node_id: Any) -> str:
+        """Convert node_id to a valid DOT identifier using hash"""
+        return f"node_{hash(node_id)}"
+
+    def _get_node_label(
+        self, node_id: Any, label_lut: dict[Any, str] | None = None
+    ) -> str:
+        """Get label for a node"""
+        if label_lut and node_id in label_lut:
+            return label_lut[node_id]
+        return str(node_id)
+
+    def generate_dot(
+        self,
+        graph: "nx.DiGraph",
+        label_lut: dict[Any, str] | None = None,
+        rankdir: str = "TB",
+        node_shape: str = "box",
+        node_style: str = "filled",
+        node_color: str = "lightblue",
+        edge_color: str = "black",
+        dpi: int = 150,
+    ) -> str:
+        """
+        Generate DOT syntax from NetworkX graph
+
+        Args:
+            graph: NetworkX DiGraph to render
+            label_lut: Optional dictionary mapping node_id -> display_label
+            rankdir: Graph direction ('TB', 'BT', 'LR', 'RL')
+            node_shape: Shape for all nodes
+            node_style: Style for all nodes
+            node_color: Fill color for all nodes
+            edge_color: Color for all edges
+            dpi: Resolution for rendered image (default 150)
+
+        Returns:
+            DOT format string
+        """
+        try:
+            import graphviz
+        except ImportError as e:
+            raise ImportError(
+                "Graphviz is not installed. Please install graphviz to render graph of the pipeline."
+            ) from e
+
+        dot = graphviz.Digraph(comment="NetworkX Graph")
+
+        # Set graph attributes
+        dot.attr(rankdir=rankdir, dpi=str(dpi))
+        dot.attr("node", shape=node_shape, style=node_style, fillcolor=node_color)
+        dot.attr("edge", color=edge_color)
+
+        # Add nodes
+        for node_id in graph.nodes():
+            sanitized_id = self._sanitize_node_id(node_id)
+            label = self._get_node_label(node_id, label_lut)
+            dot.node(sanitized_id, label=label)
+
+        # Add edges
+        for source, target in graph.edges():
+            source_id = self._sanitize_node_id(source)
+            target_id = self._sanitize_node_id(target)
+            dot.edge(source_id, target_id)
+
+        return dot.source
+
+    def render_graph(
+        self,
+        graph: nx.DiGraph,
+        label_lut: dict[Any, str] | None = None,
+        show: bool = True,
+        output_path: str | None = None,
+        raw_output: bool = False,
+        rankdir: str = "TB",
+        figsize: tuple = (6, 4),
+        dpi: int = 150,
+        **style_kwargs,
+    ) -> str | None:
+        """
+        Render NetworkX graph using Graphviz
+
+        Args:
+            graph: NetworkX DiGraph to render
+            label_lut: Optional dictionary mapping node_id -> display_label
+            show: Display the graph using matplotlib
+            output_path: Save graph to file (e.g., 'graph.png', 'graph.pdf')
+            raw_output: Return DOT syntax instead of rendering
+            rankdir: Graph direction ('TB', 'BT', 'LR', 'RL')
+            figsize: Figure size for matplotlib display
+            dpi: Resolution for rendered image (default 150)
+            **style_kwargs: Additional styling (node_color, edge_color, node_shape, etc.)
+
+        Returns:
+            DOT syntax if raw_output=True, None otherwise
+        """
+        try:
+            import graphviz
+        except ImportError as e:
+            raise ImportError(
+                "Graphviz is not installed. Please install graphviz to render graph of the pipeline."
+            ) from e
+
+        if raw_output:
+            return self.generate_dot(graph, label_lut, rankdir, dpi=dpi, **style_kwargs)
+
+        # Create Graphviz object
+        dot = graphviz.Digraph(comment="NetworkX Graph")
+        dot.attr(rankdir=rankdir, dpi=str(dpi))
+
+        # Apply styling
+        node_shape = style_kwargs.get("node_shape", "box")
+        node_style = style_kwargs.get("node_style", "filled")
+        node_color = style_kwargs.get("node_color", "lightblue")
+        edge_color = style_kwargs.get("edge_color", "black")
+
+        dot.attr("node", shape=node_shape, style=node_style, fillcolor=node_color)
+        dot.attr("edge", color=edge_color)
+
+        # Add nodes with labels
+        for node_id in graph.nodes():
+            sanitized_id = self._sanitize_node_id(node_id)
+            label = self._get_node_label(node_id, label_lut)
+            dot.node(sanitized_id, label=label)
+
+        # Add edges
+        for source, target in graph.edges():
+            source_id = self._sanitize_node_id(source)
+            target_id = self._sanitize_node_id(target)
+            dot.edge(source_id, target_id)
+
+        # Handle output
+        if output_path:
+            # Save to file
+            name, ext = os.path.splitext(output_path)
+            format_type = ext[1:] if ext else "png"
+            dot.render(name, format=format_type, cleanup=True)
+            print(f"Graph saved to {output_path}")
+
+        if show:
+            # Display with matplotlib
+            with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+                dot.render(tmp.name[:-4], format="png", cleanup=True)
+
+                import matplotlib.pyplot as plt
+                import matplotlib.image as mpimg
+
+                # Display with matplotlib
+                img = mpimg.imread(tmp.name)
+                plt.figure(figsize=figsize)
+                plt.imshow(img)
+                plt.axis("off")
+                plt.title("Graph Visualization")
+                plt.tight_layout()
+                plt.show()
+
+                # Clean up
+                os.unlink(tmp.name)
+
+        return None
+
+
+# Convenience function for quick rendering
+def render_graph(
+    graph: nx.DiGraph, label_lut: dict[Any, str] | None = None, **kwargs
+) -> str | None:
+    """
+    Convenience function to quickly render a NetworkX graph
+
+    Args:
+        graph: NetworkX DiGraph to render
+        label_lut: Optional dictionary mapping node_id -> display_label
+        **kwargs: All other arguments passed to GraphRenderer.render_graph()
+
+    Returns:
+        DOT syntax if raw_output=True, None otherwise
+    """
+    renderer = GraphRenderer()
+    return renderer.render_graph(graph, label_lut, **kwargs)
