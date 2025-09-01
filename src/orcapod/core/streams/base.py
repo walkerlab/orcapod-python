@@ -96,19 +96,70 @@ class OperatorStreamBaseMixin:
             self, label=label
         )  # type: ignore
 
+    def polars_filter(
+        self,
+        *predicates: Any,
+        constraint_map: Mapping[str, Any] | None = None,
+        label: str | None = None,
+        **constraints: Any,
+    ) -> cp.Stream:
+        from orcapod.core.operators import PolarsFilter
+
+        total_constraints = dict(constraint_map) if constraint_map is not None else {}
+
+        total_constraints.update(constraints)
+
+        return PolarsFilter(predicates=predicates, constraints=total_constraints)(
+            self, label=label
+        )
+
+    def select_tag_columns(
+        self: cp.Stream,
+        tag_columns: str | Collection[str],
+        strict: bool = True,
+        label: str | None = None,
+    ) -> cp.Stream:
+        """
+        Select the specified tag columns from the stream. A ValueError is raised
+        if one or more specified tag columns do not exist in the stream unless strict = False.
+        """
+        from orcapod.core.operators import SelectTagColumns
+
+        return SelectTagColumns(tag_columns, strict=strict)(self, label=label)
+
+    def select_packet_columns(
+        self: cp.Stream,
+        packet_columns: str | Collection[str],
+        strict: bool = True,
+        label: str | None = None,
+    ) -> cp.Stream:
+        """
+        Select the specified packet columns from the stream. A ValueError is raised
+        if one or more specified packet columns do not exist in the stream unless strict = False.
+        """
+        from orcapod.core.operators import SelectPacketColumns
+
+        return SelectPacketColumns(packet_columns, strict=strict)(self, label=label)
+
     def drop_tag_columns(
-        self: cp.Stream, tag_columns: str | Collection[str], label: str | None = None
+        self: cp.Stream,
+        tag_columns: str | Collection[str],
+        strict: bool = True,
+        label: str | None = None,
     ) -> cp.Stream:
         from orcapod.core.operators import DropTagColumns
 
-        return DropTagColumns(tag_columns)(self, label=label)
+        return DropTagColumns(tag_columns, strict=strict)(self, label=label)
 
     def drop_packet_columns(
-        self: cp.Stream, packet_columns: str | Collection[str], label: str | None = None
+        self: cp.Stream,
+        packet_columns: str | Collection[str],
+        strict: bool = True,
+        label: str | None = None,
     ) -> cp.Stream:
         from orcapod.core.operators import DropPacketColumns
 
-        return DropPacketColumns(packet_columns)(self, label=label)
+        return DropPacketColumns(packet_columns, strict=strict)(self, label=label)
 
 
 class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
@@ -303,7 +354,7 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
         include_content_hash: bool | str = False,
         sort_by_tags: bool = True,
         execution_engine: cp.ExecutionEngine | None = None,
-    ) -> "pl.DataFrame | None":
+    ) -> "pl.DataFrame":
         """
         Convert the entire stream to a Polars DataFrame.
         """
@@ -326,7 +377,7 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
         include_content_hash: bool | str = False,
         sort_by_tags: bool = True,
         execution_engine: cp.ExecutionEngine | None = None,
-    ) -> "pl.DataFrame | None":
+    ) -> "pl.DataFrame":
         """
         Convert the entire stream to a Polars DataFrame.
         """
@@ -347,7 +398,7 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
         include_content_hash: bool | str = False,
         sort_by_tags: bool = True,
         execution_engine: cp.ExecutionEngine | None = None,
-    ) -> "pl.LazyFrame | None":
+    ) -> "pl.LazyFrame":
         """
         Convert the entire stream to a Polars LazyFrame.
         """
@@ -359,8 +410,6 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
             sort_by_tags=sort_by_tags,
             execution_engine=execution_engine,
         )
-        if df is None:
-            return None
         return df.lazy()
 
     def as_pandas_df(
@@ -372,7 +421,7 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
         sort_by_tags: bool = True,
         index_by_tags: bool = True,
         execution_engine: cp.ExecutionEngine | None = None,
-    ) -> "pd.DataFrame | None":
+    ) -> "pd.DataFrame":
         df = self.as_polars_df(
             include_data_context=include_data_context,
             include_source=include_source,
@@ -381,8 +430,6 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
             sort_by_tags=sort_by_tags,
             execution_engine=execution_engine,
         )
-        if df is None:
-            return None
         tag_keys, _ = self.keys()
         pdf = df.to_pandas()
         if index_by_tags:

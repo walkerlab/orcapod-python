@@ -481,7 +481,7 @@ class GraphRenderer:
         output_path: Optional[str] = None,
         raw_output: bool = False,
         figsize: tuple = (12, 8),
-        dpi: int = 200,
+        dpi: int = 150,
         style_rules: Optional[Dict] = None,
         **style_overrides,
     ) -> Optional[str]:
@@ -541,7 +541,7 @@ class GraphRenderer:
                 dot.render(tmp.name[:-4], format="png", cleanup=True)
                 img = mpimg.imread(tmp.name)
                 plt.figure(figsize=figsize, dpi=dpi)
-                plt.imshow(img, interpolation="none")
+                plt.imshow(img)
                 plt.axis("off")
                 # plt.title("Example Graph")
                 plt.tight_layout()

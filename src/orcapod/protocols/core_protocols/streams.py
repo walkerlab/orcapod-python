@@ -1,6 +1,6 @@
 from collections.abc import Collection, Iterator, Mapping
 from datetime import datetime
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from orcapod.protocols.core_protocols.base import ExecutionEngine, Labelable
 from orcapod.protocols.core_protocols.datagrams import Packet, Tag
@@ -291,7 +291,7 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         include_content_hash: bool | str = False,
         sort_by_tags: bool = True,
         execution_engine: ExecutionEngine | None = None,
-    ) -> "pl.DataFrame | None":
+    ) -> "pl.DataFrame":
         """
         Convert the entire stream to a Polars DataFrame.
         """
@@ -305,7 +305,7 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         include_content_hash: bool | str = False,
         sort_by_tags: bool = True,
         execution_engine: ExecutionEngine | None = None,
-    ) -> "pl.LazyFrame | None":
+    ) -> "pl.LazyFrame":
         """
         Load the entire stream to a Polars LazyFrame.
         """
@@ -319,7 +319,7 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         include_content_hash: bool | str = False,
         sort_by_tags: bool = True,
         execution_engine: ExecutionEngine | None = None,
-    ) -> "pl.DataFrame | None": ...
+    ) -> "pl.DataFrame": ...
 
     def as_pandas_df(
         self,
@@ -330,7 +330,7 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         sort_by_tags: bool = True,
         index_by_tags: bool = True,
         execution_engine: ExecutionEngine | None = None,
-    ) -> "pd.DataFrame | None": ...
+    ) -> "pd.DataFrame": ...
 
     def as_table(
         self,
@@ -428,22 +428,60 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
+    def polars_filter(
+        self,
+        *predicates: Any,
+        constraint_map: Mapping[str, Any] | None = None,
+        label: str | None = None,
+        **constraints: Any,
+    ) -> "Stream": ...
+
+    def select_tag_columns(
+        self,
+        tag_columns: str | Collection[str],
+        strict: bool = True,
+        label: str | None = None,
+    ) -> "Stream":
+        """
+        Select the specified tag columns from the stream. A ValueError is raised
+        if one or more specified tag columns do not exist in the stream unless strict = False.
+        """
+        ...
+
+    def select_packet_columns(
+        self,
+        packet_columns: str | Collection[str],
+        strict: bool = True,
+        label: str | None = None,
+    ) -> "Stream":
+        """
+        Select the specified tag columns from the stream. A ValueError is raised
+        if one or more specified tag columns do not exist in the stream unless strict = False.
+        """
+        ...
+
     def drop_tag_columns(
-        self, tag_columns: str | Collection[str], label: str | None = None
+        self,
+        tag_columns: str | Collection[str],
+        strict: bool = True,
+        label: str | None = None,
     ) -> "Stream":
         """
         Drop the specified tag columns from the stream. A ValueError is raised
-        if one or more specified tag columns do not exist in the stream.
+        if one or more specified tag columns do not exist in the stream unless strict = False.
         """
         ...
 
     # TODO: check to make sure source columns are also dropped
     def drop_packet_columns(
-        self, packet_columns: str | Collection[str], label: str | None = None
+        self,
+        packet_columns: str | Collection[str],
+        strict: bool = True,
+        label: str | None = None,
     ) -> "Stream":
         """
         Drop the specified packet columns from the stream. A ValueError is raised
-        if one or more specified packet columns do not exist in the stream.
+        if one or more specified packet columns do not exist in the stream unless strict = False.
         """
         ...
 

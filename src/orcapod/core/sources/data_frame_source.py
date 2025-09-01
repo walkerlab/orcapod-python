@@ -8,7 +8,7 @@ from orcapod.utils.lazy_module import LazyModule
 from orcapod.core.system_constants import constants
 from orcapod.core import polars_data_utils
 from orcapod.core.sources.source_registry import GLOBAL_SOURCE_REGISTRY, SourceRegistry
-
+import logging
 from orcapod.core.sources.base import SourceBase
 
 if TYPE_CHECKING:
@@ -18,6 +18,9 @@ if TYPE_CHECKING:
 else:
     pa = LazyModule("pyarrow")
     pl = LazyModule("polars")
+
+
+logger = logging.getLogger(__name__)
 
 
 class DataFrameSource(SourceBase):
@@ -41,6 +44,16 @@ class DataFrameSource(SourceBase):
         # Initialize polars dataframe
         # TODO: work with LazyFrame
         df = pl.DataFrame(data)
+
+        object_columns = [c for c in df.columns if df[c].dtype == pl.Object]
+        if len(object_columns) > 0:
+            logger.info(
+                f"Converting {len(object_columns)}object columns to Arrow format"
+            )
+            sub_table = self.data_context.type_converter.python_dicts_to_arrow_table(
+                df.select(object_columns).to_dicts()
+            )
+            df = df.with_columns([pl.from_arrow(c) for c in sub_table])
 
         if isinstance(tag_columns, str):
             tag_columns = [tag_columns]

@@ -18,6 +18,155 @@ else:
 logger = logging.getLogger(__name__)
 
 
+class SelectTagColumns(UnaryOperator):
+    """
+    Operator that selects specified columns from a stream.
+    """
+
+    def __init__(self, columns: str | Collection[str], strict: bool = True, **kwargs):
+        if isinstance(columns, str):
+            columns = [columns]
+        self.columns = columns
+        self.strict = strict
+        super().__init__(**kwargs)
+
+    def op_forward(self, stream: cp.Stream) -> cp.Stream:
+        tag_columns, packet_columns = stream.keys()
+        tags_to_drop = [c for c in tag_columns if c not in self.columns]
+        new_tag_columns = [c for c in tag_columns if c not in tags_to_drop]
+
+        if len(new_tag_columns) == len(tag_columns):
+            logger.info("All tag columns are selected. Returning stream unaltered.")
+            return stream
+
+        table = stream.as_table(
+            include_source=True, include_system_tags=True, sort_by_tags=False
+        )
+
+        modified_table = table.drop_columns(list(tags_to_drop))
+
+        return TableStream(
+            modified_table,
+            tag_columns=new_tag_columns,
+            source=self,
+            upstreams=(stream,),
+        )
+
+    def op_validate_inputs(self, stream: cp.Stream) -> None:
+        """
+        This method should be implemented by subclasses to validate the inputs to the operator.
+        It takes two streams as input and raises an error if the inputs are not valid.
+        """
+        # TODO: remove redundant logic
+        tag_columns, packet_columns = stream.keys()
+        columns_to_select = self.columns
+        missing_columns = set(columns_to_select) - set(tag_columns)
+        if missing_columns and self.strict:
+            raise InputValidationError(
+                f"Missing tag columns: {missing_columns}. Make sure all specified columns to select are present or use strict=False to ignore missing columns"
+            )
+
+    def op_output_types(
+        self, stream: cp.Stream, include_system_tags: bool = False
+    ) -> tuple[PythonSchema, PythonSchema]:
+        tag_schema, packet_schema = stream.types(
+            include_system_tags=include_system_tags
+        )
+        tag_columns, _ = stream.keys()
+        tags_to_drop = [tc for tc in tag_columns if tc not in self.columns]
+
+        # this ensures all system tag columns are preserved
+        new_tag_schema = {k: v for k, v in tag_schema.items() if k not in tags_to_drop}
+
+        return new_tag_schema, packet_schema
+
+    def op_identity_structure(self, stream: cp.Stream | None = None) -> Any:
+        return (
+            self.__class__.__name__,
+            self.columns,
+            self.strict,
+        ) + ((stream,) if stream is not None else ())
+
+
+class SelectPacketColumns(UnaryOperator):
+    """
+    Operator that selects specified columns from a stream.
+    """
+
+    def __init__(self, columns: str | Collection[str], strict: bool = True, **kwargs):
+        if isinstance(columns, str):
+            columns = [columns]
+        self.columns = columns
+        self.strict = strict
+        super().__init__(**kwargs)
+
+    def op_forward(self, stream: cp.Stream) -> cp.Stream:
+        tag_columns, packet_columns = stream.keys()
+        packet_columns_to_drop = [c for c in packet_columns if c not in self.columns]
+        new_packet_columns = [
+            c for c in packet_columns if c not in packet_columns_to_drop
+        ]
+
+        if len(new_packet_columns) == len(packet_columns):
+            logger.info("All packet columns are selected. Returning stream unaltered.")
+            return stream
+
+        table = stream.as_table(
+            include_source=True, include_system_tags=True, sort_by_tags=False
+        )
+        # make sure to drop associated source fields
+        associated_source_fields = [
+            f"{constants.SOURCE_PREFIX}{c}" for c in packet_columns_to_drop
+        ]
+        packet_columns_to_drop.extend(associated_source_fields)
+
+        modified_table = table.drop_columns(packet_columns_to_drop)
+
+        return TableStream(
+            modified_table,
+            tag_columns=tag_columns,
+            source=self,
+            upstreams=(stream,),
+        )
+
+    def op_validate_inputs(self, stream: cp.Stream) -> None:
+        """
+        This method should be implemented by subclasses to validate the inputs to the operator.
+        It takes two streams as input and raises an error if the inputs are not valid.
+        """
+        # TODO: remove redundant logic
+        tag_columns, packet_columns = stream.keys()
+        columns_to_select = self.columns
+        missing_columns = set(columns_to_select) - set(packet_columns)
+        if missing_columns and self.strict:
+            raise InputValidationError(
+                f"Missing packet columns: {missing_columns}. Make sure all specified columns to select are present or use strict=False to ignore missing columns"
+            )
+
+    def op_output_types(
+        self, stream: cp.Stream, include_system_tags: bool = False
+    ) -> tuple[PythonSchema, PythonSchema]:
+        tag_schema, packet_schema = stream.types(
+            include_system_tags=include_system_tags
+        )
+        _, packet_columns = stream.keys()
+        packets_to_drop = [pc for pc in packet_columns if pc not in self.columns]
+
+        # this ensures all system tag columns are preserved
+        new_packet_schema = {
+            k: v for k, v in packet_schema.items() if k not in packets_to_drop
+        }
+
+        return tag_schema, new_packet_schema
+
+    def op_identity_structure(self, stream: cp.Stream | None = None) -> Any:
+        return (
+            self.__class__.__name__,
+            self.columns,
+            self.strict,
+        ) + ((stream,) if stream is not None else ())
+
+
 class DropTagColumns(UnaryOperator):
     """
     Operator that drops specified columns from a stream.
@@ -64,11 +213,10 @@ class DropTagColumns(UnaryOperator):
         tag_columns, packet_columns = stream.keys()
         columns_to_drop = self.columns
         missing_columns = set(columns_to_drop) - set(tag_columns)
-        if missing_columns:
-            if self.strict:
-                raise InputValidationError(
-                    f"Missing tag columns: {missing_columns}. Make sure all specified columns to drop are present or use strict=False to ignore missing columns"
-                )
+        if missing_columns and self.strict:
+            raise InputValidationError(
+                f"Missing tag columns: {missing_columns}. Make sure all specified columns to drop are present or use strict=False to ignore missing columns"
+            )
 
     def op_output_types(
         self, stream: cp.Stream, include_system_tags: bool = False
@@ -105,7 +253,7 @@ class DropPacketColumns(UnaryOperator):
 
     def op_forward(self, stream: cp.Stream) -> cp.Stream:
         tag_columns, packet_columns = stream.keys()
-        columns_to_drop = self.columns
+        columns_to_drop = list(self.columns)
         if not self.strict:
             columns_to_drop = [c for c in columns_to_drop if c in packet_columns]
 
@@ -113,11 +261,17 @@ class DropPacketColumns(UnaryOperator):
             logger.info("No packet columns to drop. Returning stream unaltered.")
             return stream
 
+        # make sure all associated source columns are dropped too
+        associated_source_columns = [
+            f"{constants.SOURCE_PREFIX}{c}" for c in columns_to_drop
+        ]
+        columns_to_drop.extend(associated_source_columns)
+
         table = stream.as_table(
             include_source=True, include_system_tags=True, sort_by_tags=False
         )
 
-        modified_table = table.drop_columns(list(columns_to_drop))
+        modified_table = table.drop_columns(columns_to_drop)
 
         return TableStream(
             modified_table,
