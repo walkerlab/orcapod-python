@@ -51,7 +51,7 @@ class ArrowDatabase(Protocol):
     def get_records_with_column_value(
         self,
         record_path: tuple[str, ...],
-        column_name_value: Collection[tuple[str, Any]] | Mapping[str, Any],
+        column_values: Collection[tuple[str, Any]] | Mapping[str, Any],
         record_id_column: str | None = None,
         flush: bool = False,
     ) -> "pa.Table | None": ...

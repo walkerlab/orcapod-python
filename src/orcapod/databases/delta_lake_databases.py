@@ -586,7 +586,7 @@ class DeltaTableDatabase:
         column_values: Collection[tuple[str, Any]] | Mapping[str, Any],
         record_id_column: str | None = None,
         flush: bool = False,
-    ):
+    ) -> "pa.Table | None":
         if flush:
             self.flush_batch(record_path)
         # check if record_id is found in pending batches
