@@ -64,7 +64,3 @@ dev = [
     "sphinx>=8.2.3",
     "tqdm>=4.67.1",
 ]
-
-
-[tool.uv.sources]
-selection-pipeline = { git = "https://github.com/enigma-brain/selection_pipeline" } #, rev = "6218290" }
