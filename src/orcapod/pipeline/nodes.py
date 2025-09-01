@@ -1,6 +1,6 @@
 from abc import abstractmethod
 from orcapod.core.kernels import KernelStream, WrappedKernel
-from orcapod.core.sources import SourceBase
+from orcapod.core.sources.base import SourceBase, InvocationBase
 from orcapod.core.pods import CachedPod
 from orcapod.protocols import core_protocols as cp, database_protocols as dbp
 from orcapod.types import PythonSchema
@@ -21,7 +21,7 @@ else:
 
 
 class NodeBase(
-    SourceBase,
+    InvocationBase,
 ):
     """
     Mixin class for pipeline nodes
@@ -36,21 +36,32 @@ class NodeBase(
     ):
         super().__init__(**kwargs)
         self._cached_stream: KernelStream | None = None
-        self.input_streams = tuple(input_streams)
-        self.pipeline_path_prefix = pipeline_path_prefix
+        self._input_streams = tuple(input_streams)
+        self._pipeline_path_prefix = pipeline_path_prefix
         # compute invocation hash - note that empty () is passed into identity_structure to signify
         # identity structure of invocation with no input streams
         self.pipeline_node_hash = self.data_context.object_hasher.hash_object(
             self.identity_structure(())
         ).to_string()
         tag_types, packet_types = self.types(include_system_tags=True)
+
         self.tag_schema_hash = self.data_context.object_hasher.hash_object(
             tag_types
         ).to_string()
+
         self.packet_schema_hash = self.data_context.object_hasher.hash_object(
             packet_types
         ).to_string()
+
         self.pipeline_database = pipeline_database
+
+    @property
+    def upstreams(self) -> tuple[cp.Stream, ...]:
+        return self._input_streams
+
+    def track_invocation(self, *streams: cp.Stream, label: str | None = None) -> None:
+        # Node invocation should not be tracked
+        return None
 
     @property
     def contained_kernel(self) -> cp.Kernel:
@@ -71,33 +82,34 @@ class NodeBase(
         """
         ...
 
-    def forward(self, *streams: cp.Stream) -> cp.Stream:
+    def validate_inputs(self, *streams: cp.Stream) -> None:
+        """Sources take no input streams."""
         if len(streams) > 0:
             raise NotImplementedError(
                 "At this moment, Node does not yet support handling additional input streams."
             )
-        # TODO: re-evaluate the use here
-        # super().validate_inputs(*self.input_streams)
-        return super().forward(*self.input_streams)  # type: ignore[return-value]
 
-    def source_output_types(
-        self, include_system_tags: bool = False
+    def forward(self, *streams: cp.Stream) -> cp.Stream:
+        # TODO: re-evaluate the use here -- consider semi joining with input streams
+        # super().validate_inputs(*self.input_streams)
+        return super().forward(*self.upstreams)  # type: ignore[return-value]
+
+    def kernel_output_types(
+        self, *streams: cp.Stream, include_system_tags: bool = False
     ) -> tuple[PythonSchema, PythonSchema]:
         """
         Return the output types of the node.
         This is used to determine the types of the output streams.
         """
         return self.contained_kernel.output_types(
-            *self.input_streams, include_system_tags=include_system_tags
+            *self.upstreams, include_system_tags=include_system_tags
         )
 
-    def source_identity_structure(self) -> Any:
-        """
-        Return the identity structure of the node.
-        This is used to compute the invocation hash.
-        """
+    def kernel_identity_structure(
+        self, streams: Collection[cp.Stream] | None = None
+    ) -> Any:
         # construct identity structure from the node's information and the
-        return self.contained_kernel.identity_structure(self.input_streams)
+        return self.contained_kernel.identity_structure(self.upstreams)
 
     def get_all_records(
         self, include_system_columns: bool = False
@@ -171,12 +183,12 @@ class KernelNode(NodeBase, WrappedKernel):
         This is used to store the run-associated tag info.
         """
         return (
-            self.pipeline_path_prefix  # pipeline ID
+            self._pipeline_path_prefix  # pipeline ID
             + self.reference  # node ID
             + (
-                self.pipeline_node_hash,  # pipeline node ID
-                self.packet_schema_hash,  # packet schema ID
-                self.tag_schema_hash,  # tag schema ID
+                f"node:{self.pipeline_node_hash}",  # pipeline node ID
+                f"packet:{self.packet_schema_hash}",  # packet schema ID
+                f"tag:{self.tag_schema_hash}",  # tag schema ID
             )
         )
 
@@ -232,11 +244,11 @@ class PodNode(NodeBase, CachedPod):
         This is used to store the run-associated tag info.
         """
         return (
-            self.pipeline_path_prefix  # pipeline ID
+            self._pipeline_path_prefix  # pipeline ID
             + self.reference  # node ID
             + (
-                self.pipeline_node_hash,  # pipeline node ID
-                self.tag_schema_hash,  # tag schema ID
+                f"node:{self.pipeline_node_hash}",  # pipeline node ID
+                f"tag:{self.tag_schema_hash}",  # tag schema ID
             )
         )
 

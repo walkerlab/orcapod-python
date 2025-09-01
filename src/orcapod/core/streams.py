@@ -92,9 +92,9 @@ class OperatorStreamBaseMixin:
         return MapPackets(name_map, drop_unmapped)(self, label=label)  # type: ignore
 
     def batch(
-        self,
+        self: cp.Stream,
         batch_size: int = 0,
-        drop_last: bool = False,
+        drop_partial_batch: bool = False,
         label: str | None = None,
     ) -> cp.Stream:
         """
@@ -103,13 +103,32 @@ class OperatorStreamBaseMixin:
         """
         from orcapod.core.operators import Batch
 
-        return Batch(batch_size=batch_size, drop_last=drop_last)(self, label=label)  # type: ignore
+        return Batch(batch_size=batch_size, drop_partial_batch=drop_partial_batch)(
+            self, label=label
+        )  # type: ignore
+
+    def drop_tag_columns(
+        self: cp.Stream, tag_columns: str | Collection[str], label: str | None = None
+    ) -> cp.Stream:
+        from orcapod.core.operators import DropTagColumns
+
+        return DropTagColumns(tag_columns)(self, label=label)
+
+    def drop_packet_columns(
+        self: cp.Stream, packet_columns: str | Collection[str], label: str | None = None
+    ) -> cp.Stream:
+        from orcapod.core.operators import DropPacketColumns
+
+        return DropPacketColumns(packet_columns)(self, label=label)
 
 
 class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase):
     """
     A stream that has a unique identity within the pipeline.
     """
+
+    def pop(self) -> cp.Stream:
+        return self
 
     def __init__(
         self,
@@ -1156,9 +1175,15 @@ class LazyPodResultStream(StreamBase):
             )
 
         if sort_by_tags:
-            output_table = output_table.sort_by(
-                [(column, "ascending") for column in self.keys()[0]]
+            # TODO: reimplement using polars natively
+            output_table = (
+                pl.DataFrame(output_table)
+                .sort(by=[(column, "ascending") for column in self.keys()[0]])
+                .to_arrow()
             )
+            # output_table = output_table.sort_by(
+            #     [(column, "ascending") for column in self.keys()[0]]
+            # )
         return output_table
 
 
@@ -1467,7 +1492,7 @@ class EfficientPodResultStream(StreamBase):
             if self._cached_content_hash_column is None:
                 content_hashes = []
                 for tag, packet in self.iter_packets(execution_engine=execution_engine):
-                    content_hashes.append(packet.content_hash())
+                    content_hashes.append(packet.content_hash().to_string())
                 self._cached_content_hash_column = pa.array(
                     content_hashes, type=pa.large_string()
                 )

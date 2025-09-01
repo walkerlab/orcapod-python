@@ -20,14 +20,14 @@ class Batch(UnaryOperator):
     Base class for all operators.
     """
 
-    def __init__(self, batch_size: int = 0, drop_last_batch: bool = False, **kwargs):
+    def __init__(self, batch_size: int = 0, drop_partial_batch: bool = False, **kwargs):
         if batch_size < 0:
             raise ValueError("Batch size must be non-negative.")
 
         super().__init__(**kwargs)
 
         self.batch_size = batch_size
-        self.drop_last_batch = drop_last_batch
+        self.drop_partial_batch = drop_partial_batch
 
     def check_unary_input(
         self,
@@ -77,7 +77,7 @@ class Batch(UnaryOperator):
                 next_batch = {}
                 i = 0
 
-        if i > 0 and not self.drop_last_batch:
+        if i > 0 and not self.drop_partial_batch:
             batched_data.append(next_batch)
 
         batched_table = pa.Table.from_pylist(batched_data)
@@ -99,7 +99,8 @@ class Batch(UnaryOperator):
 
     def op_identity_structure(self, stream: cp.Stream | None = None) -> Any:
         return (
-            (self.__class__.__name__, self.batch_size, self.drop_last_batch) + (stream,)
+            (self.__class__.__name__, self.batch_size, self.drop_partial_batch)
+            + (stream,)
             if stream is not None
             else ()
         )

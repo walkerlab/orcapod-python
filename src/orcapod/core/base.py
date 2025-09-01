@@ -1,12 +1,10 @@
-from abc import ABC
-from collections.abc import Collection
-from pathlib import Path
-from typing import Any, Mapping
-from uuid import UUID
-from orcapod.protocols import hashing_protocols as hp
-from orcapod import contexts
 import logging
+from abc import ABC
+from typing import Any
 
+from orcapod import DEFAULT_CONFIG, contexts
+from orcapod.config import Config
+from orcapod.protocols import hashing_protocols as hp
 
 logger = logging.getLogger(__name__)
 
@@ -54,12 +52,22 @@ class LablableBase:
         return None
 
 
-class ContextAwareBase(ABC):
+class ContextAwareConfigurableBase(ABC):
     def __init__(
-        self, data_context: str | contexts.DataContext | None = None, **kwargs
+        self,
+        data_context: str | contexts.DataContext | None = None,
+        orcapod_config: Config | None = None,
+        **kwargs,
     ):
         super().__init__(**kwargs)
+        if orcapod_config is None:
+            orcapod_config = DEFAULT_CONFIG
+        self._orcapod_config = orcapod_config
         self._data_context = contexts.resolve_context(data_context)
+
+    @property
+    def orcapod_config(self) -> Config:
+        return self._orcapod_config
 
     @property
     def data_context(self) -> contexts.DataContext:
@@ -71,7 +79,7 @@ class ContextAwareBase(ABC):
         return self._data_context.context_key
 
 
-class ContentIdentifiableBase(ContextAwareBase):
+class ContentIdentifiableBase(ContextAwareConfigurableBase):
     """
     Base class for content-identifiable objects.
     This class provides a way to define objects that can be uniquely identified

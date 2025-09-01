@@ -358,7 +358,8 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         ...
 
     def flow(
-        self, execution_engine: ExecutionEngine | None = None
+        self,
+        execution_engine: ExecutionEngine | None = None,
     ) -> Collection[tuple[Tag, Packet]]:
         """
         Return the entire stream as a collection of (tag, packet) pairs.
@@ -373,7 +374,7 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
-    def join(self, other_stream: "Stream") -> "Stream":
+    def join(self, other_stream: "Stream", label: str | None = None) -> "Stream":
         """
         Join this stream with another stream.
 
@@ -389,7 +390,7 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
-    def semi_join(self, other_stream: "Stream") -> "Stream":
+    def semi_join(self, other_stream: "Stream", label: str | None = None) -> "Stream":
         """
         Perform a semi-join with another stream.
 
@@ -406,7 +407,10 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         ...
 
     def map_tags(
-        self, name_map: Mapping[str, str], drop_unmapped: bool = True
+        self,
+        name_map: Mapping[str, str],
+        drop_unmapped: bool = True,
+        label: str | None = None,
     ) -> "Stream":
         """
         Map tag names in this stream to new names based on the provided mapping.
@@ -414,10 +418,56 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         ...
 
     def map_packets(
-        self, name_map: Mapping[str, str], drop_unmapped: bool = True
+        self,
+        name_map: Mapping[str, str],
+        drop_unmapped: bool = True,
+        label: str | None = None,
     ) -> "Stream":
         """
         Map packet names in this stream to new names based on the provided mapping.
+        """
+        ...
+
+    def drop_tag_columns(
+        self, tag_columns: str | Collection[str], label: str | None = None
+    ) -> "Stream":
+        """
+        Drop the specified tag columns from the stream. A ValueError is raised
+        if one or more specified tag columns do not exist in the stream.
+        """
+        ...
+
+    # TODO: check to make sure source columns are also dropped
+    def drop_packet_columns(
+        self, packet_columns: str | Collection[str], label: str | None = None
+    ) -> "Stream":
+        """
+        Drop the specified packet columns from the stream. A ValueError is raised
+        if one or more specified packet columns do not exist in the stream.
+        """
+        ...
+
+    def batch(
+        self,
+        batch_size: int = 0,
+        drop_partial_batch: bool = False,
+        label: str | None = None,
+    ) -> "Stream":
+        """
+        Batch the stream into groups of the specified size.
+
+        This operation groups (tag, packet) pairs into batches for more
+        efficient processing. Each batch is represented as a single (tag, packet)
+        pair where the tag is a list of tags and the packet is a list of packets.
+
+        Args:
+            batch_size: Number of (tag, packet) pairs per batch. If 0, all
+                        pairs are included in a single batch.
+            drop_partial_batch: If True, drop the last batch if it has fewer
+                             than batch_size pairs.
+
+        Returns:
+            Self: New stream containing batched (tag, packet) pairs.
         """
         ...
 

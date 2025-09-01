@@ -85,9 +85,9 @@ class Join(NonZeroInputOperator):
         table = stream.as_table(include_source=True, include_system_tags=True)
         # trick to get cartesian product
         table = table.add_column(0, COMMON_JOIN_KEY, pa.array([0] * len(table)))
-        N_CHAR = 12
         table = arrow_data_utils.append_to_system_tags(
-            table, stream.content_hash().to_hex(char_count=N_CHAR)
+            table,
+            stream.content_hash().to_hex(self.orcapod_config.system_tag_hash_n_char),
         )
 
         for next_stream in streams[1:]:
@@ -96,7 +96,10 @@ class Join(NonZeroInputOperator):
                 include_source=True, include_system_tags=True
             )
             next_table = arrow_data_utils.append_to_system_tags(
-                next_table, next_stream.content_hash().to_hex(char_count=N_CHAR)
+                next_table,
+                next_stream.content_hash().to_hex(
+                    char_count=self.orcapod_config.system_tag_hash_n_char
+                ),
             )
             # trick to ensure that there will always be at least one shared key
             # this ensure that no overlap in keys lead to full caretesian product
