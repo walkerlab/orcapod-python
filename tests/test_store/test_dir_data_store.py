@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_store/test_dir_data_store.py
 """Tests for DirDataStore."""
 
 import json
@@ -9,15 +8,15 @@ from pathlib import Path
 import pytest
 
 from orcapod.hashing.types import (
-    CompositeFileHasher,
-    FileHasher,
-    PacketHasher,
-    PathSetHasher,
+    LegacyCompositeFileHasher,
+    LegacyFileHasher,
+    LegacyPacketHasher,
+    LegacyPathSetHasher,
 )
-from orcapod.store.core import DirDataStore
+from orcapod.databases.legacy.dict_data_stores import DirDataStore
 
 
-class MockFileHasher(FileHasher):
+class MockFileHasher(LegacyFileHasher):
     """Mock FileHasher for testing."""
 
     def __init__(self, hash_value="mock_hash"):
@@ -29,19 +28,19 @@ class MockFileHasher(FileHasher):
         return f"{self.hash_value}_file"
 
 
-class MockPathSetHasher(PathSetHasher):
+class MockPathSetHasher(LegacyPathSetHasher):
     """Mock PathSetHasher for testing."""
 
     def __init__(self, hash_value="mock_hash"):
         self.hash_value = hash_value
         self.pathset_hash_calls = []
 
-    def hash_pathset(self, pathset):
+    def hash_pathset(self, pathset) -> str:
         self.pathset_hash_calls.append(pathset)
         return f"{self.hash_value}_pathset"
 
 
-class MockPacketHasher(PacketHasher):
+class MockPacketHasher(LegacyPacketHasher):
     """Mock PacketHasher for testing."""
 
     def __init__(self, hash_value="mock_hash"):
@@ -53,7 +52,7 @@ class MockPacketHasher(PacketHasher):
         return f"{self.hash_value}_packet"
 
 
-class MockCompositeHasher(CompositeFileHasher):
+class MockCompositeHasher(LegacyCompositeFileHasher):
     """Mock CompositeHasher that implements all three hash protocols."""
 
     def __init__(self, hash_value="mock_hash"):
@@ -62,15 +61,15 @@ class MockCompositeHasher(CompositeFileHasher):
         self.pathset_hash_calls = []
         self.packet_hash_calls = []
 
-    def hash_file(self, file_path):
+    def hash_file_content(self, file_path):
         self.file_hash_calls.append(file_path)
         return f"{self.hash_value}_file"
 
-    def hash_pathset(self, pathset):
+    def hash_pathset(self, pathset) -> str:
         self.pathset_hash_calls.append(pathset)
         return f"{self.hash_value}_pathset"
 
-    def hash_packet(self, packet):
+    def hash_packet(self, packet) -> str:
         self.packet_hash_calls.append(packet)
         return f"{self.hash_value}_packet"
 
@@ -87,7 +86,7 @@ def test_dir_data_store_init_default_hasher(temp_dir):
     assert store_dir.is_dir()
 
     # Verify the default PacketHasher is used
-    assert isinstance(store.packet_hasher, PacketHasher)
+    assert isinstance(store.packet_hasher, LegacyPacketHasher)
 
     # Check default parameters
     assert store.copy_files is True
@@ -462,7 +461,7 @@ def test_dir_data_store_with_default_packet_hasher(temp_dir, sample_files):
     store = DirDataStore(store_dir=store_dir)
 
     # Verify that default PacketHasher was created
-    assert isinstance(store.packet_hasher, PacketHasher)
+    assert isinstance(store.packet_hasher, LegacyPacketHasher)
 
     # Test memoization and retrieval
     packet = {"input_file": sample_files["input"]["file1"]}
@@ -500,7 +499,7 @@ def test_dir_data_store_legacy_mode_compatibility(temp_dir, sample_files):
     output_packet = {"output_file": sample_files["output"]["output1"]}
 
     # Get the hash values directly for comparison
-    from orcapod.hashing import hash_packet
+    from orcapod.hashing.legacy_core import hash_packet
 
     legacy_hash = hash_packet(packet, algorithm="sha256")
     assert store_default.packet_hasher is not None, (
@@ -611,7 +610,7 @@ def test_dir_data_store_hash_equivalence(temp_dir, sample_files):
     output_packet = {"output_file": sample_files["output"]["output1"]}
 
     # First compute hashes directly
-    from orcapod.hashing import hash_packet
+    from orcapod.hashing.legacy_core import hash_packet
     from orcapod.hashing.defaults import get_default_composite_file_hasher
 
     legacy_hash = hash_packet(packet, algorithm="sha256")

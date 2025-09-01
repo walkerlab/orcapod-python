@@ -3,7 +3,7 @@ from collections import OrderedDict, namedtuple
 from pathlib import Path
 from typing import Any
 
-from orcapod.hashing.core import HashableMixin, hash_to_hex, process_structure
+from orcapod.hashing.legacy_core import HashableMixin, hash_to_hex, process_structure
 
 
 # Define a simple HashableMixin class for testing

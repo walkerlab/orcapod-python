@@ -1,18 +1,16 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_store/test_transfer_data_store.py
 """Tests for TransferDataStore."""
 
-import json
 from pathlib import Path
 
 import pytest
 
-from orcapod.hashing.types import PacketHasher
-from orcapod.store.core import DirDataStore, NoOpDataStore
-from orcapod.store.transfer import TransferDataStore
+from orcapod.hashing.types import LegacyPacketHasher
+from orcapod.databases.legacy.dict_data_stores import DirDataStore, NoOpDataStore
+from orcapod.databases.legacy.dict_transfer_data_store import TransferDataStore
 
 
-class MockPacketHasher(PacketHasher):
+class MockPacketHasher(LegacyPacketHasher):
     """Mock PacketHasher for testing."""
 
     def __init__(self, hash_value="mock_hash"):

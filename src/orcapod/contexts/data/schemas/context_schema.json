@@ -1,0 +1,210 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "$id": "https://orcapod.dev/schemas/data-context.json",
+    "$comment": "Located at: src/orcapod/contexts/data/schemas/context_schema.json",
+    "title": "OrcaPod Data Context Specification",
+    "description": "Schema for OrcaPod data context JSON files",
+    "type": "object",
+    "required": [
+        "context_key",
+        "version",
+        "semantic_registry",
+        "type_converter",
+        "arrow_hasher",
+        "object_hasher"
+    ],
+    "properties": {
+        "context_key": {
+            "type": "string",
+            "pattern": "^[a-zA-Z0-9_-]+:v[0-9]+\\.[0-9]+:[a-zA-Z0-9_-]+$",
+            "description": "Unique identifier for this context (e.g., 'std:v0.1:default')",
+            "examples": [
+                "std:v0.1:default",
+                "std:v0.2:fast",
+                "custom:v1.0:production"
+            ]
+        },
+        "version": {
+            "type": "string",
+            "pattern": "^v[0-9]+\\.[0-9]+$",
+            "description": "Version identifier matching the filename",
+            "examples": [
+                "v0.1",
+                "v1.0",
+                "v2.3"
+            ]
+        },
+        "description": {
+            "type": "string",
+            "description": "Human-readable description of this context version",
+            "examples": [
+                "Initial stable release with basic Path semantic type support",
+                "Enhanced version with timestamp support and improved hashing"
+            ]
+        },
+        "semantic_registry": {
+            "$ref": "#/$defs/objectspec",
+            "description": "ObjectSpec for the semantic registry"
+        },
+        "type_converter": {
+            "$ref": "#/$defs/objectspec",
+            "description": "ObjectSpec for the python-arrow type converter"
+        },
+        "arrow_hasher": {
+            "$ref": "#/$defs/objectspec",
+            "description": "ObjectSpec for the Arrow hasher component"
+        },
+        "object_hasher": {
+            "$ref": "#/$defs/objectspec",
+            "description": "ObjectSpec for the object hasher component"
+        },
+        "metadata": {
+            "type": "object",
+            "description": "Optional metadata about this context",
+            "properties": {
+                "created_date": {
+                    "type": "string",
+                    "format": "date",
+                    "description": "Date this context was created"
+                },
+                "author": {
+                    "type": "string",
+                    "description": "Author of this context specification"
+                },
+                "changelog": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "description": "List of changes in this version"
+                },
+                "compatibility": {
+                    "type": "object",
+                    "properties": {
+                        "backwards_compatible_with": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "List of versions this context can read data from"
+                        },
+                        "breaking_changes": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "List of breaking changes from previous versions"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "additionalProperties": false,
+    "$defs": {
+        "objectspec": {
+            "description": "ObjectSpec pattern used throughout OrcaPod",
+            "oneOf": [
+                {
+                    "type": "object",
+                    "required": [
+                        "_class"
+                    ],
+                    "properties": {
+                        "_class": {
+                            "type": "string",
+                            "pattern": "^[a-zA-Z_][a-zA-Z0-9_.]*\\.[a-zA-Z_][a-zA-Z0-9_]*$",
+                            "description": "Fully qualified class name",
+                            "examples": [
+                                "orcapod.types.semantic_types.SemanticTypeRegistry",
+                                "orcapod.hashing.arrow_hashers.SemanticArrowHasher"
+                            ]
+                        },
+                        "_config": {
+                            "type": "object",
+                            "description": "Configuration parameters for the class",
+                            "additionalProperties": true
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                {
+                    "type": "array",
+                    "description": "Array of object specifications",
+                    "items": {
+                        "$ref": "#/$defs/objectspec"
+                    }
+                },
+                {
+                    "type": [
+                        "string",
+                        "number",
+                        "boolean",
+                        "null"
+                    ],
+                    "description": "Primitive values"
+                }
+            ]
+        }
+    },
+    "examples": [
+        {
+            "context_key": "std:v0.1:default",
+            "version": "v0.1",
+            "description": "Initial stable release with basic Path semantic type support",
+            "semantic_type_registry": {
+                "_class": "orcapod.types.semantic_types.SemanticTypeRegistry",
+                "_config": {
+                    "converters": [
+                        {
+                            "_class": "orcapod.types.semantic_types.PathStructConverter",
+                            "_config": {}
+                        }
+                    ]
+                }
+            },
+            "arrow_hasher": {
+                "_class": "orcapod.hashing.arrow_hashers.SemanticArrowHasher",
+                "_config": {
+                    "hasher_id": "arrow_v0.1",
+                    "hash_algorithm": "sha256",
+                    "serialization_method": "logical",
+                    "semantic_type_hashers": {
+                        "path": {
+                            "_class": "orcapod.hashing.semantic_type_hashers.PathHasher",
+                            "_config": {
+                                "file_hasher": {
+                                    "_class": "orcapod.hashing.file_hashers.BasicFileHasher",
+                                    "_config": {
+                                        "algorithm": "sha256"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "object_hasher": {
+                "_class": "orcapod.hashing.object_hashers.BasicObjectHasher",
+                "_config": {
+                    "hasher_id": "object_v0.1",
+                    "function_info_extractor": {
+                        "_class": "orcapod.hashing.function_info_extractors.FunctionSignatureExtractor",
+                        "_config": {
+                            "include_module": true,
+                            "include_defaults": true
+                        }
+                    }
+                }
+            },
+            "metadata": {
+                "created_date": "2025-08-01",
+                "author": "OrcaPod Team",
+                "changelog": [
+                    "Initial release with semantic type registry",
+                    "Basic Arrow and object hashing capabilities"
+                ]
+            }
+        }
+    ]
+}

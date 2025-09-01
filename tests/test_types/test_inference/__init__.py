@@ -1,1 +1,1 @@
-# Test package for orcabridge types inference module
+# Test package for orcapod types inference module

@@ -5,9 +5,9 @@ import tempfile
 from pathlib import Path
 
 from orcapod.hashing.file_hashers import (
-    BasicFileHasher,
-    CachedFileHasher,
-    PathLikeHasherFactory,
+    LegacyDefaultFileHasher,
+    LegacyCachedFileHasher,
+    LegacyPathLikeHasherFactory,
 )
 from orcapod.hashing.string_cachers import FileCacher, InMemoryCacher
 
@@ -17,11 +17,11 @@ class TestPathLikeHasherFactoryCreateFileHasher:
 
     def test_create_file_hasher_without_cacher(self):
         """Test creating a file hasher without string cacher (returns BasicFileHasher)."""
-        hasher = PathLikeHasherFactory.create_file_hasher()
+        hasher = LegacyPathLikeHasherFactory.create_legacy_file_hasher()
 
-        # Should return BasicFileHasher
-        assert isinstance(hasher, BasicFileHasher)
-        assert not isinstance(hasher, CachedFileHasher)
+        # Should return LegacyDefaultFileHasher
+        assert isinstance(hasher, LegacyDefaultFileHasher)
+        assert not isinstance(hasher, LegacyCachedFileHasher)
 
         # Check default parameters
         assert hasher.algorithm == "sha256"
@@ -30,60 +30,67 @@ class TestPathLikeHasherFactoryCreateFileHasher:
     def test_create_file_hasher_with_cacher(self):
         """Test creating a file hasher with string cacher (returns CachedFileHasher)."""
         cacher = InMemoryCacher()
-        hasher = PathLikeHasherFactory.create_file_hasher(string_cacher=cacher)
+        hasher = LegacyPathLikeHasherFactory.create_legacy_file_hasher(
+            string_cacher=cacher
+        )
 
-        # Should return CachedFileHasher
-        assert isinstance(hasher, CachedFileHasher)
+        # Should return LegacyCachedFileHasher
+        assert isinstance(hasher, LegacyCachedFileHasher)
         assert hasher.string_cacher is cacher
 
-        # The underlying file hasher should be BasicFileHasher with defaults
-        assert isinstance(hasher.file_hasher, BasicFileHasher)
+        # The underlying file hasher should be LegacyDefaultFileHasher with defaults
+        assert isinstance(hasher.file_hasher, LegacyDefaultFileHasher)
         assert hasher.file_hasher.algorithm == "sha256"
         assert hasher.file_hasher.buffer_size == 65536
 
     def test_create_file_hasher_custom_algorithm(self):
         """Test creating file hasher with custom algorithm."""
         # Without cacher
-        hasher = PathLikeHasherFactory.create_file_hasher(algorithm="md5")
-        assert isinstance(hasher, BasicFileHasher)
+        hasher = LegacyPathLikeHasherFactory.create_legacy_file_hasher(algorithm="md5")
+        assert isinstance(hasher, LegacyDefaultFileHasher)
         assert hasher.algorithm == "md5"
         assert hasher.buffer_size == 65536
 
         # With cacher
         cacher = InMemoryCacher()
-        hasher = PathLikeHasherFactory.create_file_hasher(
+        hasher = LegacyPathLikeHasherFactory.create_legacy_file_hasher(
             string_cacher=cacher, algorithm="sha512"
         )
-        assert isinstance(hasher, CachedFileHasher)
+        assert isinstance(hasher, LegacyCachedFileHasher)
+        assert isinstance(hasher.file_hasher, LegacyDefaultFileHasher)
         assert hasher.file_hasher.algorithm == "sha512"
         assert hasher.file_hasher.buffer_size == 65536
 
     def test_create_file_hasher_custom_buffer_size(self):
         """Test creating file hasher with custom buffer size."""
         # Without cacher
-        hasher = PathLikeHasherFactory.create_file_hasher(buffer_size=32768)
-        assert isinstance(hasher, BasicFileHasher)
+        hasher = LegacyPathLikeHasherFactory.create_legacy_file_hasher(
+            buffer_size=32768
+        )
+        assert isinstance(hasher, LegacyDefaultFileHasher)
         assert hasher.algorithm == "sha256"
         assert hasher.buffer_size == 32768
 
         # With cacher
         cacher = InMemoryCacher()
-        hasher = PathLikeHasherFactory.create_file_hasher(
+        hasher = LegacyPathLikeHasherFactory.create_legacy_file_hasher(
             string_cacher=cacher, buffer_size=8192
         )
-        assert isinstance(hasher, CachedFileHasher)
+        assert isinstance(hasher, LegacyCachedFileHasher)
+        assert isinstance(hasher.file_hasher, LegacyDefaultFileHasher)
         assert hasher.file_hasher.algorithm == "sha256"
         assert hasher.file_hasher.buffer_size == 8192
 
     def test_create_file_hasher_all_custom_parameters(self):
         """Test creating file hasher with all custom parameters."""
         cacher = InMemoryCacher(max_size=500)
-        hasher = PathLikeHasherFactory.create_file_hasher(
+        hasher = LegacyPathLikeHasherFactory.create_legacy_file_hasher(
             string_cacher=cacher, algorithm="blake2b", buffer_size=16384
         )
 
-        assert isinstance(hasher, CachedFileHasher)
+        assert isinstance(hasher, LegacyCachedFileHasher)
         assert hasher.string_cacher is cacher
+        assert isinstance(hasher.file_hasher, LegacyDefaultFileHasher)
         assert hasher.file_hasher.algorithm == "blake2b"
         assert hasher.file_hasher.buffer_size == 16384
 
@@ -91,17 +98,19 @@ class TestPathLikeHasherFactoryCreateFileHasher:
         """Test creating file hasher with different types of string cachers."""
         # InMemoryCacher
         memory_cacher = InMemoryCacher()
-        hasher1 = PathLikeHasherFactory.create_file_hasher(string_cacher=memory_cacher)
-        assert isinstance(hasher1, CachedFileHasher)
+        hasher1 = LegacyPathLikeHasherFactory.create_legacy_file_hasher(
+            string_cacher=memory_cacher
+        )
+        assert isinstance(hasher1, LegacyCachedFileHasher)
         assert hasher1.string_cacher is memory_cacher
 
         # FileCacher
         with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
             file_cacher = FileCacher(tmp_file.name)
-            hasher2 = PathLikeHasherFactory.create_file_hasher(
+            hasher2 = LegacyPathLikeHasherFactory.create_legacy_file_hasher(
                 string_cacher=file_cacher
             )
-            assert isinstance(hasher2, CachedFileHasher)
+            assert isinstance(hasher2, LegacyCachedFileHasher)
             assert hasher2.string_cacher is file_cacher
 
             # Clean up
@@ -109,7 +118,7 @@ class TestPathLikeHasherFactoryCreateFileHasher:
 
     def test_create_file_hasher_functional_without_cache(self):
         """Test that created file hasher actually works for hashing files."""
-        hasher = PathLikeHasherFactory.create_file_hasher(
+        hasher = LegacyPathLikeHasherFactory.create_legacy_file_hasher(
             algorithm="sha256", buffer_size=1024
         )
 
@@ -136,7 +145,7 @@ class TestPathLikeHasherFactoryCreateFileHasher:
     def test_create_file_hasher_functional_with_cache(self):
         """Test that created cached file hasher works and caches results."""
         cacher = InMemoryCacher()
-        hasher = PathLikeHasherFactory.create_file_hasher(
+        hasher = LegacyPathLikeHasherFactory.create_legacy_file_hasher(
             string_cacher=cacher, algorithm="sha256"
         )
 
@@ -164,44 +173,55 @@ class TestPathLikeHasherFactoryCreateFileHasher:
 
     def test_create_file_hasher_none_cacher_explicit(self):
         """Test explicitly passing None for string_cacher."""
-        hasher = PathLikeHasherFactory.create_file_hasher(
+        hasher = LegacyPathLikeHasherFactory.create_legacy_file_hasher(
             string_cacher=None, algorithm="sha1", buffer_size=4096
         )
 
-        assert isinstance(hasher, BasicFileHasher)
-        assert not isinstance(hasher, CachedFileHasher)
+        assert isinstance(hasher, LegacyDefaultFileHasher)
+        assert not isinstance(hasher, LegacyCachedFileHasher)
         assert hasher.algorithm == "sha1"
         assert hasher.buffer_size == 4096
 
     def test_create_file_hasher_parameter_edge_cases(self):
         """Test edge cases for parameters."""
         # Very small buffer size
-        hasher1 = PathLikeHasherFactory.create_file_hasher(buffer_size=1)
+        hasher1 = LegacyPathLikeHasherFactory.create_legacy_file_hasher(buffer_size=1)
+        assert isinstance(hasher1, LegacyDefaultFileHasher)
         assert hasher1.buffer_size == 1
 
         # Large buffer size
-        hasher2 = PathLikeHasherFactory.create_file_hasher(buffer_size=1024 * 1024)
+        hasher2 = LegacyPathLikeHasherFactory.create_legacy_file_hasher(
+            buffer_size=1024 * 1024
+        )
+        assert isinstance(hasher2, LegacyDefaultFileHasher)
         assert hasher2.buffer_size == 1024 * 1024
 
         # Different algorithms
         for algorithm in ["md5", "sha1", "sha224", "sha256", "sha384", "sha512"]:
-            hasher = PathLikeHasherFactory.create_file_hasher(algorithm=algorithm)
+            hasher = LegacyPathLikeHasherFactory.create_legacy_file_hasher(
+                algorithm=algorithm
+            )
+            assert isinstance(hasher, LegacyDefaultFileHasher)
             assert hasher.algorithm == algorithm
 
     def test_create_file_hasher_cache_independence(self):
         """Test that different cached hashers with same cacher are independent."""
         cacher = InMemoryCacher()
 
-        hasher1 = PathLikeHasherFactory.create_file_hasher(
+        hasher1 = LegacyPathLikeHasherFactory.create_legacy_file_hasher(
             string_cacher=cacher, algorithm="sha256"
         )
-        hasher2 = PathLikeHasherFactory.create_file_hasher(
+        hasher2 = LegacyPathLikeHasherFactory.create_legacy_file_hasher(
             string_cacher=cacher, algorithm="md5"
         )
 
         # Both should use the same cacher but be different instances
+        assert isinstance(hasher1, LegacyCachedFileHasher)
+        assert isinstance(hasher2, LegacyCachedFileHasher)
         assert hasher1.string_cacher is cacher
         assert hasher2.string_cacher is cacher
         assert hasher1 is not hasher2
         assert hasher1.file_hasher is not hasher2.file_hasher
+        assert isinstance(hasher1.file_hasher, LegacyDefaultFileHasher)
+        assert isinstance(hasher2.file_hasher, LegacyDefaultFileHasher)
         assert hasher1.file_hasher.algorithm != hasher2.file_hasher.algorithm

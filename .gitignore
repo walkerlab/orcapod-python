@@ -5,9 +5,22 @@ notebooks/**/*.parquet
 notebooks/**/*.pkl
 notebooks/**/*.db
 
+# Ignore npy and npz data files by default
+*.np[yz]
 
-# Ignore any notebook that starts with an underscore
+# Ignore common data types by default
+*.csv
+*.parquet
+*.xls
+*.xlsx
+*.txt
+
+# Ignore profiler output
+*.prof
+
+# Ignore any notebook that starts with an underscore or test
 notebooks/**/_*.ipynb
+notebooks/**/test*.ipynb
 
 # Ignore vscode settings
 .vscode/
@@ -198,3 +211,6 @@ cython_debug/
 dj_*_conf.json
 # directory excluded from source control e.g. trash, scratch work, etc.
 .untracked
+# pixi environments
+.pixi/*
+!.pixi/config.toml

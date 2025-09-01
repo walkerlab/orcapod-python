@@ -1,0 +1,58 @@
+{
+    "context_key": "std:v0.1:default",
+    "version": "v0.1",
+    "description": "Initial stable release with basic Path semantic type support",
+    "semantic_registry": {
+        "_class": "orcapod.semantic_types.semantic_registry.SemanticTypeRegistry",
+        "_config": {
+            "converters": {
+                "path": {
+                    "_class": "orcapod.semantic_types.semantic_struct_converters.PathStructConverter",
+                    "_config": {}
+                }
+            }
+        }
+    },
+    "arrow_hasher": {
+        "_class": "orcapod.hashing.arrow_hashers.SemanticArrowHasher",
+        "_config": {
+            "hasher_id": "arrow_v0.1",
+            "hash_algorithm": "sha256",
+            "chunk_size": 8192,
+            "serialization_method": "logical",
+            "semantic_registry": {
+                "_ref": "semantic_registry"
+            }
+        }
+    },
+    "type_converter": {
+        "_class": "orcapod.semantic_types.universal_converter.UniversalTypeConverter",
+        "_config": {
+            "semantic_registry": {
+                "_ref": "semantic_registry"
+            }
+        }
+    },
+    "object_hasher": {
+        "_class": "orcapod.hashing.object_hashers.BasicObjectHasher",
+        "_config": {
+            "hasher_id": "object_v0.1",
+            "function_info_extractor": {
+                "_class": "orcapod.hashing.function_info_extractors.FunctionSignatureExtractor",
+                "_config": {
+                    "include_module": true,
+                    "include_defaults": true
+                }
+            }
+        }
+    },
+    "metadata": {
+        "created_date": "2025-08-01",
+        "author": "OrcaPod Core Team",
+        "changelog": [
+            "Initial release with Path semantic type support",
+            "Basic SHA-256 hashing for files and objects",
+            "Arrow logical serialization method"
+        ]
+    }
+}

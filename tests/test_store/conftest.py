@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# filepath: /home/eywalker/workspace/orcabridge/tests/test_store/conftest.py
 """Common test fixtures for store tests."""
 
 import shutil
