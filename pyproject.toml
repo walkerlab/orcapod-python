@@ -43,8 +43,6 @@ where = ["src"]
 [tool.setuptools_scm]
 version_file = "src/orcapod/_version.py"
 
-[tool.uv.sources]
-selection-pipeline = { path = "../selection_pipeline", editable = true }
 
 [dependency-groups]
 dev = [
@@ -66,7 +64,4 @@ dev = [
     "ruff>=0.11.11",
     "sphinx>=8.2.3",
     "tqdm>=4.67.1",
-]
-selection = [
-    "selection-pipeline",
 ]
