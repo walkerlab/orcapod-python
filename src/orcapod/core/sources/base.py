@@ -148,23 +148,31 @@ class InvocationBase(TrackedKernelBase, StatefulStreamBase):
         """Delegate to the cached KernelStream."""
         return self().flow(execution_engine=execution_engine)
 
-    def run(self, execution_engine: cp.ExecutionEngine | None = None) -> None:
+    def run(
+        self,
+        *args: Any,
+        execution_engine: cp.ExecutionEngine | None = None,
+        **kwargs: Any,
+    ) -> None:
         """
         Run the source node, executing the contained source.
 
         This is a no-op for sources since they are not executed like pods.
         """
-        self().run(execution_engine=execution_engine)
+        self().run(*args, execution_engine=execution_engine, **kwargs)
 
     async def run_async(
-        self, execution_engine: cp.ExecutionEngine | None = None
+        self,
+        *args: Any,
+        execution_engine: cp.ExecutionEngine | None = None,
+        **kwargs: Any,
     ) -> None:
         """
         Run the source node asynchronously, executing the contained source.
 
         This is a no-op for sources since they are not executed like pods.
         """
-        await self().run_async(execution_engine=execution_engine)
+        await self().run_async(*args, execution_engine=execution_engine, **kwargs)
 
     # ==================== LiveStream Protocol (Delegation) ====================
 
@@ -360,23 +368,31 @@ class SourceBase(TrackedKernelBase, StatefulStreamBase):
         """Delegate to the cached KernelStream."""
         return self().flow(execution_engine=execution_engine)
 
-    def run(self, execution_engine: cp.ExecutionEngine | None = None) -> None:
+    def run(
+        self,
+        *args: Any,
+        execution_engine: cp.ExecutionEngine | None = None,
+        **kwargs: Any,
+    ) -> None:
         """
         Run the source node, executing the contained source.
 
         This is a no-op for sources since they are not executed like pods.
         """
-        self().run(execution_engine=execution_engine)
+        self().run(*args, execution_engine=execution_engine, **kwargs)
 
     async def run_async(
-        self, execution_engine: cp.ExecutionEngine | None = None
+        self,
+        *args: Any,
+        execution_engine: cp.ExecutionEngine | None = None,
+        **kwargs: Any,
     ) -> None:
         """
         Run the source node asynchronously, executing the contained source.
 
         This is a no-op for sources since they are not executed like pods.
         """
-        await self().run_async(execution_engine=execution_engine)
+        await self().run_async(*args, execution_engine=execution_engine, **kwargs)
 
     # ==================== LiveStream Protocol (Delegation) ====================
 

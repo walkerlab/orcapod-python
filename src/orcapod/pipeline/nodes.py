@@ -1,4 +1,5 @@
 from abc import abstractmethod
+from orcapod.core.datagrams import ArrowTag
 from orcapod.core.kernels import KernelStream, WrappedKernel
 from orcapod.core.sources.base import SourceBase, InvocationBase
 from orcapod.core.pods import CachedPod
@@ -9,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from orcapod.core.system_constants import constants
 from orcapod.utils import arrow_utils
 from collections.abc import Collection
+from orcapod.core.streams import PodNodeStream
 
 if TYPE_CHECKING:
     import pyarrow as pa
@@ -150,6 +152,7 @@ class KernelNode(NodeBase, WrappedKernel):
             pipeline_path_prefix=pipeline_path_prefix,
             **kwargs,
         )
+        self.skip_recording = True
 
     @property
     def contained_kernel(self) -> cp.Kernel:
@@ -164,17 +167,39 @@ class KernelNode(NodeBase, WrappedKernel):
     def forward(self, *streams: cp.Stream) -> cp.Stream:
         output_stream = super().forward(*streams)
 
-        self.record_pipeline_output(output_stream)
+        if not self.skip_recording:
+            self.record_pipeline_output(output_stream)
         return output_stream
 
     def record_pipeline_output(self, output_stream: cp.Stream) -> None:
         key_column_name = self.HASH_COLUMN_NAME
+        # FIXME: compute record id based on each record in its entirety
         output_table = output_stream.as_table(
             include_data_context=True,
             include_system_tags=True,
             include_source=True,
-            include_content_hash=key_column_name,
         )
+        # compute hash for output_table
+        # include system tags
+        columns_to_hash = (
+            output_stream.tag_keys(include_system_tags=True)
+            + output_stream.packet_keys()
+        )
+
+        arrow_hasher = self.data_context.arrow_hasher
+        record_hashes = []
+        table_to_hash = output_table.select(columns_to_hash)
+
+        for record_batch in table_to_hash.to_batches():
+            for i in range(len(record_batch)):
+                record_hashes.append(
+                    arrow_hasher.hash_table(record_batch.slice(i, 1)).to_hex()
+                )
+        # add the hash column
+        output_table = output_table.add_column(
+            0, key_column_name, pa.array(record_hashes, type=pa.large_string())
+        )
+
         self.pipeline_database.add_records(
             self.pipeline_path,
             output_table,
@@ -286,19 +311,19 @@ class PodNode(NodeBase, CachedPod):
             execution_engine=execution_engine,
         )
 
-        if output_packet is not None:
-            retrieved = (
-                output_packet.get_meta_value(self.DATA_RETRIEVED_FLAG) is not None
-            )
-            # add pipeline record if the output packet is not None
-            # TODO: verify cache lookup logic
-            self.add_pipeline_record(
-                tag,
-                packet,
-                record_id,
-                retrieved=retrieved,
-                skip_cache_lookup=skip_cache_lookup,
-            )
+        # if output_packet is not None:
+        #     retrieved = (
+        #         output_packet.get_meta_value(self.DATA_RETRIEVED_FLAG) is not None
+        #     )
+        #     # add pipeline record if the output packet is not None
+        #     # TODO: verify cache lookup logic
+        #     self.add_pipeline_record(
+        #         tag,
+        #         packet,
+        #         record_id,
+        #         retrieved=retrieved,
+        #         skip_cache_lookup=skip_cache_lookup,
+        #     )
         return tag, output_packet
 
     async def async_call(
@@ -400,6 +425,11 @@ class PodNode(NodeBase, CachedPod):
             combined_record,
             skip_duplicates=False,
         )
+
+    def forward(self, *streams: cp.Stream) -> cp.Stream:
+        # TODO: re-evaluate the use here -- consider semi joining with input streams
+        # super().validate_inputs(*self.input_streams)
+        return PodNodeStream(self, *self.upstreams)  # type: ignore[return-value]
 
     def get_all_records(
         self, include_system_columns: bool = False

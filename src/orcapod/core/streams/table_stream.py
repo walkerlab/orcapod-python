@@ -258,7 +258,7 @@ class TableStream(ImmutableStream):
         """
         # TODO: make it work with table batch stream
         if self._cached_elements is None:
-            self._cached_elements = []
+            cached_elements = []
             tag_present = len(self._all_tag_columns) > 0
             if tag_present:
                 tags = self._table.select(self._all_tag_columns)
@@ -269,6 +269,7 @@ class TableStream(ImmutableStream):
             # TODO: come back and clean up this logic
 
             packets = self._table.select(self._packet_columns)
+
             for tag_batch, packet_batch in zip(tag_batches, packets.to_batches()):
                 for i in range(len(packet_batch)):
                     if tag_present:
@@ -280,21 +281,25 @@ class TableStream(ImmutableStream):
                     else:
                         tag = cast(DictTag, tag_batch)
 
-                    self._cached_elements.append(
-                        (
-                            tag,
-                            ArrowPacket(
-                                packet_batch.slice(i, 1),
-                                source_info=self._source_info_table.slice(
-                                    i, 1
-                                ).to_pylist()[0],
-                                data_context=self.data_context,
-                            ),
-                        )
+                    packet = ArrowPacket(
+                        packet_batch.slice(i, 1),
+                        source_info=self._source_info_table.slice(i, 1).to_pylist()[0],
+                        data_context=self.data_context,
                     )
-        yield from self._cached_elements
 
-    def run(self, execution_engine: cp.ExecutionEngine | None = None) -> None:
+                    yield tag, packet
+
+                    cached_elements.append((tag, packet))
+            self._cached_elements = cached_elements
+        else:
+            yield from self._cached_elements
+
+    def run(
+        self,
+        *args: Any,
+        execution_engine: cp.ExecutionEngine | None = None,
+        **kwargs: Any,
+    ) -> None:
         """
         Runs the stream, which in this case is a no-op since the stream is immutable.
         This is typically used to trigger any upstream computation of the stream.
@@ -303,7 +308,10 @@ class TableStream(ImmutableStream):
         pass
 
     async def run_async(
-        self, execution_engine: cp.ExecutionEngine | None = None
+        self,
+        *args: Any,
+        execution_engine: cp.ExecutionEngine | None = None,
+        **kwargs: Any,
     ) -> None:
         """
         Runs the stream asynchronously, which in this case is a no-op since the stream is immutable.

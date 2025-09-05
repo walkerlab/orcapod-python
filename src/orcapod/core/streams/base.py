@@ -97,7 +97,7 @@ class OperatorStreamBaseMixin:
         )  # type: ignore
 
     def polars_filter(
-        self,
+        self: cp.Stream,
         *predicates: Any,
         constraint_map: Mapping[str, Any] | None = None,
         label: str | None = None,
@@ -326,13 +326,17 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
     @abstractmethod
     def run(
         self,
+        *args: Any,
         execution_engine: cp.ExecutionEngine | None = None,
+        **kwargs: Any,
     ) -> None: ...
 
     @abstractmethod
     async def run_async(
         self,
+        *args: Any,
         execution_engine: cp.ExecutionEngine | None = None,
+        **kwargs: Any,
     ) -> None: ...
 
     @abstractmethod
@@ -447,12 +451,44 @@ class StatefulStreamBase(OperatorStreamBaseMixin, LabeledContentIdentifiableBase
 
     def _repr_html_(self) -> str:
         df = self.as_polars_df()
-        if df is not None:
-            tag_map = {t: f"*{t}" for t in self.tag_keys()}
-            # TODO: construct repr html better
-            df = df.rename(tag_map)
-            return f"{self.__class__.__name__}[{self.label}]\n" + df._repr_html_()
-        return ""
+        tag_map = {t: f"*{t}" for t in self.tag_keys()}
+        # TODO: construct repr html better
+        df = df.rename(tag_map)
+        return f"{self.__class__.__name__}[{self.label}]\n" + df._repr_html_()
+
+    def view(
+        self,
+        include_data_context: bool = False,
+        include_source: bool = False,
+        include_system_tags: bool = False,
+        include_content_hash: bool | str = False,
+        sort_by_tags: bool = True,
+        execution_engine: cp.ExecutionEngine | None = None,
+    ) -> "StreamView":
+        df = self.as_polars_df(
+            include_data_context=include_data_context,
+            include_source=include_source,
+            include_system_tags=include_system_tags,
+            include_content_hash=include_content_hash,
+            sort_by_tags=sort_by_tags,
+            execution_engine=execution_engine,
+        )
+        tag_map = {t: f"*{t}" for t in self.tag_keys()}
+        # TODO: construct repr html better
+        df = df.rename(tag_map)
+        return StreamView(self, df)
+
+
+class StreamView:
+    def __init__(self, stream: StatefulStreamBase, view_df: "pl.DataFrame") -> None:
+        self._stream = stream
+        self._view_df = view_df
+
+    def _repr_html_(self) -> str:
+        return (
+            f"{self._stream.__class__.__name__}[{self._stream.label}]\n"
+            + self._view_df._repr_html_()
+        )
 
     # def identity_structure(self) -> Any:
     #     """

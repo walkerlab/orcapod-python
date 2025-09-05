@@ -4,6 +4,7 @@ from .table_stream import TableStream
 from .lazy_pod_stream import LazyPodResultStream
 from .cached_pod_stream import CachedPodStream
 from .wrapped_stream import WrappedStream
+from .pod_node_stream import PodNodeStream
 
 
 __all__ = [
@@ -13,4 +14,5 @@ __all__ = [
     "LazyPodResultStream",
     "CachedPodStream",
     "WrappedStream",
+    "PodNodeStream",
 ]

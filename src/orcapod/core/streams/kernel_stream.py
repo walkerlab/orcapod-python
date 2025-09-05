@@ -1,7 +1,7 @@
 import logging
 from collections.abc import Iterator
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from orcapod.protocols import core_protocols as cp
 from orcapod.types import PythonSchema
@@ -137,21 +137,31 @@ class KernelStream(StreamBase):
             return None
         return self._cached_stream.last_modified
 
-    def run(self, execution_engine: cp.ExecutionEngine | None = None) -> None:
-        self.refresh()
-        assert self._cached_stream is not None, (
-            "Stream has not been updated or is empty."
-        )
-        self._cached_stream.run(execution_engine=execution_engine)
-
-    async def run_async(
-        self, execution_engine: cp.ExecutionEngine | None = None
+    def run(
+        self,
+        *args: Any,
+        execution_engine: cp.ExecutionEngine | None = None,
+        **kwargs: Any,
     ) -> None:
         self.refresh()
         assert self._cached_stream is not None, (
             "Stream has not been updated or is empty."
         )
-        await self._cached_stream.run_async(execution_engine=execution_engine)
+        self._cached_stream.run(*args, execution_engine=execution_engine, **kwargs)
+
+    async def run_async(
+        self,
+        *args: Any,
+        execution_engine: cp.ExecutionEngine | None = None,
+        **kwargs: Any,
+    ) -> None:
+        self.refresh()
+        assert self._cached_stream is not None, (
+            "Stream has not been updated or is empty."
+        )
+        await self._cached_stream.run_async(
+            *args, execution_engine=execution_engine, **kwargs
+        )
 
     def as_table(
         self,

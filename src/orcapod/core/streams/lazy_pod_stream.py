@@ -1,7 +1,7 @@
 import logging
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from orcapod.core.system_constants import constants
 from orcapod.protocols import core_protocols as cp
@@ -37,9 +37,11 @@ class LazyPodResultStream(StreamBase):
         super().__init__(source=pod, upstreams=(prepared_stream,), **kwargs)
         self.pod = pod
         self.prepared_stream = prepared_stream
-        self._set_modified_time()  # set modified time to when we obtain the iterator
         # capture the immutable iterator from the prepared stream
         self._prepared_stream_iterator = prepared_stream.iter_packets()
+        self._set_modified_time()  # set modified time to AFTER we obtain the iterator
+        # note that the invocation of iter_packets on upstream likely triggeres the modified time
+        # to be updated on the usptream. Hence you want to set this stream's modified time after that.
 
         # Packet-level caching (from your PodStream)
         self._cached_output_packets: dict[int, tuple[cp.Tag, cp.Packet | None]] = {}
@@ -78,7 +80,10 @@ class LazyPodResultStream(StreamBase):
                     yield tag, packet
 
     async def run_async(
-        self, execution_engine: cp.ExecutionEngine | None = None
+        self,
+        *args: Any,
+        execution_engine: cp.ExecutionEngine | None = None,
+        **kwargs: Any,
     ) -> None:
         if self._prepared_stream_iterator is not None:
             pending_call_lut = {}
@@ -101,7 +106,9 @@ class LazyPodResultStream(StreamBase):
 
     def run(
         self,
+        *args: Any,
         execution_engine: cp.ExecutionEngine | None = None,
+        **kwargs: Any
     ) -> None:
         # Fallback to synchronous run
         self.flow(execution_engine=execution_engine)
@@ -153,9 +160,6 @@ class LazyPodResultStream(StreamBase):
                 # FIXME: using in the pinch conversion to str from path
                 # replace with an appropriate semantic converter-based approach!
                 dict_patcket = packet.as_dict(include_context=True, include_source=True)
-                for k, v in dict_patcket.items():
-                    if isinstance(v, Path):
-                        dict_patcket[k] = str(v)
                 all_packets.append(dict_patcket)
 
             # TODO: re-verify the implemetation of this conversion

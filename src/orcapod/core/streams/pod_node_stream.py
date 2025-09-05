@@ -1,16 +1,14 @@
 import logging
 from collections.abc import Iterator
-from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from orcapod.core.system_constants import constants
-from orcapod.protocols import core_protocols as cp
+from orcapod.protocols import core_protocols as cp, pipeline_protocols as pp
 from orcapod.types import PythonSchema
 from orcapod.utils import arrow_utils
 from orcapod.utils.lazy_module import LazyModule
 from orcapod.core.streams.base import StreamBase
 from orcapod.core.streams.table_stream import TableStream
-from orcapod.protocols.pipeline_protocols import PodNode
 
 
 if TYPE_CHECKING:
@@ -32,12 +30,11 @@ logger = logging.getLogger(__name__)
 
 class PodNodeStream(StreamBase):
     """
-    A fixed stream that lazily processes packets from a prepared input stream.
-    This is what Pod.process() returns - it's static/fixed but efficient.
+    A fixed stream that is both cached pod and pipeline storage aware
     """
 
     # TODO: define interface for storage or pod storage
-    def __init__(self, pod_node: PodNode, input_stream: cp.Stream, **kwargs):
+    def __init__(self, pod_node: pp.PodNode, input_stream: cp.Stream, **kwargs):
         super().__init__(source=pod_node, upstreams=(input_stream,), **kwargs)
         self.pod_node = pod_node
         self.input_stream = input_stream
@@ -67,7 +64,7 @@ class PodNodeStream(StreamBase):
                 include_source=True,
                 include_system_tags=True,
             )
-            existing_entries = self.pod.get_all_cached_outputs(
+            existing_entries = self.pod_node.get_all_cached_outputs(
                 include_system_columns=True
             )
             if existing_entries is None or existing_entries.num_rows == 0:
@@ -112,7 +109,7 @@ class PodNodeStream(StreamBase):
             if missing is not None and missing.num_rows > 0:
                 for tag, packet in TableStream(missing, tag_columns=tag_keys):
                     # Since these packets are known to be missing, skip the cache lookup
-                    pending = self.pod.async_call(
+                    pending = self.pod_node.async_call(
                         tag,
                         packet,
                         skip_cache_lookup=True,
@@ -130,18 +127,27 @@ class PodNodeStream(StreamBase):
 
     def run(
         self,
+        *args: Any,
         execution_engine: cp.ExecutionEngine | None = None,
+        **kwargs: Any,
     ) -> None:
         cached_results = []
 
         # identify all entries in the input stream for which we still have not computed packets
-        target_entries = self.input_stream.as_table(
+        if filter is not None:
+            input_stream_used = self.input_stream.polars_filter(*args, **kwargs)
+        else:
+            input_stream_used = self.input_stream
+
+        target_entries = input_stream_used.as_table(
             include_system_tags=True,
             include_source=True,
             include_content_hash=constants.INPUT_PACKET_HASH,
             execution_engine=execution_engine,
         )
-        existing_entries = self.pod.get_all_cached_outputs(include_system_columns=True)
+        existing_entries = self.pod_node.get_all_cached_outputs(
+            include_system_columns=True
+        )
         if existing_entries is None or existing_entries.num_rows == 0:
             missing = target_entries.drop_columns([constants.INPUT_PACKET_HASH])
             existing = None
@@ -193,15 +199,36 @@ class PodNodeStream(StreamBase):
                 cached_results.append((tag, packet))
 
         if missing is not None and missing.num_rows > 0:
+            packet_record_to_output_lut: dict[str, cp.Packet | None] = {}
+            execution_engine_hash = (
+                execution_engine.name if execution_engine is not None else "default"
+            )
             for tag, packet in TableStream(missing, tag_columns=tag_keys):
-                # Since these packets are known to be missing, skip the cache lookup
-                tag, packet = self.pod.call(
-                    tag,
-                    packet,
-                    skip_cache_lookup=True,
-                    execution_engine=execution_engine,
+                # compute record id
+                packet_record_id = self.pod_node.get_record_id(
+                    packet, execution_engine_hash=execution_engine_hash
                 )
-                cached_results.append((tag, packet))
+
+                # Since these packets are known to be missing, skip the cache lookup
+                if packet_record_id in packet_record_to_output_lut:
+                    output_packet = packet_record_to_output_lut[packet_record_id]
+                else:
+                    tag, output_packet = self.pod_node.call(
+                        tag,
+                        packet,
+                        record_id=packet_record_id,
+                        skip_cache_lookup=True,
+                        execution_engine=execution_engine,
+                    )
+                    packet_record_to_output_lut[packet_record_id] = output_packet
+                    self.pod_node.add_pipeline_record(
+                        tag,
+                        packet,
+                        packet_record_id,
+                        retrieved=False,
+                        skip_cache_lookup=True,
+                    )
+                cached_results.append((tag, output_packet))
 
         self._cached_output_packets = cached_results
         self._set_modified_time()
@@ -213,108 +240,137 @@ class PodNodeStream(StreamBase):
         Processes the input stream and prepares the output stream.
         This is typically called before iterating over the packets.
         """
-        if self._cached_output_packets is None:
-            cached_results = []
 
-            # identify all entries in the input stream for which we still have not computed packets
-            target_entries = self.input_stream.as_table(
-                include_system_tags=True,
-                include_source=True,
-                include_content_hash=constants.INPUT_PACKET_HASH,
-                execution_engine=execution_engine,
-            )
-            existing_entries = self.pod.get_all_cached_outputs(
-                include_system_columns=True
-            )
-            if existing_entries is None or existing_entries.num_rows == 0:
-                missing = target_entries.drop_columns([constants.INPUT_PACKET_HASH])
-                existing = None
-            else:
-                # missing = target_entries.join(
-                #     existing_entries,
-                #     keys=[constants.INPUT_PACKET_HASH],
-                #     join_type="left anti",
-                # )
-                # Single join that gives you both missing and existing
-                # More efficient - only bring the key column from existing_entries
-                # .select([constants.INPUT_PACKET_HASH]).append_column(
-                #     "_exists", pa.array([True] * len(existing_entries))
-                # ),
-
-                # TODO: do more proper replacement operation
-                target_df = pl.DataFrame(target_entries)
-                existing_df = pl.DataFrame(
-                    existing_entries.append_column(
-                        "_exists", pa.array([True] * len(existing_entries))
-                    )
-                )
-                all_results_df = target_df.join(
-                    existing_df,
-                    on=constants.INPUT_PACKET_HASH,
-                    how="left",
-                    suffix="_right",
-                )
-                all_results = all_results_df.to_arrow()
-                # all_results = target_entries.join(
-                #     existing_entries.append_column(
-                #         "_exists", pa.array([True] * len(existing_entries))
-                #     ),
-                #     keys=[constants.INPUT_PACKET_HASH],
-                #     join_type="left outer",
-                #     right_suffix="_right",  # rename the existing records in case of collision of output packet keys with input packet keys
-                # )
-                # grab all columns from target_entries first
-                missing = (
-                    all_results.filter(pc.is_null(pc.field("_exists")))
-                    .select(target_entries.column_names)
-                    .drop_columns([constants.INPUT_PACKET_HASH])
-                )
-
-                existing = all_results.filter(
-                    pc.is_valid(pc.field("_exists"))
-                ).drop_columns(
-                    [
-                        "_exists",
-                        constants.INPUT_PACKET_HASH,
-                        constants.PACKET_RECORD_ID,
-                        *self.input_stream.keys()[1],  # remove the input packet keys
-                    ]
-                    # TODO: look into NOT fetching back the record ID
-                )
-                renamed = [
-                    c.removesuffix("_right") if c.endswith("_right") else c
-                    for c in existing.column_names
-                ]
-                existing = existing.rename_columns(renamed)
-
-            tag_keys = self.input_stream.keys()[0]
-
-            if existing is not None and existing.num_rows > 0:
-                # If there are existing entries, we can cache them
-                existing_stream = TableStream(existing, tag_columns=tag_keys)
-                for tag, packet in existing_stream.iter_packets():
-                    cached_results.append((tag, packet))
-                    yield tag, packet
-
-            if missing is not None and missing.num_rows > 0:
-                for tag, packet in TableStream(missing, tag_columns=tag_keys):
-                    # Since these packets are known to be missing, skip the cache lookup
-                    tag, packet = self.pod.call(
-                        tag,
-                        packet,
-                        skip_cache_lookup=True,
-                        execution_engine=execution_engine,
-                    )
-                    cached_results.append((tag, packet))
-                    if packet is not None:
-                        yield tag, packet
-
-            self._cached_output_packets = cached_results
-            self._set_modified_time()
-        else:
+        # if results are cached, simply return from them
+        if self._cached_output_packets is not None:
             for tag, packet in self._cached_output_packets:
                 if packet is not None:
+                    # make sure to skip over an empty packet
                     yield tag, packet
+        else:
+            cached_results = []
+            # prepare the cache by loading from the record
+            total_table = self.pod_node.get_all_records(include_system_columns=True)
+            if total_table is None:
+                return  # empty out
+            tag_types, packet_types = self.pod_node.output_types()
+
+            for tag, packet in TableStream(total_table, tag_columns=tag_types.keys()):
+                cached_results.append((tag, packet))
+                yield tag, packet
+
+            # come up with a better caching mechanism
+            self._cached_output_packets = cached_results
+            self._set_modified_time()
+
+        # if self._cached_output_packets is None:
+        #     cached_results = []
+
+        #     # identify all entries in the input stream for which we still have not computed packets
+        #     target_entries = self.input_stream.as_table(
+        #         include_system_tags=True,
+        #         include_source=True,
+        #         include_content_hash=constants.INPUT_PACKET_HASH,
+        #         execution_engine=execution_engine,
+        #     )
+        #     existing_entries = self.pod_node.get_all_cached_outputs(
+        #         include_system_columns=True
+        #     )
+        #     if existing_entries is None or existing_entries.num_rows == 0:
+        #         missing = target_entries.drop_columns([constants.INPUT_PACKET_HASH])
+        #         existing = None
+        #     else:
+        #         # missing = target_entries.join(
+        #         #     existing_entries,
+        #         #     keys=[constants.INPUT_PACKET_HASH],
+        #         #     join_type="left anti",
+        #         # )
+        #         # Single join that gives you both missing and existing
+        #         # More efficient - only bring the key column from existing_entries
+        #         # .select([constants.INPUT_PACKET_HASH]).append_column(
+        #         #     "_exists", pa.array([True] * len(existing_entries))
+        #         # ),
+
+        #         # TODO: do more proper replacement operation
+        #         target_df = pl.DataFrame(target_entries)
+        #         existing_df = pl.DataFrame(
+        #             existing_entries.append_column(
+        #                 "_exists", pa.array([True] * len(existing_entries))
+        #             )
+        #         )
+        #         all_results_df = target_df.join(
+        #             existing_df,
+        #             on=constants.INPUT_PACKET_HASH,
+        #             how="left",
+        #             suffix="_right",
+        #         )
+        #         all_results = all_results_df.to_arrow()
+        #         # all_results = target_entries.join(
+        #         #     existing_entries.append_column(
+        #         #         "_exists", pa.array([True] * len(existing_entries))
+        #         #     ),
+        #         #     keys=[constants.INPUT_PACKET_HASH],
+        #         #     join_type="left outer",
+        #         #     right_suffix="_right",  # rename the existing records in case of collision of output packet keys with input packet keys
+        #         # )
+        #         # grab all columns from target_entries first
+        #         missing = (
+        #             all_results.filter(pc.is_null(pc.field("_exists")))
+        #             .select(target_entries.column_names)
+        #             .drop_columns([constants.INPUT_PACKET_HASH])
+        #         )
+
+        #         existing = all_results.filter(
+        #             pc.is_valid(pc.field("_exists"))
+        #         ).drop_columns(
+        #             [
+        #                 "_exists",
+        #                 constants.INPUT_PACKET_HASH,
+        #                 constants.PACKET_RECORD_ID,
+        #                 *self.input_stream.keys()[1],  # remove the input packet keys
+        #             ]
+        #             # TODO: look into NOT fetching back the record ID
+        #         )
+        #         renamed = [
+        #             c.removesuffix("_right") if c.endswith("_right") else c
+        #             for c in existing.column_names
+        #         ]
+        #         existing = existing.rename_columns(renamed)
+
+        #     tag_keys = self.input_stream.keys()[0]
+
+        #     if existing is not None and existing.num_rows > 0:
+        #         # If there are existing entries, we can cache them
+        #         existing_stream = TableStream(existing, tag_columns=tag_keys)
+        #         for tag, packet in existing_stream.iter_packets():
+        #             cached_results.append((tag, packet))
+        #             yield tag, packet
+
+        #     if missing is not None and missing.num_rows > 0:
+        #         hash_to_output_lut: dict[str, cp.Packet | None] = {}
+        #         for tag, packet in TableStream(missing, tag_columns=tag_keys):
+        #             # Since these packets are known to be missing, skip the cache lookup
+        #             packet_hash = packet.content_hash().to_string()
+        #             if packet_hash in hash_to_output_lut:
+        #                 output_packet = hash_to_output_lut[packet_hash]
+        #             else:
+        #                 tag, output_packet = self.pod_node.call(
+        #                     tag,
+        #                     packet,
+        #                     skip_cache_lookup=True,
+        #                     execution_engine=execution_engine,
+        #                 )
+        #                 hash_to_output_lut[packet_hash] = output_packet
+        #             cached_results.append((tag, output_packet))
+        #             if output_packet is not None:
+        #                 yield tag, output_packet
+
+        #     self._cached_output_packets = cached_results
+        #     self._set_modified_time()
+        # else:
+        #     for tag, packet in self._cached_output_packets:
+        #         if packet is not None:
+        #             yield tag, packet
 
     def keys(
         self, include_system_tags: bool = False
@@ -325,7 +381,7 @@ class PodNodeStream(StreamBase):
         """
 
         tag_keys, _ = self.input_stream.keys(include_system_tags=include_system_tags)
-        packet_keys = tuple(self.pod.output_packet_types().keys())
+        packet_keys = tuple(self.pod_node.output_packet_types().keys())
         return tag_keys, packet_keys
 
     def types(
@@ -335,7 +391,7 @@ class PodNodeStream(StreamBase):
             include_system_tags=include_system_tags
         )
         # TODO: check if copying can be avoided
-        packet_typespec = dict(self.pod.output_packet_types())
+        packet_typespec = dict(self.pod_node.output_packet_types())
         return tag_typespec, packet_typespec
 
     def as_table(
@@ -363,9 +419,6 @@ class PodNodeStream(StreamBase):
                 # FIXME: using in the pinch conversion to str from path
                 # replace with an appropriate semantic converter-based approach!
                 dict_patcket = packet.as_dict(include_context=True, include_source=True)
-                for k, v in dict_patcket.items():
-                    if isinstance(v, Path):
-                        dict_patcket[k] = str(v)
                 all_packets.append(dict_patcket)
 
             converter = self.data_context.type_converter

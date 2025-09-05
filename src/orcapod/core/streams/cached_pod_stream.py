@@ -192,15 +192,21 @@ class CachedPodStream(StreamBase):
                 cached_results.append((tag, packet))
 
         if missing is not None and missing.num_rows > 0:
+            hash_to_output_lut: dict[str, cp.Packet | None] = {}
             for tag, packet in TableStream(missing, tag_columns=tag_keys):
                 # Since these packets are known to be missing, skip the cache lookup
-                tag, packet = self.pod.call(
-                    tag,
-                    packet,
-                    skip_cache_lookup=True,
-                    execution_engine=execution_engine,
-                )
-                cached_results.append((tag, packet))
+                packet_hash = packet.content_hash().to_string()
+                if packet_hash in hash_to_output_lut:
+                    output_packet = hash_to_output_lut[packet_hash]
+                else:
+                    tag, output_packet = self.pod.call(
+                        tag,
+                        packet,
+                        skip_cache_lookup=True,
+                        execution_engine=execution_engine,
+                    )
+                    hash_to_output_lut[packet_hash] = output_packet
+                cached_results.append((tag, output_packet))
 
         self._cached_output_packets = cached_results
         self._set_modified_time()
@@ -296,17 +302,23 @@ class CachedPodStream(StreamBase):
                     yield tag, packet
 
             if missing is not None and missing.num_rows > 0:
+                hash_to_output_lut: dict[str, cp.Packet | None] = {}
                 for tag, packet in TableStream(missing, tag_columns=tag_keys):
                     # Since these packets are known to be missing, skip the cache lookup
-                    tag, packet = self.pod.call(
-                        tag,
-                        packet,
-                        skip_cache_lookup=True,
-                        execution_engine=execution_engine,
-                    )
-                    cached_results.append((tag, packet))
-                    if packet is not None:
-                        yield tag, packet
+                    packet_hash = packet.content_hash().to_string()
+                    if packet_hash in hash_to_output_lut:
+                        output_packet = hash_to_output_lut[packet_hash]
+                    else:
+                        tag, output_packet = self.pod.call(
+                            tag,
+                            packet,
+                            skip_cache_lookup=True,
+                            execution_engine=execution_engine,
+                        )
+                        hash_to_output_lut[packet_hash] = output_packet
+                    cached_results.append((tag, output_packet))
+                    if output_packet is not None:
+                        yield tag, output_packet
 
             self._cached_output_packets = cached_results
             self._set_modified_time()
@@ -362,9 +374,6 @@ class CachedPodStream(StreamBase):
                 # FIXME: using in the pinch conversion to str from path
                 # replace with an appropriate semantic converter-based approach!
                 dict_patcket = packet.as_dict(include_context=True, include_source=True)
-                for k, v in dict_patcket.items():
-                    if isinstance(v, Path):
-                        dict_patcket[k] = str(v)
                 all_packets.append(dict_patcket)
 
             converter = self.data_context.type_converter

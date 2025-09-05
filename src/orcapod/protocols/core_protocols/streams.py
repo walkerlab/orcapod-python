@@ -255,7 +255,9 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
-    def run(self, execution_engine: ExecutionEngine | None = None) -> None:
+    def run(
+        self, *args: Any, execution_engine: ExecutionEngine | None = None, **kwargs: Any
+    ) -> None:
         """
         Execute the stream using the provided execution engine.
 
@@ -269,7 +271,9 @@ class Stream(ContentIdentifiable, Labelable, Protocol):
         """
         ...
 
-    async def run_async(self, execution_engine: ExecutionEngine | None = None) -> None:
+    async def run_async(
+        self, *args: Any, execution_engine: ExecutionEngine | None = None, **kwargs: Any
+    ) -> None:
         """
         Asynchronously execute the stream using the provided execution engine.
 

@@ -59,6 +59,7 @@ class DeltaTableSource(SourceBase):
 
         self._source_name = source_name
         self._tag_columns = tuple(tag_columns)
+        self._cached_table_stream: TableStream | None = None
 
         # Auto-register with global registry
         if auto_register:
@@ -106,20 +107,21 @@ class DeltaTableSource(SourceBase):
         Returns:
             TableStream containing all data from the Delta table
         """
+        if self._cached_table_stream is None:
+            # Refresh table to get latest data
+            self._refresh_table()
 
-        # Refresh table to get latest data
-        self._refresh_table()
+            # Load table data
+            table_data = self._delta_table.to_pyarrow_dataset(
+                as_large_types=True
+            ).to_table()
 
-        # Load table data
-        table_data = self._delta_table.to_pyarrow_dataset(
-            as_large_types=True
-        ).to_table()
-
-        return TableStream(
-            table=table_data,
-            tag_columns=self._tag_columns,
-            source=self,
-        )
+            self._cached_table_stream = TableStream(
+                table=table_data,
+                tag_columns=self._tag_columns,
+                source=self,
+            )
+        return self._cached_table_stream
 
     def _refresh_table(self) -> None:
         """Refresh the Delta table to get latest version."""

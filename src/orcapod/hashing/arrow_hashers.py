@@ -93,7 +93,7 @@ class SemanticArrowHasher:
     def hasher_id(self) -> str:
         return self._hasher_id
 
-    def _process_table_columns(self, table: pa.Table) -> pa.Table:
+    def _process_table_columns(self, table: pa.Table | pa.RecordBatch) -> pa.Table:
         """
         Process table columns using visitor pattern to handle nested semantic types.
 
@@ -166,7 +166,7 @@ class SemanticArrowHasher:
         ]
         return serialization_method_function(table)
 
-    def hash_table(self, table: pa.Table) -> ContentHash:
+    def hash_table(self, table: pa.Table | pa.RecordBatch) -> ContentHash:
         """
         Compute stable hash of Arrow table with semantic type processing.
 

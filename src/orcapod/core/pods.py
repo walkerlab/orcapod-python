@@ -119,7 +119,7 @@ class ActivatablePodBase(TrackedKernelBase):
             raise ValueError(
                 f"Version string {version} does not contain a valid version number"
             )
-
+        self.skip_type_checking = False
         self._major_version = major_version
 
     @property
@@ -179,6 +179,8 @@ class ActivatablePodBase(TrackedKernelBase):
             raise ValueError(
                 f"{self.__class__.__name__} expects exactly one input stream, got {len(streams)}"
             )
+        if self.skip_type_checking:
+            return
         input_stream = streams[0]
         _, incoming_packet_types = input_stream.types()
         if not types_utils.check_typespec_compatibility(
@@ -678,7 +680,10 @@ class CachedPod(WrappedPod):
             )
         output_packet = None
         if not skip_cache_lookup:
+            print("Checking for cache...")
             output_packet = self.get_cached_output_for_packet(packet)
+            if output_packet is not None:
+                print(f"Cache hit for {packet}!")
         if output_packet is None:
             tag, output_packet = super().call(
                 tag, packet, record_id=record_id, execution_engine=execution_engine

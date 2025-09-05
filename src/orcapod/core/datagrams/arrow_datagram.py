@@ -166,7 +166,7 @@ class ArrowDatagram(BaseDatagram):
         if key not in self._data_table.column_names:
             raise KeyError(f"Data column '{key}' not found")
 
-        return self._data_table[key].to_pylist()[0]
+        return self.as_dict()[key]
 
     def __contains__(self, key: str) -> bool:
         """Check if data column exists."""

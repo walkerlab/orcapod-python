@@ -162,7 +162,7 @@ class ArrowHasher(Protocol):
     def get_hasher_id(self) -> str: ...
 
     def hash_table(
-        self, table: "pa.Table", prefix_hasher_id: bool = True
+        self, table: "pa.Table | pa.RecordBatch", prefix_hasher_id: bool = True
     ) -> ContentHash: ...
 
 
