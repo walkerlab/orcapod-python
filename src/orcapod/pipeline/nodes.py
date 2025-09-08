@@ -91,16 +91,15 @@ class NodeBase(
         ...
 
     def validate_inputs(self, *streams: cp.Stream) -> None:
-        """Sources take no input streams."""
-        if len(streams) > 0:
-            raise NotImplementedError(
-                "At this moment, Node does not yet support handling additional input streams."
-            )
+        return
 
-    def forward(self, *streams: cp.Stream) -> cp.Stream:
-        # TODO: re-evaluate the use here -- consider semi joining with input streams
-        # super().validate_inputs(*self.input_streams)
-        return super().forward(*self.upstreams)  # type: ignore[return-value]
+    # def forward(self, *streams: cp.Stream) -> cp.Stream:
+    #     # TODO: re-evaluate the use here -- consider semi joining with input streams
+    #     # super().validate_inputs(*self.input_streams)
+    #     return super().forward(*self.upstreams)  # type: ignore[return-value]
+
+    def pre_kernel_processing(self, *streams: cp.Stream) -> tuple[cp.Stream, ...]:
+        return self.upstreams
 
     def kernel_output_types(
         self, *streams: cp.Stream, include_system_tags: bool = False
@@ -127,6 +126,9 @@ class NodeBase(
         If include_system_columns is True, system columns will be included in the result.
         """
         raise NotImplementedError("This method should be implemented by subclasses.")
+
+    def flush(self):
+        self.pipeline_database.flush()
 
 
 class KernelNode(NodeBase, WrappedKernel):
@@ -263,6 +265,11 @@ class PodNode(NodeBase, CachedPod):
             pipeline_path_prefix=pipeline_path_prefix,
             **kwargs,
         )
+
+    def flush(self):
+        self.pipeline_database.flush()
+        if self.result_database is not None:
+            self.result_database.flush()
 
     @property
     def contained_kernel(self) -> cp.Kernel:

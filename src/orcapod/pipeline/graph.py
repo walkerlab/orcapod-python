@@ -192,7 +192,8 @@ class Pipeline(GraphTracker):
             Current implementation uses a simple traversal through all nodes. Future versions
             may implement more efficient graph traversal algorithms.
         """
-        for node in self.nodes.values():
+        import networkx as nx
+        for node in nx.topological_sort(self.graph):
             if run_async:
                 synchronous_run(node.run_async, execution_engine=execution_engine)
             else:
@@ -215,7 +216,7 @@ class Pipeline(GraphTracker):
                 pipeline_database=self.pipeline_database,
                 pipeline_path_prefix=self.pipeline_store_path_prefix,
                 label=invocation.label,
-                kernel_type="pod",
+                kernel_type="function",
             )
         elif invocation in self.invocation_to_source_lut:
             source = self.invocation_to_source_lut[invocation]
@@ -306,7 +307,7 @@ class GraphRenderer:
             "style": "filled",
             "typefontcolor": "#3A3737",  # dark gray
         },
-        "pod": {
+        "function": {
             "fillcolor": "#f5f5f5",  # off white
             "shape": "cylinder",
             "fontcolor": "#090271",  # darker navy blue
@@ -633,7 +634,7 @@ class StyleRuleSets:
                 "style": "filled",
                 "type_font_color": operator_type_fcolor,
             },
-            "pod": {
+            "function": {
                 "fillcolor": pod_bg,
                 "shape": "box",
                 "fontcolor": pod_main_fcolor,

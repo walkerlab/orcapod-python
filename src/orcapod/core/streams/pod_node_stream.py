@@ -38,10 +38,10 @@ class PodNodeStream(StreamBase):
         super().__init__(source=pod_node, upstreams=(input_stream,), **kwargs)
         self.pod_node = pod_node
         self.input_stream = input_stream
-        self._set_modified_time()  # set modified time to when we obtain the iterator
-        # capture the immutable iterator from the input stream
 
+        # capture the immutable iterator from the input stream
         self._prepared_stream_iterator = input_stream.iter_packets()
+        self._set_modified_time()  # set modified time to when we obtain the iterator
 
         # Packet-level caching (from your PodStream)
         self._cached_output_packets: list[tuple[cp.Tag, cp.Packet | None]] | None = None
@@ -134,7 +134,7 @@ class PodNodeStream(StreamBase):
         cached_results = []
 
         # identify all entries in the input stream for which we still have not computed packets
-        if filter is not None:
+        if len(args) > 0 or len(kwargs) > 0:
             input_stream_used = self.input_stream.polars_filter(*args, **kwargs)
         else:
             input_stream_used = self.input_stream
@@ -194,6 +194,7 @@ class PodNodeStream(StreamBase):
 
         if existing is not None and existing.num_rows > 0:
             # If there are existing entries, we can cache them
+            # TODO: cache them based on the record ID
             existing_stream = TableStream(existing, tag_columns=tag_keys)
             for tag, packet in existing_stream.iter_packets():
                 cached_results.append((tag, packet))
@@ -232,6 +233,14 @@ class PodNodeStream(StreamBase):
 
         self._cached_output_packets = cached_results
         self._set_modified_time()
+        self.pod_node.flush()
+        # TODO: evaluate proper handling of cache here
+        self.clear_cache()
+
+    def clear_cache(self) -> None:
+        self._cached_output_packets = None
+        self._cached_output_table = None
+        self._cached_content_hash_column = None
 
     def iter_packets(
         self, execution_engine: cp.ExecutionEngine | None = None
@@ -423,21 +432,41 @@ class PodNodeStream(StreamBase):
 
             converter = self.data_context.type_converter
 
-            struct_packets = converter.python_dicts_to_struct_dicts(all_packets)
-            all_tags_as_tables: pa.Table = pa.Table.from_pylist(
-                all_tags, schema=tag_schema
-            )
-            all_packets_as_tables: pa.Table = pa.Table.from_pylist(
-                struct_packets, schema=packet_schema
-            )
+            if len(all_tags) == 0:
+                tag_types, packet_types = self.pod_node.output_types(
+                    include_system_tags=True
+                )
+                tag_schema = converter.python_schema_to_arrow_schema(tag_types)
+                source_entries = {
+                    f"{constants.SOURCE_PREFIX}{c}": str for c in packet_types.keys()
+                }
+                packet_types.update(source_entries)
+                packet_types[constants.CONTEXT_KEY] = str
+                packet_schema = converter.python_schema_to_arrow_schema(packet_types)
+                total_schema = arrow_utils.join_arrow_schemas(tag_schema, packet_schema)
+                # return an empty table with the right schema
+                self._cached_output_table = pa.Table.from_pylist(
+                    [], schema=total_schema
+                )
+            else:
+                struct_packets = converter.python_dicts_to_struct_dicts(all_packets)
 
-            self._cached_output_table = arrow_utils.hstack_tables(
-                all_tags_as_tables, all_packets_as_tables
-            )
+                all_tags_as_tables: pa.Table = pa.Table.from_pylist(
+                    all_tags, schema=tag_schema
+                )
+                all_packets_as_tables: pa.Table = pa.Table.from_pylist(
+                    struct_packets, schema=packet_schema
+                )
+
+                self._cached_output_table = arrow_utils.hstack_tables(
+                    all_tags_as_tables, all_packets_as_tables
+                )
         assert self._cached_output_table is not None, (
             "_cached_output_table should not be None here."
         )
 
+        if self._cached_output_table.num_rows == 0:
+            return self._cached_output_table
         drop_columns = []
         if not include_source:
             drop_columns.extend(f"{constants.SOURCE_PREFIX}{c}" for c in self.keys()[1])

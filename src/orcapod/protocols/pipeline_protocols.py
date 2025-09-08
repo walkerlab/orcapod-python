@@ -35,6 +35,19 @@ class PodNode(cp.CachedPod, Protocol):
         """
         ...
 
+    def flush(self):
+        """
+        Flush any in-memory data to persistent storage.
+
+        This method ensures that all buffered data is written to the underlying
+        storage system, making it durable and consistent. It is useful for:
+        - Ensuring data integrity before shutdown or restart
+        - Committing changes after a batch of operations
+        - Reducing memory usage by clearing buffers
+
+        """
+        ...
+
     def add_pipeline_record(
         self,
         tag: cp.Tag,
