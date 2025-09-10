@@ -266,9 +266,6 @@ class Pipeline(GraphTracker):
         logger.info(f"Node '{old_name}' renamed to '{new_name}'")
 
 
-from typing import Optional, Dict, Any
-
-
 class GraphRenderer:
     """Improved GraphRenderer with centralized default styling"""
 
@@ -381,15 +378,15 @@ class GraphRenderer:
         return html_label
 
     def _get_node_label(
-        self, node_id: Any, label_lut: Optional[Dict[Any, str]] = None
+        self, node_id: Any, label_lut: dict[Any, str] | None = None
     ) -> str:
         if label_lut and node_id in label_lut:
             return label_lut[node_id]
         return str(node_id)
 
     def _get_node_attributes(
-        self, node_id: Any, style_rules: Dict | None = None
-    ) -> Dict[str, str]:
+        self, node_id: Any, style_rules: dict | None = None
+    ) -> dict[str, str]:
         """
         Get styling attributes for a specific node based on its properties
         """
@@ -429,8 +426,8 @@ class GraphRenderer:
     def generate_dot(
         self,
         graph: "nx.DiGraph",
-        label_lut: Optional[Dict[Any, str]] = None,
-        style_rules: Optional[Dict] = None,
+        label_lut: dict[Any, str] | None = None,
+        style_rules: dict | None = None,
         **style_overrides,
     ) -> str:
         # Get final styles (defaults + overrides)
@@ -478,15 +475,15 @@ class GraphRenderer:
     def render_graph(
         self,
         graph: "nx.DiGraph",
-        label_lut: Optional[Dict[Any, str]] = None,
+        label_lut: dict[Any, str] | None = None,
         show: bool = True,
-        output_path: Optional[str] = None,
+        output_path: str | None = None,
         raw_output: bool = False,
         figsize: tuple = (12, 8),
         dpi: int = 150,
-        style_rules: Optional[Dict] = None,
+        style_rules: dict | None = None,
         **style_overrides,
-    ) -> Optional[str]:
+    ) -> str | None:
         # Always generate DOT first
         dot_text = self.generate_dot(graph, label_lut, style_rules, **style_overrides)
 
@@ -559,10 +556,10 @@ class GraphRenderer:
 # =====================
 def render_graph(
     graph: "nx.DiGraph",
-    label_lut: Optional[Dict[Any, str]] = None,
-    style_rules: Optional[Dict] = None,
+    label_lut: dict[Any, str] | None = None,
+    style_rules: dict | None = None,
     **kwargs,
-) -> Optional[str]:
+) -> str | None:
     """
     Convenience function with conditional node styling
 
@@ -577,8 +574,8 @@ def render_graph(
 
 
 def render_graph_dark_theme(
-    graph: "nx.DiGraph", label_lut: Optional[Dict[Any, str]] = None, **kwargs
-) -> Optional[str]:
+    graph: "nx.DiGraph", label_lut: dict[Any, str] | None = None, **kwargs
+) -> str | None:
     """
     Render with dark theme - all backgrounds dark, all pod type fonts light
     Perfect for dark themed presentations or displays

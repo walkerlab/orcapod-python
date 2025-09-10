@@ -8,6 +8,11 @@ notebooks/**/*.db
 # Ignore npy and npz data files by default
 *.np[yz]
 
+# skip tutorial data
+**/tutorials/data/
+# skip any computation results
+**/results
+
 # Ignore common data types by default
 *.csv
 *.parquet

@@ -1,7 +1,6 @@
 import logging
 from collections.abc import Iterator
-from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from orcapod.core.system_constants import constants
 from orcapod.protocols import core_protocols as cp
@@ -50,8 +49,14 @@ class CachedPodStream(StreamBase):
         self._cached_output_table: pa.Table | None = None
         self._cached_content_hash_column: pa.Array | None = None
 
+    def test(self) -> cp.Stream:
+        return self
+
     async def run_async(
-        self, execution_engine: cp.ExecutionEngine | None = None
+        self,
+        *args: Any,
+        execution_engine: cp.ExecutionEngine | None = None,
+        **kwargs: Any,
     ) -> None:
         """
         Runs the stream, processing the input stream and preparing the output stream.
@@ -129,7 +134,9 @@ class CachedPodStream(StreamBase):
 
     def run(
         self,
+        *args: Any,
         execution_engine: cp.ExecutionEngine | None = None,
+        **kwargs: Any,
     ) -> None:
         cached_results = []
 
