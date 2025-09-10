@@ -18,6 +18,7 @@ dependencies = [
     "beartype>=0.21.0",
     "deltalake>=1.0.2",
     "graphviz>=0.21",
+    "gitpython>=3.1.45",
 ]
 readme = "README.md"
 requires-python = ">=3.11.0"
