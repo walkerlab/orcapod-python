@@ -11,6 +11,7 @@ from orcapod.core.datagrams import (
     ArrowPacket,
     DictPacket,
 )
+from orcapod.utils.git_utils import get_git_info_for_python_object
 from orcapod.core.kernels import KernelStream, TrackedKernelBase
 from orcapod.core.operators import Join
 from orcapod.core.streams import CachedPodStream, LazyPodResultStream
@@ -318,6 +319,17 @@ class FunctionPod(ActivatablePodBase):
                 output_typespec=output_python_schema,
             )
         )
+
+        # get git info for the function
+        env_info = get_git_info_for_python_object(self.function)
+        if env_info is None:
+            git_hash = "unknown"
+        else:
+            git_hash = env_info.get("git_commit_hash", "unknown")
+            if env_info.get("git_repo_status") == "dirty":
+                git_hash += "-dirty"
+        self._git_hash = git_hash
+
         self._input_packet_schema = dict(input_packet_types)
         self._output_packet_schema = dict(output_packet_types)
         # TODO: add output packet converter for speed up
@@ -346,6 +358,7 @@ class FunctionPod(ActivatablePodBase):
             "version": self.version,
             "signature": self._function_signature_hash,
             "content": self._function_content_hash,
+            "git_hash": self._git_hash,
         }
 
     @property
@@ -764,6 +777,7 @@ class CachedPod(WrappedPod):
             pa.array([execution_engine_hash], type=pa.large_string()),
         )
 
+        # add computation timestamp
         timestamp = datetime.now(timezone.utc)
         data_table = data_table.append_column(
             constants.POD_TIMESTAMP,

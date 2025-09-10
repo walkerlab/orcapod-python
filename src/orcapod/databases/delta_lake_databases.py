@@ -7,7 +7,6 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from deltalake import DeltaTable, write_deltalake
 from deltalake.exceptions import TableNotFoundError
 
-from orcapod.core import constants
 from orcapod.utils.lazy_module import LazyModule
 
 if TYPE_CHECKING:
@@ -46,10 +45,12 @@ class DeltaTableDatabase:
         create_base_path: bool = True,
         batch_size: int = 1000,
         max_hierarchy_depth: int = 10,
+        allow_schema_evolution: bool = True,
     ):
         self.base_path = Path(base_path)
         self.batch_size = batch_size
         self.max_hierarchy_depth = max_hierarchy_depth
+        self.allow_schema_evolution = allow_schema_evolution
 
         if create_base_path:
             self.base_path.mkdir(parents=True, exist_ok=True)
@@ -839,6 +840,7 @@ class DeltaTableDatabase:
                     table_path,
                     combined_table,
                     mode="overwrite",
+                    schema_mode="merge" if self.allow_schema_evolution else "overwrite",
                 )
                 logger.debug(
                     f"Created new Delta table for {record_key} with {len(combined_table)} records"
@@ -849,6 +851,7 @@ class DeltaTableDatabase:
                     predicate=f"target.{self.RECORD_ID_COLUMN} = source.{self.RECORD_ID_COLUMN}",
                     source_alias="source",
                     target_alias="target",
+                    merge_schema=self.allow_schema_evolution,
                 ).when_not_matched_insert_all().execute()
 
                 logger.debug(

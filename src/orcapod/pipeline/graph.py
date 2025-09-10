@@ -193,6 +193,7 @@ class Pipeline(GraphTracker):
             may implement more efficient graph traversal algorithms.
         """
         import networkx as nx
+
         for node in nx.topological_sort(self.graph):
             if run_async:
                 synchronous_run(node.run_async, execution_engine=execution_engine)

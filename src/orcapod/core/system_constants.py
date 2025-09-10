@@ -12,6 +12,7 @@ EXECUTION_ENGINE = "execution_engine"
 POD_TIMESTAMP = "pod_ts"
 FIELD_SEPARATOR = ":"
 BLOCK_SEPARATOR = "::"
+ENV_INFO = "env_info"
 
 
 class SystemConstant:
@@ -69,6 +70,10 @@ class SystemConstant:
     @property
     def POD_TIMESTAMP(self) -> str:
         return f"{self._global_prefix}{SYSTEM_COLUMN_PREFIX}{POD_TIMESTAMP}"
+
+    @property
+    def ENV_INFO(self) -> str:
+        return f"{self._global_prefix}{SYSTEM_COLUMN_PREFIX}{ENV_INFO}"
 
 
 constants = SystemConstant()
