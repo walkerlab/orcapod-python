@@ -169,6 +169,13 @@ class Pipeline(GraphTracker):
     def show_graph(self, **kwargs) -> None:
         render_graph(self.graph, **kwargs)
 
+    def set_mode(self, mode: str) -> None:
+        if mode not in ("production", "development"):
+            raise ValueError("Mode must be either 'production' or 'development'")
+        for node in self.nodes.values():
+            if hasattr(node, "set_mode"):
+                node.set_mode(mode)
+
     def run(
         self,
         execution_engine: cp.ExecutionEngine | None = None,

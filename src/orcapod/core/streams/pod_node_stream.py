@@ -48,6 +48,13 @@ class PodNodeStream(StreamBase):
         self._cached_output_table: pa.Table | None = None
         self._cached_content_hash_column: pa.Array | None = None
 
+    def set_mode(self, mode: str) -> None:
+        return self.pod_node.set_mode(mode)
+
+    @property
+    def mode(self) -> str:
+        return self.pod_node.mode
+
     async def run_async(
         self, execution_engine: cp.ExecutionEngine | None = None
     ) -> None:
@@ -148,7 +155,11 @@ class PodNodeStream(StreamBase):
         existing_entries = self.pod_node.get_all_cached_outputs(
             include_system_columns=True
         )
-        if existing_entries is None or existing_entries.num_rows == 0:
+        if (
+            existing_entries is None
+            or existing_entries.num_rows == 0
+            or self.mode == "development"
+        ):
             missing = target_entries.drop_columns([constants.INPUT_PACKET_HASH])
             existing = None
         else:

@@ -147,6 +147,14 @@ class CachedPod(Pod, Protocol):
         skip_cache_insert: bool = False,
     ) -> tuple[Tag, Packet | None]: ...
 
+    def set_mode(self, mode: str) -> None: ...
+
+    @property
+    def mode(self) -> str: ...
+
+    # @mode.setter
+    # def mode(self, value: str) -> None: ...
+
     def call(
         self,
         tag: Tag,

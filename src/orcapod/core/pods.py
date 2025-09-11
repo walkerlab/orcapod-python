@@ -663,6 +663,12 @@ class CachedPod(WrappedPod):
         self.result_database = result_database
         self.match_tier = match_tier
         self.retrieval_mode = retrieval_mode
+        self.mode: Literal["production", "development"] = "production"
+
+    def set_mode(self, mode: str) -> None:
+        if mode not in ("production", "development"):
+            raise ValueError(f"Invalid mode: {mode}")
+        self.mode = mode
 
     @property
     def version(self) -> str:
@@ -692,7 +698,7 @@ class CachedPod(WrappedPod):
                 packet, execution_engine_hash=execution_engine_hash
             )
         output_packet = None
-        if not skip_cache_lookup:
+        if not skip_cache_lookup and self.mode == "production":
             print("Checking for cache...")
             output_packet = self.get_cached_output_for_packet(packet)
             if output_packet is not None:
@@ -701,7 +707,11 @@ class CachedPod(WrappedPod):
             tag, output_packet = super().call(
                 tag, packet, record_id=record_id, execution_engine=execution_engine
             )
-            if output_packet is not None and not skip_cache_insert:
+            if (
+                output_packet is not None
+                and not skip_cache_insert
+                and self.mode == "production"
+            ):
                 self.record_packet(packet, output_packet, record_id=record_id)
 
         return tag, output_packet
